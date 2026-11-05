@@ -18,9 +18,3 @@ spring:
     compose:
       # docker compose up -d로 직접 띄운다. 켜 두면 compose 값이 위 접속 정보를 덮어쓴다.
       enabled: false
-
-# 오브젝트 저장소를 정하기 전까지 쓰는 임시 값이다. compose.yaml에는 아직 이 서비스가 없다.
-minio:
-  endpoint: http://localhost:9000
-  access-key: ${MINIO_ACCESS_KEY}
-  secret-key: ${MINIO_SECRET_KEY}
