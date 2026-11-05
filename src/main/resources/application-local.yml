@@ -1,0 +1,20 @@
+# 로컬 개발용 설정. 접속 값은 compose.yaml과 맞춘다.
+spring:
+  config:
+    # Spring은 .env를 자동으로 읽지 않으므로 직접 불러온다. 프로젝트 루트에서 실행해야 찾는다.
+    import: optional:file:.env[.properties]
+  datasource:
+    url: jdbc:postgresql://localhost:5432/lolog_api
+    username: myuser
+    password: ${POSTGRES_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  docker:
+    compose:
+      # docker compose up -d로 직접 띄운다. 켜 두면 compose 값이 위 접속 정보를 덮어쓴다.
+      enabled: false
