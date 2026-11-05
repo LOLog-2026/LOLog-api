@@ -1,0 +1,13 @@
+services:
+  postgres:
+    image: 'postgres:latest'
+    environment:
+      - 'POSTGRES_DB=mydatabase'
+      - 'POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?.env에 POSTGRES_PASSWORD가 필요합니다. .env.example을 복사해 만드세요}'
+      - 'POSTGRES_USER=myuser'
+    ports:
+      - '5432'
+  redis:
+    image: 'redis:latest'
+    ports:
+      - '6379'
