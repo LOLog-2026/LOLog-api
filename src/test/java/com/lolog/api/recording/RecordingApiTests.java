@@ -26,7 +26,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 // 실제 PostgreSQL과 Redis로 POST /api/recordings 규칙을 확인한다. Docker가 켜져 있어야 한다.
-@SpringBootTest(properties = { "lolog.auth.dev-header-enabled=true", "spring.jpa.hibernate.ddl-auto=validate" })
+@SpringBootTest(properties = { "lolog.auth.dev-header-enabled=true", "lolog.auth.dev-test-token=test-token", "spring.jpa.hibernate.ddl-auto=validate" })
 @AutoConfigureMockMvc
 @Testcontainers
 class RecordingApiTests {
@@ -88,7 +88,6 @@ class RecordingApiTests {
 	void 첫_묶음을_저장하고_큐에_넣는다() throws Exception {
 		String id = UUID.randomUUID().toString();
 		upload("1", body(id, 1, false, ONE)).andExpect(status().isAccepted())
-			.andExpect(jsonPath("$.partNo").value(1))
 			.andExpect(jsonPath("$.status").value("DETECTING"));
 
 		long recordingId = objectMapper.readTree(upload("1", body(id, 1, false, ONE)).andReturn().getResponse().getContentAsString())
@@ -182,6 +181,20 @@ class RecordingApiTests {
 			.andExpect(jsonPath("$.code").value("PAYLOAD_TOO_LARGE"));
 		String huge = "[{\"startMs\":1,\"endMs\":2,\"text\":\"" + "글".repeat(400_000) + "\"}]";
 		upload("8", body(id, 1, false, huge)).andExpect(status().isPayloadTooLarge());
+	}
+
+	@Test
+	void 앱의_테스트_토큰으로_올릴_수_있다() throws Exception {
+		mvc.perform(post("/api/recordings").header("Authorization", "Bearer test-token")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(body(UUID.randomUUID().toString(), 1, true, ONE)))
+			.andExpect(status().isAccepted())
+			.andExpect(jsonPath("$.recordingId").isNumber())
+			.andExpect(jsonPath("$.partNo").doesNotExist());
+		mvc.perform(post("/api/recordings").header("Authorization", "Bearer wrong")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(body(UUID.randomUUID().toString(), 1, true, ONE)))
+			.andExpect(status().isUnauthorized());
 	}
 
 	@Test

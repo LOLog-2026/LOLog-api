@@ -82,7 +82,7 @@ public class RecordingService {
 		// 재시도면 저장하지 않고 처음 결과를 돌려준다.
 		boolean duplicate = existing.stream().anyMatch(p -> p.getPartNo().equals(request.partNo()));
 		if (duplicate) {
-			return new Saved(response(recording, request.partNo()), List.of());
+			return new Saved(response(recording), List.of());
 		}
 		if (!existing.isEmpty() && existing.getLast().isLast()) {
 			throw new ApiException(HttpStatus.CONFLICT, "RECORDING_CLOSED", "이미 끝난 녹음입니다.");
@@ -93,7 +93,7 @@ public class RecordingService {
 		parts.saveAndFlush(new RecordingPart(recording, request.partNo(), request.isLast(), request.durationSec(),
 				objectMapper.writeValueAsString(request.sentences())));
 		List<Long> jobIds = dispatch(recording);
-		return new Saved(response(recording, request.partNo()), jobIds);
+		return new Saved(response(recording), jobIds);
 	}
 
 	// 앞 묶음이 모두 끝났으면 다음 묶음을 큐에 넣을 작업으로 만든다. 앞 묶음의 carryFromMs를 알아야 해서 한 번에 하나만 넣는다.
@@ -124,8 +124,8 @@ public class RecordingService {
 		return jobIds;
 	}
 
-	private UploadResponse response(Recording recording, int partNo) {
-		return new UploadResponse(recording.getId(), partNo, recording.getStatus());
+	private UploadResponse response(Recording recording) {
+		return new UploadResponse(recording.getId(), recording.getStatus());
 	}
 
 	private record Saved(UploadResponse response, List<Long> jobIds) {

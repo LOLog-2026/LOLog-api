@@ -27,7 +27,7 @@ public final class RecordingDtos {
 	public record Sentence(@NotNull @PositiveOrZero Long startMs, @NotNull Long endMs, @NotBlank String text) {
 	}
 
-	public record UploadResponse(Long recordingId, Integer partNo, RecordingStatus status) {
+	public record UploadResponse(Long recordingId, RecordingStatus status) {
 	}
 
 	public record StatusResponse(RecordingStatus status, long cardCount) {
