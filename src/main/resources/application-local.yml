@@ -18,3 +18,8 @@ spring:
     compose:
       # docker compose up -d로 직접 띄운다. 켜 두면 compose 값이 위 접속 정보를 덮어쓴다.
       enabled: false
+
+lolog:
+  auth:
+    # JWT 검증(#9) 전까지 X-User-Id 헤더를 회원 ID로 쓴다. 로컬 전용이며 배포 설정에 넣지 않는다.
+    dev-header-enabled: true
