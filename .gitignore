@@ -31,3 +31,18 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### 환경 변수 ###
+.env
+.env.*
+
+### 녹음 파일 ###
+*.wav
+*.m4a
+*.mp3
+*.aac
+*.flac
+*.ogg
+*.opus
+*.amr
+*.3gp
