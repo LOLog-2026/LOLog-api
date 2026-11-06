@@ -51,7 +51,7 @@ public class RecordingService {
 	public StatusResponse status(long userId, long id) {
 		Recording recording = recordings.findByIdAndUserId(id, userId)
 			.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "RECORDING_NOT_FOUND", "녹음을 찾을 수 없습니다."));
-		return new StatusResponse(recording.getStatus(), recordings.countCards(id));
+		return new StatusResponse(recording.getId(), recording.getStatus(), Math.toIntExact(recordings.countCards(id)));
 	}
 
 	// 앞 묶음의 감지가 끝났을 때 부른다. 워커 결과 API(#3)에서 쓴다.

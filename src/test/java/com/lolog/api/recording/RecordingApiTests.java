@@ -1,6 +1,8 @@
 package com.lolog.api.recording;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -9,14 +11,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.data.domain.Range;
 import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -29,6 +35,7 @@ import tools.jackson.databind.ObjectMapper;
 @SpringBootTest(properties = { "lolog.auth.dev-header-enabled=true", "lolog.auth.dev-test-token=test-token", "spring.jpa.hibernate.ddl-auto=validate" })
 @AutoConfigureMockMvc
 @Testcontainers
+@ExtendWith(OutputCaptureExtension.class)
 class RecordingApiTests {
 
 	@Container
@@ -49,7 +56,7 @@ class RecordingApiTests {
 	@Autowired
 	RecordingPartRepository parts;
 
-	@Autowired
+	@MockitoSpyBean
 	RecordingService service;
 
 	@Autowired
@@ -210,6 +217,55 @@ class RecordingApiTests {
 			.andExpect(jsonPath("$.cardCount").value(0));
 		mvc.perform(get("/api/recordings/" + recordingId).header("X-User-Id", "10"))
 			.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("RECORDING_NOT_FOUND"));
+	}
+
+	@Test
+	void 상태_응답은_recordingId_status_cardCount다() throws Exception {
+		long recordingId = recordingId("11", UUID.randomUUID().toString(), 1, false, ONE);
+		mvc.perform(get("/api/recordings/" + recordingId).header("X-User-Id", "11"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.length()").value(3))
+			.andExpect(jsonPath("$.recordingId").value(recordingId))
+			.andExpect(jsonPath("$.status").value("DETECTING"))
+			.andExpect(jsonPath("$.cardCount").value(0));
+	}
+
+	@Test
+	void clientRecordingId가_UUID_형식이_아니면_400이다() throws Exception {
+		for (String id : List.of("", "not-a-uuid", "zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz", "7f3c".repeat(16))) {
+			upload("12", body(id, 1, false, ONE)).andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+		}
+		upload("12", body(UUID.randomUUID().toString(), 1, false, ONE)).andExpect(status().isAccepted());
+	}
+
+	@Test
+	void 처리하지_못한_예외는_500이고_로그에_대화_글을_남기지_않는다(CapturedOutput output) throws Exception {
+		String conversation = "야 너 어제 그거 봤어";
+		doThrow(new IllegalStateException("바깥 " + conversation, new IllegalArgumentException("Failing row contains " + conversation)))
+			.when(service).status(anyLong(), anyLong());
+
+		mvc.perform(get("/api/recordings/1").header("X-User-Id", "13"))
+			.andExpect(status().isInternalServerError())
+			.andExpect(jsonPath("$.code").value("INTERNAL_ERROR"))
+			.andExpect(jsonPath("$.message").value("서버 오류가 발생했습니다."));
+
+		assertThat(output).contains("java.lang.IllegalStateException", "java.lang.IllegalArgumentException");
+		assertThat(output).doesNotContain(conversation);
+	}
+
+	@Test
+	void 주소의_id가_숫자가_아니면_400이다() throws Exception {
+		for (String id : List.of("abc", "99999999999999999999")) {
+			mvc.perform(get("/api/recordings/" + id).header("X-User-Id", "14"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+		}
+	}
+
+	@Test
+	void 없는_주소는_500이_아니라_404다() throws Exception {
+		mvc.perform(get("/api/no-such-path").header("X-User-Id", "15")).andExpect(status().isNotFound());
 	}
 
 }
