@@ -22,6 +22,7 @@ import org.springframework.data.domain.Range;
 import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.GenericContainer;
@@ -32,7 +33,9 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 // 실제 PostgreSQL과 Redis로 POST /api/recordings 규칙을 확인한다. Docker가 켜져 있어야 한다.
-@SpringBootTest(properties = { "lolog.auth.dev-header-enabled=true", "lolog.auth.dev-test-token=test-token", "spring.jpa.hibernate.ddl-auto=validate" })
+// local 프로필의 임시 인증을 쓴다. 접속 정보는 컨테이너 값이 덮어쓰므로 비밀번호는 자리만 채운다.
+@SpringBootTest(properties = { "POSTGRES_PASSWORD=unused", "lolog.auth.dev-test-token=test-token" })
+@ActiveProfiles("local")
 @AutoConfigureMockMvc
 @Testcontainers
 @ExtendWith(OutputCaptureExtension.class)

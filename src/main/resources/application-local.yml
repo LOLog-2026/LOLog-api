@@ -21,7 +21,5 @@ spring:
 
 lolog:
   auth:
-    # JWT 검증(#9) 전까지 X-User-Id 헤더를 회원 ID로 쓴다. 로컬 전용이며 배포 설정에 넣지 않는다.
-    dev-header-enabled: true
     # 앱의 local.properties에 있는 LOLOG_TEST_TOKEN과 같은 값을 쓴다.
     dev-test-token: ${LOLOG_TEST_TOKEN}
