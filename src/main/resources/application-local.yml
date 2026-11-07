@@ -18,3 +18,8 @@ spring:
     compose:
       # docker compose up -d로 직접 띄운다. 켜 두면 compose 값이 위 접속 정보를 덮어쓴다.
       enabled: false
+
+lolog:
+  auth:
+    # 앱의 local.properties에 있는 LOLOG_TEST_TOKEN과 같은 값을 쓴다.
+    dev-test-token: ${LOLOG_TEST_TOKEN}
