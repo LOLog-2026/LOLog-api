@@ -8,7 +8,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 // 실제 PostgreSQL에 Flyway 마이그레이션까지 적용해 컨텍스트를 띄운다. Docker가 켜져 있어야 한다.
-@SpringBootTest
+@SpringBootTest(properties = "INTERNAL_TOKEN=internal-test-token")
 @Testcontainers
 class LologApiApplicationTests {
 

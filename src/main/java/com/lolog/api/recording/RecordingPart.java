@@ -43,7 +43,8 @@ public class RecordingPart {
 	@Column(name = "duration_sec", nullable = false)
 	private Integer durationSec;
 
-	// 문장 목록 JSON. 감지가 끝나면 지워질 수 있어 null일 수 있다.
+	// 문장 목록 JSON. 감지가 끝나면 다음 묶음으로 넘길 부분만 남기고 지우므로 null일 수 있다.
+	@Setter
 	@JdbcTypeCode(SqlTypes.JSON)
 	@Column(columnDefinition = "json")
 	private String sentences;

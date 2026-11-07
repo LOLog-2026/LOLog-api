@@ -1,3 +1,8 @@
 spring:
   application:
     name: lolog-api
+
+lolog:
+  internal:
+    # /internal 주소의 X-Internal-Token 값. 워커·인증 서비스와 같은 값을 쓴다. 없으면 서버가 뜨지 않는다.
+    token: ${INTERNAL_TOKEN}
