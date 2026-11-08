@@ -1,6 +1,11 @@
 spring:
   application:
     name: lolog-api
+  servlet:
+    multipart:
+      # 워커가 올리는 완성 4컷 PNG는 20MB까지(API DTO 명세 5장). 넘으면 413 PAYLOAD_TOO_LARGE
+      max-file-size: 20MB
+      max-request-size: 21MB
 
 lolog:
   internal:

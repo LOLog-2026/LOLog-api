@@ -12,9 +12,11 @@ import java.time.OffsetDateTime;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.type.SqlTypes;
 
-// 카드로 만든 4컷만화. 콘티·이미지 칸은 #6에서 붙인다.
+// 카드로 만든 4컷만화. 워커가 카드 내용을 가져가면 STORYBOARD, 콘티를 보내면 DRAWING, 이미지를 보내면 DONE이다.
 @Entity
 @Table(name = "comics")
 @Getter
@@ -44,6 +46,15 @@ public class Comic {
 	@Column(name = "fail_reason", length = 500)
 	private String failReason;
 
+	// 워커가 보낸 콘티 JSON(LOLog-docs spec/storyboard.md v1). 서버는 기본만 검사하고 그대로 둔다.
+	@JdbcTypeCode(SqlTypes.JSON)
+	@Column(columnDefinition = "json")
+	private String storyboard;
+
+	// SeaweedFS 객체 키. DONE이 되면 생긴다.
+	@Column(name = "image_key", length = 255)
+	private String imageKey;
+
 	@CreationTimestamp
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private OffsetDateTime createdAt;
@@ -56,6 +67,24 @@ public class Comic {
 		this.cardId = cardId;
 		this.userId = userId;
 		this.cardSummary = cardSummary;
+	}
+
+	public boolean isFinished() {
+		return status == ComicStatus.DONE || status == ComicStatus.FAILED;
+	}
+
+	public void startStoryboard() {
+		status = ComicStatus.STORYBOARD;
+	}
+
+	public void saveStoryboard(String json) {
+		storyboard = json;
+		status = ComicStatus.DRAWING;
+	}
+
+	public void finish(String key) {
+		imageKey = key;
+		status = ComicStatus.DONE;
 	}
 
 	public void fail(String reason) {

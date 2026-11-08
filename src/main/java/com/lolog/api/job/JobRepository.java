@@ -15,6 +15,8 @@ public interface JobRepository extends JpaRepository<Job, Long> {
 	@Query("select j.id from Job j where j.jobType = :type and j.status = 'QUEUED' and j.attempts = 0 and j.createdAt < :before order by j.id")
 	List<Long> findUnpublishedIds(@Param("type") String type, @Param("before") OffsetDateTime before);
 
+	Optional<Job> findByComicId(Long comicId);
+
 	@Query("select j.jobType from Job j where j.id = :id")
 	Optional<String> findTypeById(@Param("id") Long id);
 
