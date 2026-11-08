@@ -1,5 +1,5 @@
 # LOLog 교육기관 서버 스택(LOLog-docs deployment.md 1·3장).
-# 교육기관 서버는 여러 학생이 같이 쓴다. 80은 학교 Nginx가 쥐고 있어서,
+# 교육기관 서버는 여러 학생이 같이 쓴다. 80·443은 학교 Nginx가 쥐고 있어서(HTTPS도 거기서 끝난다),
 # 우리 nginx 컨테이너는 개인 포트 하나만 127.0.0.1에 열고 학교 Nginx가 lolog.java21.net을 그 포트로 넘긴다.
 # Jetson 터널용 api·Redis 포트도 개인 포트 범위 안에서 127.0.0.1에만 연다.
 # 값은 같은 폴더의 .env에서 읽는다(.env.example 참고).
