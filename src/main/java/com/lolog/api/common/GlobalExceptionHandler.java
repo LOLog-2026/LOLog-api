@@ -12,6 +12,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import tools.jackson.core.JacksonException;
 
 @RestControllerAdvice
@@ -37,6 +39,19 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(HttpMessageNotReadableException.class)
 	public ResponseEntity<ErrorResponse> handleNotReadable(HttpMessageNotReadableException e) {
 		return invalid(e.getCause() instanceof JacksonException je ? path(je.getPath()) : null);
+	}
+
+	// multipart의 파트가 빠짐(예: 이미지 file)
+	@ExceptionHandler(MissingServletRequestPartException.class)
+	public ResponseEntity<ErrorResponse> handleMissingPart(MissingServletRequestPartException e) {
+		return invalid(e.getRequestPartName());
+	}
+
+	// 완성 이미지 20MB 초과(spring.servlet.multipart.max-file-size)
+	@ExceptionHandler(MaxUploadSizeExceededException.class)
+	public ResponseEntity<ErrorResponse> handleTooLarge(MaxUploadSizeExceededException e) {
+		return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+			.body(new ErrorResponse("PAYLOAD_TOO_LARGE", "파일이 너무 큽니다."));
 	}
 
 	@ExceptionHandler(MethodArgumentTypeMismatchException.class)

@@ -1,14 +1,22 @@
 package com.lolog.api.comic;
 
+import jakarta.persistence.LockModeType;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface ComicRepository extends JpaRepository<Comic, Long> {
 
 	List<Comic> findByCardIdOrderByIdDesc(Long cardId);
+
+	// 워커의 콘티·이미지·fail이 겹쳐도 한 번에 하나씩 상태를 바꾸게 만화 행을 잠근다.
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select m from Comic m where m.id = :id")
+	Optional<Comic> findByIdForUpdate(@Param("id") Long id);
 
 	boolean existsByCardIdAndStatusIn(Long cardId, Collection<ComicStatus> statuses);
 
