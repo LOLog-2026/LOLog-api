@@ -69,10 +69,12 @@ public class DetectResultService {
 				return List.<Long>of();
 			}
 			validate(result.cards());
-			result.cards().forEach(card -> cards.save(toCard(recording, card)));
-			// 새 카드가 1개 이상이면 묶음마다 한 번 알린다(FR-NOTI-01). 같은 jobId가 다시 오면 위에서 끝나 두 번 가지 않는다.
-			if (!result.cards().isEmpty()) {
-				push.notify(recording.getUserId(), PushService.cardsCreated(recordingId, result.cards().size()));
+			List<DetectedCard> fresh = fresh(recordingId, result.cards());
+			fresh.forEach(card -> cards.save(toCard(recording, card)));
+			// 새 카드가 1개 이상이면 묶음마다 한 번 알린다(FR-NOTI-01). 버린 카드는 세지 않는다.
+			// 같은 jobId가 다시 오면 위에서 끝나 두 번 가지 않는다.
+			if (!fresh.isEmpty()) {
+				push.notify(recording.getUserId(), PushService.cardsCreated(recordingId, fresh.size()));
 			}
 
 			boolean carryOnly = jobs.existsByRecordingPartIdAndStatusAndIdNot(part.getId(), "DONE", job.getId());
@@ -156,6 +158,16 @@ public class DetectResultService {
 				}
 			}
 		}
+	}
+
+	// 앞 묶음에서 이미 카드가 된 이야기는 버린다(기능 명세 "묶음 경계" ③, API DTO 명세 DetectResult).
+	// 넘긴 글에 그 이야기가 섞여 다시 감지된 경우라, 같은 녹음의 카드와 시간 범위가 겹치면 같은 이야기로 본다.
+	// 이번 결과 안의 카드끼리는 비교하지 않는다(워커가 겹치지 않게 고른다).
+	private List<DetectedCard> fresh(long recordingId, List<DetectedCard> detected) {
+		List<Card> existing = cards.findByRecordingIdOrderById(recordingId);
+		return detected.stream()
+			.filter(d -> existing.stream().noneMatch(c -> d.startMs() < c.getEndMs() && c.getStartMs() < d.endMs()))
+			.toList();
 	}
 
 	private Card toCard(Recording recording, DetectedCard detected) {

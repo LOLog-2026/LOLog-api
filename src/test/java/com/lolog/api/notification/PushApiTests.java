@@ -266,6 +266,23 @@ class PushApiTests {
 	}
 
 	@Test
+	void 앞_카드와_겹쳐_버린_카드는_cardCount에_세지_않고_모두_버렸으면_보내지_않는다() throws Exception {
+		long me = newUser();
+		String token = newToken();
+		putToken(me, token);
+		long[] rec = uploadOnePart(me);
+		// 같은 녹음에 1000~2000 카드가 이미 있다고 둔다.
+		Card old = new Card(rec[0], me, "웃김", "먼저 생긴 카드", 1000, 2000, OffsetDateTime.parse("2026-11-10T12:30:01+09:00"));
+		old.addSpeaker("화자1");
+		old.addLine(1, "화자1", "앞 이야기", null, null);
+		cards.save(old);
+
+		detectResult(rec[0], rec[1], CARD).andExpect(status().isNoContent());
+
+		verify(sender, after(1000).never()).send(anyList(), any());
+	}
+
+	@Test
 	void 새_카드가_없으면_보내지_않는다() throws Exception {
 		long me = newUser();
 		putToken(me, newToken());

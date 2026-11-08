@@ -178,6 +178,25 @@ class WorkerApiTests {
 	}
 
 	@Test
+	void 앞_묶음_카드와_시간이_겹치는_카드는_버린다() throws Exception {
+		String id = UUID.randomUUID().toString();
+		long recordingId = upload("105", id, 1, false, TWO);
+		upload("105", id, 2, true, "[{\"startMs\":5000,\"endMs\":6000,\"text\":\"뒤\"}]");
+		// 1묶음: 1000~2000 카드
+		result(recordingId, jobId(recordingId, 0), 1, "3000", CARD).andExpect(status().isNoContent());
+
+		// 2묶음: 같은 이야기(1500~2500, 겹침)와 새 이야기(5000~6000), 끝이 맞닿기만 한 이야기(2000~3000)
+		String overlap = CARD.replace("\"startMs\":1000,\"endMs\":2000", "\"startMs\":1500,\"endMs\":2500");
+		String fresh = CARD.replace("\"startMs\":1000,\"endMs\":2000", "\"startMs\":5000,\"endMs\":6000");
+		String touching = CARD.replace("\"startMs\":1000,\"endMs\":2000", "\"startMs\":2000,\"endMs\":3000");
+		result(recordingId, jobId(recordingId, 1), 2, "null", overlap + "," + fresh + "," + touching)
+			.andExpect(status().isNoContent());
+
+		assertThat(cards.findByRecordingIdOrderById(recordingId)).extracting("startMs")
+			.containsExactly(1000L, 5000L, 2000L);
+	}
+
+	@Test
 	void 같은_jobId가_다시_오면_204로_받고_무시한다() throws Exception {
 		long recordingId = upload("102", UUID.randomUUID().toString(), 1, true, TWO);
 		long jobId = jobId(recordingId, 0);
