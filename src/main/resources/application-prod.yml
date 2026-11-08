@@ -22,3 +22,7 @@ spring:
   docker:
     compose:
       enabled: false
+
+server:
+  # HTTPS는 Nginx가 끝낸다. Nginx가 붙인 X-Forwarded-* 헤더로 원래 주소(https, 호스트)를 알아낸다(deployment.md 4장).
+  forward-headers-strategy: framework

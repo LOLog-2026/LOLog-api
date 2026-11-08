@@ -1,0 +1,11 @@
+# 이미지에 넣지 않는 것. 비밀값(.env)과 빌드 결과, 로컬 전용 도구.
+.env
+.env.*
+.git/
+.idea/
+.vscode/
+target/
+scripts/
+compose.yaml
+HELP.md
+*.iml
