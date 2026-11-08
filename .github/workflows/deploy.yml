@@ -1,0 +1,78 @@
+# main에 머지하면 테스트 → 이미지 빌드(GHCR, 태그는 커밋 SHA) → 서버 배포(deployment.md 8장).
+# lolog-auth 레포에도 같은 파일을 두고 SERVICE와 IMAGE만 auth로 바꾼다. 서버 쪽 설명은 deploy/README.md.
+# 레포가 public이라 PR에서는 돌지 않고 main push에서만 돈다.
+#
+# 필요한 secrets (레포 Settings → Secrets and variables → Actions, 또는 org secrets):
+#   DEPLOY_HOST         서버 주소(s2.java21.net)
+#   DEPLOY_PORT         SSH 포트(8822)
+#   DEPLOY_USER         서버 계정(학번)
+#   DEPLOY_SSH_KEY      배포 계정 개인 키(ed25519). 서버에는 deploy/scripts/ssh-deploy-gate.sh로 묶어 등록한다
+#   DEPLOY_KNOWN_HOSTS  `ssh-keyscan -p <포트> <서버>` 결과
+name: deploy
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  SERVICE: api   # lolog-auth 레포에서는 auth
+  IMAGE: ghcr.io/lolog-2026/lolog-api   # lolog-auth 레포에서는 ghcr.io/lolog-2026/lolog-auth
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      # Testcontainers가 러너의 Docker를 쓴다.
+      - run: ./mvnw -B verify
+
+  image:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: image
+    runs-on: ubuntu-latest
+    environment: production
+    permissions: {}
+    steps:
+      - name: SSH 준비
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+      - name: 서버에 배포
+        run: |
+          ssh -p "${{ secrets.DEPLOY_PORT || 22 }}" \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            deploy "$SERVICE" "$GITHUB_SHA"

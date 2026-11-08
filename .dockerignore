@@ -6,6 +6,7 @@
 .vscode/
 target/
 scripts/
+deploy/
 compose.yaml
 HELP.md
 *.iml
