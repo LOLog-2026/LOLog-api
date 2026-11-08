@@ -1,6 +1,11 @@
 # 배포용 설정. 접속 값은 서버의 환경 변수 DB_URL, DB_USERNAME, DB_PASSWORD로 넣는다.
-# 스키마는 DB_URL의 currentSchema로 지정한다.
+# 스키마는 DB_URL의 currentSchema로 지정한다. Redis는 REDIS_HOST, REDIS_PORT, REDIS_PASSWORD(deployment.md 4장).
 spring:
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      password: ${REDIS_PASSWORD}
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
