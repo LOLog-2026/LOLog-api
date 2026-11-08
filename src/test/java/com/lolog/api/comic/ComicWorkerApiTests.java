@@ -229,6 +229,31 @@ class ComicWorkerApiTests {
 	}
 
 	@Test
+	void 이미지와_fail이_동시에_와도_교착_없이_하나로_끝난다() throws Exception {
+		byte[] png = png(800, 3152);
+		for (int i = 0; i < 5; i++) {
+			Made m = comic();
+			long jobId = jdbc.queryForObject("select id from jobs where comic_id = ?", Long.class, m.comicId());
+			java.util.List<java.util.concurrent.Callable<Integer>> calls = java.util.List.of(
+					() -> image(m.comicId(), png).andReturn().getResponse().getStatus(),
+					() -> mvc.perform(post("/internal/jobs/" + jobId + "/fail").header("X-Internal-Token", TOKEN)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"reason\":\"겹침\"}")).andReturn().getResponse().getStatus());
+			try (var pool = java.util.concurrent.Executors.newFixedThreadPool(2)) {
+				for (var f : pool.invokeAll(calls)) {
+					assertThat(f.get()).isEqualTo(204);
+				}
+			}
+			String status = comicStatus(m.comicId());
+			String jobStatus = jdbc.queryForObject("select status from jobs where id = ?", String.class, jobId);
+			assertThat(status).isIn("DONE", "FAILED");
+			assertThat(jobStatus).isEqualTo(status);
+			int count = jdbc.queryForObject("select comic_count from cards where id = ?", Integer.class, m.cardId());
+			assertThat(count).isEqualTo("DONE".equals(status) ? 1 : 0);
+		}
+	}
+
+	@Test
 	void 없는_만화는_404이고_토큰이_없으면_401이다() throws Exception {
 		source(999_999).andExpect(status().isNotFound());
 		storyboard(999_999, "{}").andExpect(status().isNotFound());

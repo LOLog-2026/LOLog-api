@@ -63,12 +63,15 @@ public class ComicService {
 	// 워커가 만화 작업의 실패를 알렸을 때. 같은 jobId가 다시 오면 무시하므로 횟수를 두 번 돌려주지 않는다.
 	public void fail(long jobId, String reason) {
 		tx.executeWithoutResult(status -> {
-			Job job = jobs.findByIdForUpdate(jobId).orElseThrow(() -> ApiException.invalid(null, "작업을 찾을 수 없습니다."));
+			Long comicId = jobs.findComicIdById(jobId)
+				.orElseThrow(() -> ApiException.invalid(null, "작업을 찾을 수 없습니다."));
+			// 잠금 순서는 이미지 받기(ComicWorkerService)와 같게 만화 → 작업이다. 순서가 다르면 둘이 겹칠 때 교착 상태가 된다.
+			Comic comic = comics.findByIdForUpdate(comicId).orElseThrow();
+			Job job = jobs.findByIdForUpdate(jobId).orElseThrow();
 			if (job.isFinished()) {
 				return;
 			}
 			job.fail(reason);
-			Comic comic = comics.findById(job.getComicId()).orElseThrow();
 			comic.fail(reason);
 			// 카드를 지웠으면(card_id가 null) 돌려줄 횟수가 없다.
 			if (comic.getCardId() != null) {

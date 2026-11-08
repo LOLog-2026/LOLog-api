@@ -17,6 +17,10 @@ public interface JobRepository extends JpaRepository<Job, Long> {
 
 	Optional<Job> findByComicId(Long comicId);
 
+	// 잠그기 전에 엔티티를 읽어 두면 뒤의 잠금 조회가 그 옛 값을 돌려주므로, 만화 ID만 꺼낸다.
+	@Query("select j.comicId from Job j where j.id = :id")
+	Optional<Long> findComicIdById(@Param("id") Long id);
+
 	@Query("select j.jobType from Job j where j.id = :id")
 	Optional<String> findTypeById(@Param("id") Long id);
 
