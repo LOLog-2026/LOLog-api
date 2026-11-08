@@ -61,12 +61,16 @@ public class JwtAuthConfig {
 			.authorizeHttpRequests(auth -> auth.requestMatchers(HttpMethod.GET, "/api/health").permitAll()
 				.anyRequest().authenticated())
 			.oauth2ResourceServer(oauth -> oauth.jwt(jwt -> jwt.decoder(decoder))
+				// 검사기는 모두 돌고 오류를 모은다. 만료된 토큰은 Redis와 관계없이 TOKEN_EXPIRED로 답해 앱이 갱신하게 한다.
 				.authenticationEntryPoint((request, response, e) -> {
-					if (hasError(e, UNAVAILABLE)) {
+					if (hasError(e, EXPIRED)) {
+						UnauthorizedWriter.write(response, true);
+					}
+					else if (hasError(e, UNAVAILABLE)) {
 						UnauthorizedWriter.writeInternalError(response);
 					}
 					else {
-						UnauthorizedWriter.write(response, hasError(e, EXPIRED));
+						UnauthorizedWriter.write(response, false);
 					}
 				}))
 			.exceptionHandling(e -> e.authenticationEntryPoint((request, response, ex) -> UnauthorizedWriter.write(response)))

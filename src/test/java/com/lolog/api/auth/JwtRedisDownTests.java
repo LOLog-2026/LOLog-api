@@ -4,6 +4,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -34,6 +35,14 @@ class JwtRedisDownTests {
 			.andExpect(status().isInternalServerError())
 			.andExpect(jsonPath("$.code").value("INTERNAL_ERROR"))
 			.andExpect(jsonPath("$.field").isEmpty());
+	}
+
+	@Test
+	void 만료된_토큰은_Redis와_관계없이_401_TOKEN_EXPIRED다() throws Exception {
+		String expired = TestTokens.token("1", "access", Duration.ofMinutes(-5), TestTokens.SECRET);
+		mvc.perform(get("/api/recordings/999999").header("Authorization", "Bearer " + expired))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.code").value("TOKEN_EXPIRED"));
 	}
 
 }
