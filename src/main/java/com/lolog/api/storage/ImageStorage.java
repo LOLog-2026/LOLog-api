@@ -13,7 +13,7 @@ import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
-// 만화 이미지를 SeaweedFS 버킷에 두고 꺼낸다. 버킷은 비공개이고, 앱에는 잠깐 열리는 서명 주소만 준다.
+// 만화 이미지를 S3 호환 저장소(배포는 교육기관 MinIO, 로컬은 SeaweedFS) 버킷에 두고 꺼낸다. 버킷은 비공개이고, 앱에는 잠깐 열리는 서명 주소만 준다.
 @Component
 public class ImageStorage {
 
@@ -35,7 +35,7 @@ public class ImageStorage {
 		return "users/" + userId + "/comics/" + comicId + ".png";
 	}
 
-	// 같은 키면 덮어쓴다. 버킷이 아직 없으면(처음 띄운 로컬 SeaweedFS) 만들고 한 번 더 올린다.
+	// 같은 키면 덮어쓴다. 버킷이 아직 없으면(처음 띄운 로컬 SeaweedFS. 배포 MinIO는 미리 만들어 둠) 만들고 한 번 더 올린다.
 	public void putPng(String key, byte[] png) {
 		try {
 			put(key, png);

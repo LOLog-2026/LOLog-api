@@ -58,7 +58,7 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc</artifactId>
 		</dependency>
-		<!-- SeaweedFS(S3 호환)에 만화 이미지를 올리고 미리 서명한 주소를 만든다. 비동기 클라이언트(netty)는 쓰지 않는다. -->
+		<!-- S3 호환 저장소(배포는 교육기관 MinIO, 로컬은 SeaweedFS)에 만화 이미지를 올리고 미리 서명한 주소를 만든다. 비동기 클라이언트(netty)는 쓰지 않는다. -->
 		<dependency>
 			<groupId>software.amazon.awssdk</groupId>
 			<artifactId>s3</artifactId>
