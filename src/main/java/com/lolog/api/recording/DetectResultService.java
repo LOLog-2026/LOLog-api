@@ -69,10 +69,12 @@ public class DetectResultService {
 				return List.<Long>of();
 			}
 			validate(result.cards());
-			fresh(recordingId, result.cards()).forEach(card -> cards.save(toCard(recording, card)));
-			// 새 카드가 1개 이상이면 묶음마다 한 번 알린다(FR-NOTI-01). 같은 jobId가 다시 오면 위에서 끝나 두 번 가지 않는다.
-			if (!result.cards().isEmpty()) {
-				push.notify(recording.getUserId(), PushService.cardsCreated(recordingId, result.cards().size()));
+			List<DetectedCard> fresh = fresh(recordingId, result.cards());
+			fresh.forEach(card -> cards.save(toCard(recording, card)));
+			// 새 카드가 1개 이상이면 묶음마다 한 번 알린다(FR-NOTI-01). 버린 카드는 세지 않는다.
+			// 같은 jobId가 다시 오면 위에서 끝나 두 번 가지 않는다.
+			if (!fresh.isEmpty()) {
+				push.notify(recording.getUserId(), PushService.cardsCreated(recordingId, fresh.size()));
 			}
 
 			boolean carryOnly = jobs.existsByRecordingPartIdAndStatusAndIdNot(part.getId(), "DONE", job.getId());
