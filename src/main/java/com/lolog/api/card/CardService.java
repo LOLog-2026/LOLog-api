@@ -12,6 +12,7 @@ import com.lolog.api.card.CardDtos.SpeakerUpdate;
 import com.lolog.api.comic.ComicRepository;
 import com.lolog.api.comic.ComicStatus;
 import com.lolog.api.common.ApiException;
+import com.lolog.api.common.PageRequestParams;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -27,8 +28,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class CardService {
 
 	static final int MAX_COMICS = 3;
-	static final int DEFAULT_SIZE = 20;
-	static final int MAX_SIZE = 50;
 	static final int MAX_NAME = 10;
 	static final int MAX_PLACE = 20;
 	static final int MAX_TEXT = 200;
@@ -43,13 +42,9 @@ public class CardService {
 
 	@Transactional(readOnly = true)
 	public CardPage list(long userId, String cursor, Integer size) {
-		int limit = size == null ? DEFAULT_SIZE : size;
-		if (limit < 1 || limit > MAX_SIZE) {
-			throw ApiException.invalid("size", "size는 1~50입니다.");
-		}
-		// 커서는 마지막으로 받은 카드 ID다. 앱은 값의 뜻을 해석하지 않고 그대로 돌려보낸다.
-		Long before = parseCursor(cursor);
-		List<Card> page = cards.findPage(userId, before, Limit.of(limit + 1));
+		PageRequestParams params = PageRequestParams.of(cursor, size);
+		int limit = params.size();
+		List<Card> page = cards.findPage(userId, params.before(), Limit.of(limit + 1));
 		boolean more = page.size() > limit;
 		List<Card> shown = more ? page.subList(0, limit) : page;
 		List<Long> ids = shown.stream().map(Card::getId).toList();
@@ -179,16 +174,6 @@ public class CardService {
 
 	private static String trimOrNull(String value) {
 		return value == null ? null : value.strip();
-	}
-
-	private static Long parseCursor(String cursor) {
-		if (cursor == null) {
-			return null;
-		}
-		if (!cursor.matches("\\d{1,18}")) {
-			throw ApiException.invalid("cursor", "cursor가 올바르지 않습니다.");
-		}
-		return Long.parseLong(cursor);
 	}
 
 	private static Map<Long, Long> toMap(List<Object[]> rows) {
