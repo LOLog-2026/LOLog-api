@@ -12,6 +12,7 @@ import jakarta.persistence.Table;
 import java.time.OffsetDateTime;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
@@ -32,9 +33,11 @@ public class CardLine {
 	@Column(name = "line_no", nullable = false)
 	private Integer lineNo;
 
+	@Setter
 	@Column(name = "speaker_key", nullable = false, length = 20)
 	private String speakerKey;
 
+	@Setter
 	@Column(nullable = false, columnDefinition = "text")
 	private String text;
 

@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
@@ -41,6 +42,7 @@ public class Card {
 	@Column(nullable = false, columnDefinition = "text")
 	private String summary;
 
+	@Setter
 	@Column(length = 200)
 	private String place;
 
@@ -53,6 +55,10 @@ public class Card {
 	// 이야기를 녹음한 시각 = 녹음 시작 시각 + startMs
 	@Column(name = "recorded_at", nullable = false)
 	private OffsetDateTime recordedAt;
+
+	// 만든 만화 횟수(V2). 만화 요청 때 +1, 실패하면 −1, 만화를 지워도 줄지 않는다. comicRemaining = 3 − comicCount
+	@Column(name = "comic_count", nullable = false)
+	private int comicCount;
 
 	@OneToMany(mappedBy = "card", cascade = CascadeType.ALL, orphanRemoval = true)
 	@OrderBy("speakerKey")
