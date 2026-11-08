@@ -51,7 +51,7 @@ public class Comic {
 	@Column(columnDefinition = "json")
 	private String storyboard;
 
-	// SeaweedFS 객체 키. DONE이 되면 생긴다.
+	// 저장소(S3 호환) 객체 키. DONE이 되면 생긴다.
 	@Column(name = "image_key", length = 255)
 	private String imageKey;
 

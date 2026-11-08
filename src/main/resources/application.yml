@@ -24,14 +24,14 @@ lolog:
   internal:
     # /internal 주소의 X-Internal-Token 값. 워커·인증 서비스와 같은 값을 쓴다. 없으면 서버가 뜨지 않는다.
     token: ${INTERNAL_TOKEN}
-  # 만화 이미지 저장소(SeaweedFS, S3 호환). 환경 변수 이름은 LOLog-docs deployment.md 5장과 같다.
+  # 만화 이미지 저장소(S3 호환. 배포는 교육기관 MinIO, 로컬은 SeaweedFS). 환경 변수 이름은 LOLog-docs deployment.md 5장과 같다.
   storage:
     # 업로드·삭제에 쓰는 서버 안 주소
     endpoint: ${S3_ENDPOINT}
     # imageUrl 서명에 쓰는 공개 주소. 서명에 주소가 들어가므로 앱이 여는 주소와 같아야 한다.
     public-endpoint: ${S3_PUBLIC_ENDPOINT}
     bucket: ${S3_BUCKET}
-    # SDK가 요구하는 값일 뿐이라 아무 값이나 된다.
+    # 서명에 들어가는 지역 이름이라 저장소 지역과 맞아야 한다. 교육기관 MinIO 안내 자료와 같은 us-east-1로 둔다.
     region: ${S3_REGION:us-east-1}
     access-key: ${S3_ACCESS_KEY}
     secret-key: ${S3_SECRET_KEY}
