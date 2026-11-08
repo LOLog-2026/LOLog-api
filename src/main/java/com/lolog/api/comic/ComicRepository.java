@@ -4,6 +4,7 @@ import jakarta.persistence.LockModeType;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -17,6 +18,16 @@ public interface ComicRepository extends JpaRepository<Comic, Long> {
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select m from Comic m where m.id = :id")
 	Optional<Comic> findByIdForUpdate(@Param("id") Long id);
+
+	Optional<Comic> findByIdAndUserId(Long id, Long userId);
+
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select m from Comic m where m.id = :id and m.userId = :userId")
+	Optional<Comic> findByIdAndUserIdForUpdate(@Param("id") Long id, @Param("userId") Long userId);
+
+	// 최신순(id 내림차순). before가 null이면 처음부터.
+	@Query("select m from Comic m where m.userId = :userId and (:before is null or m.id < :before) order by m.id desc")
+	List<Comic> findPage(@Param("userId") Long userId, @Param("before") Long before, Limit limit);
 
 	boolean existsByCardIdAndStatusIn(Long cardId, Collection<ComicStatus> statuses);
 
