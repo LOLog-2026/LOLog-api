@@ -11,7 +11,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
 
 // 워커·인증 서비스가 부르는 /internal 주소. 모든 프로필에서 X-Internal-Token으로 막는다.
-// 다른 필터 체인보다 먼저 본다(@Order(1)). /api 쪽은 DevAuthConfig(local)나 NoCurrentUserConfig(그 밖)가 맡는다.
+// 다른 필터 체인보다 먼저 본다(@Order(1)). 나머지(/api 등)는 JwtAuthConfig(@Order(2))가 맡는다.
 @Configuration
 public class InternalSecurityConfig {
 

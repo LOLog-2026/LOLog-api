@@ -20,9 +20,6 @@ spring:
       enabled: false
 
 lolog:
-  auth:
-    # 앱의 local.properties에 있는 LOLOG_TEST_TOKEN과 같은 값을 쓴다.
-    dev-test-token: ${LOLOG_TEST_TOKEN}
   # 로컬 SeaweedFS(compose.yaml). 접근 키(S3_ACCESS_KEY, S3_SECRET_KEY)는 .env에서 읽는다.
   storage:
     endpoint: http://localhost:8333

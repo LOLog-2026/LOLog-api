@@ -1,5 +1,6 @@
 package com.lolog.api.comic;
 
+import com.lolog.api.auth.TestTokens;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -25,7 +26,6 @@ import org.springframework.data.domain.Range;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.testcontainers.containers.GenericContainer;
@@ -36,9 +36,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 // 만화 요청과 만화 작업 실패를 실제 PostgreSQL·Redis로 확인한다. Docker가 켜져 있어야 한다.
-@SpringBootTest(properties = { "POSTGRES_PASSWORD=unused", "lolog.auth.dev-test-token=test-token",
-		"INTERNAL_TOKEN=internal-test-token" })
-@ActiveProfiles("local")
+@SpringBootTest
 @AutoConfigureMockMvc
 @Testcontainers
 class ComicApiTests {
@@ -78,7 +76,7 @@ class ComicApiTests {
 	}
 
 	private ResultActions request(long userId, long cardId) throws Exception {
-		return mvc.perform(post("/api/cards/" + cardId + "/comics").header("X-User-Id", String.valueOf(userId)));
+		return mvc.perform(post("/api/cards/" + cardId + "/comics").header("Authorization", TestTokens.bearer(String.valueOf(userId))));
 	}
 
 	private long comicId(long userId, long cardId) throws Exception {
@@ -133,10 +131,10 @@ class ComicApiTests {
 		assertThat(messages.getFirst().get("comicId").asLong()).isEqualTo(comicId);
 		assertThat(messages.getFirst().size()).isEqualTo(3);
 
-		mvc.perform(get("/api/cards/" + cardId).header("X-User-Id", String.valueOf(me)))
+		mvc.perform(get("/api/cards/" + cardId).header("Authorization", TestTokens.bearer(String.valueOf(me))))
 			.andExpect(jsonPath("$.comicRemaining").value(2))
 			.andExpect(jsonPath("$.comics[0].status").value("QUEUED"));
-		mvc.perform(post("/api/cards/" + cardId + "/comics").header("X-User-Id", String.valueOf(USERS.incrementAndGet())))
+		mvc.perform(post("/api/cards/" + cardId + "/comics").header("Authorization", TestTokens.bearer(String.valueOf(USERS.incrementAndGet()))))
 			.andExpect(status().isNotFound())
 			.andExpect(jsonPath("$.code").value("CARD_NOT_FOUND"));
 	}
@@ -208,7 +206,7 @@ class ComicApiTests {
 		long cardId = card(me);
 		long comicId = comicId(me, cardId);
 		finish(comicId);
-		mvc.perform(delete("/api/cards/" + cardId).header("X-User-Id", String.valueOf(me)))
+		mvc.perform(delete("/api/cards/" + cardId).header("Authorization", TestTokens.bearer(String.valueOf(me))))
 			.andExpect(status().isNoContent());
 		jdbc.update("update comics set status = 'DRAWING' where id = ?", comicId);
 

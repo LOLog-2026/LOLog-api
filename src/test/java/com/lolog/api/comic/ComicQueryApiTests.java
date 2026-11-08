@@ -1,5 +1,6 @@
 package com.lolog.api.comic;
 
+import com.lolog.api.auth.TestTokens;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -25,7 +26,6 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -40,10 +40,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 // 앱의 만화 목록·자세히·지우기를 실제 PostgreSQL·Redis·SeaweedFS로 확인한다. Docker가 켜져 있어야 한다.
-// local 프로필은 내 PC의 .env를 읽으므로, 토큰은 시험 값으로 직접 덮어쓴다.
-@SpringBootTest(properties = { "POSTGRES_PASSWORD=unused", "lolog.auth.dev-test-token=test-token",
-		"INTERNAL_TOKEN=internal-test-token" })
-@ActiveProfiles("local")
+@SpringBootTest
 @AutoConfigureMockMvc
 @Testcontainers
 class ComicQueryApiTests {
@@ -103,7 +100,7 @@ class ComicQueryApiTests {
 	}
 
 	private long request(long userId, long cardId) throws Exception {
-		String body = mvc.perform(post("/api/cards/" + cardId + "/comics").header("X-User-Id", String.valueOf(userId)))
+		String body = mvc.perform(post("/api/cards/" + cardId + "/comics").header("Authorization", TestTokens.bearer(String.valueOf(userId))))
 			.andExpect(status().isAccepted()).andReturn().getResponse().getContentAsString();
 		return objectMapper.readTree(body).get("comicId").asLong();
 	}
@@ -128,7 +125,7 @@ class ComicQueryApiTests {
 		long other = USERS.incrementAndGet();
 		request(other, card(other, "남의 카드"));
 
-		String cursor = mvc.perform(get("/api/comics?size=1").header("X-User-Id", String.valueOf(me)))
+		String cursor = mvc.perform(get("/api/comics?size=1").header("Authorization", TestTokens.bearer(String.valueOf(me))))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.comics.length()").value(1))
 			.andExpect(jsonPath("$.comics[0].id").value(second))
@@ -140,14 +137,14 @@ class ComicQueryApiTests {
 			.andExpect(jsonPath("$.nextCursor").isString())
 			.andReturn().getResponse().getContentAsString().replaceAll(".*\"nextCursor\":\"([^\"]+)\".*", "$1");
 
-		mvc.perform(get("/api/comics?size=1&cursor=" + cursor).header("X-User-Id", String.valueOf(me)))
+		mvc.perform(get("/api/comics?size=1&cursor=" + cursor).header("Authorization", TestTokens.bearer(String.valueOf(me))))
 			.andExpect(jsonPath("$.comics.length()").value(1))
 			.andExpect(jsonPath("$.comics[0].id").value(first))
 			.andExpect(jsonPath("$.comics[0].status").value("DONE"))
 			.andExpect(jsonPath("$.comics[0].imageUrl").isString())
 			.andExpect(jsonPath("$.nextCursor").isEmpty());
 
-		mvc.perform(get("/api/comics?size=0").header("X-User-Id", String.valueOf(me)))
+		mvc.perform(get("/api/comics?size=0").header("Authorization", TestTokens.bearer(String.valueOf(me))))
 			.andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").value("size"));
 	}
 
@@ -157,10 +154,10 @@ class ComicQueryApiTests {
 		long cardId = card(me, "치킨 주문하다 생긴 일");
 		long comicId = request(me, cardId);
 		byte[] png = finish(me, comicId);
-		mvc.perform(delete("/api/cards/" + cardId).header("X-User-Id", String.valueOf(me)))
+		mvc.perform(delete("/api/cards/" + cardId).header("Authorization", TestTokens.bearer(String.valueOf(me))))
 			.andExpect(status().isNoContent());
 
-		String body = mvc.perform(get("/api/comics/" + comicId).header("X-User-Id", String.valueOf(me)))
+		String body = mvc.perform(get("/api/comics/" + comicId).header("Authorization", TestTokens.bearer(String.valueOf(me))))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.length()").value(6))
 			.andExpect(jsonPath("$.cardId").isEmpty())
@@ -174,7 +171,7 @@ class ComicQueryApiTests {
 		assertThat(image.statusCode()).isEqualTo(200);
 		assertThat(image.body()).isEqualTo(png);
 
-		mvc.perform(get("/api/comics/" + comicId).header("X-User-Id", String.valueOf(USERS.incrementAndGet())))
+		mvc.perform(get("/api/comics/" + comicId).header("Authorization", TestTokens.bearer(String.valueOf(USERS.incrementAndGet()))))
 			.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("COMIC_NOT_FOUND"));
 	}
 
@@ -186,18 +183,18 @@ class ComicQueryApiTests {
 		finish(me, comicId);
 		String key = ImageStorage.comicKey(me, comicId);
 
-		mvc.perform(delete("/api/comics/" + comicId).header("X-User-Id", String.valueOf(USERS.incrementAndGet())))
+		mvc.perform(delete("/api/comics/" + comicId).header("Authorization", TestTokens.bearer(String.valueOf(USERS.incrementAndGet()))))
 			.andExpect(status().isNotFound());
-		mvc.perform(delete("/api/comics/" + comicId).header("X-User-Id", String.valueOf(me)))
+		mvc.perform(delete("/api/comics/" + comicId).header("Authorization", TestTokens.bearer(String.valueOf(me))))
 			.andExpect(status().isNoContent());
 
 		assertThat(jdbc.queryForObject("select count(*) from comics where id = ?", Long.class, comicId)).isZero();
 		assertThat(jdbc.queryForObject("select count(*) from jobs where comic_id = ?", Long.class, comicId)).isZero();
 		assertThatThrownBy(() -> storage.get(key)).isInstanceOf(NoSuchKeyException.class);
-		mvc.perform(get("/api/cards/" + cardId).header("X-User-Id", String.valueOf(me)))
+		mvc.perform(get("/api/cards/" + cardId).header("Authorization", TestTokens.bearer(String.valueOf(me))))
 			.andExpect(jsonPath("$.comicRemaining").value(2))
 			.andExpect(jsonPath("$.comics.length()").value(0));
-		mvc.perform(delete("/api/comics/" + comicId).header("X-User-Id", String.valueOf(me)))
+		mvc.perform(delete("/api/comics/" + comicId).header("Authorization", TestTokens.bearer(String.valueOf(me))))
 			.andExpect(status().isNotFound());
 	}
 
@@ -208,7 +205,7 @@ class ComicQueryApiTests {
 		long comicId = request(me, cardId);
 		long jobId = jdbc.queryForObject("select id from jobs where comic_id = ?", Long.class, comicId);
 
-		mvc.perform(delete("/api/comics/" + comicId).header("X-User-Id", String.valueOf(me)))
+		mvc.perform(delete("/api/comics/" + comicId).header("Authorization", TestTokens.bearer(String.valueOf(me))))
 			.andExpect(status().isNoContent());
 
 		mvc.perform(get("/internal/comics/" + comicId + "/source").header("X-Internal-Token", "internal-test-token"))
@@ -217,7 +214,7 @@ class ComicQueryApiTests {
 			.contentType(MediaType.APPLICATION_JSON)
 			.content("{\"reason\":\"x\"}")).andExpect(status().isBadRequest());
 		// 카드 잠금이 풀린다.
-		mvc.perform(patch("/api/cards/" + cardId).header("X-User-Id", String.valueOf(me))
+		mvc.perform(patch("/api/cards/" + cardId).header("Authorization", TestTokens.bearer(String.valueOf(me)))
 			.contentType(MediaType.APPLICATION_JSON)
 			.content("{\"place\":\"집\"}")).andExpect(status().isOk());
 		assertThat(jdbc.queryForObject("select comic_count from cards where id = ?", Integer.class, cardId)).isEqualTo(1);

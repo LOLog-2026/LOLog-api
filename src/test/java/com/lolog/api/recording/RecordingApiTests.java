@@ -1,5 +1,6 @@
 package com.lolog.api.recording;
 
+import com.lolog.api.auth.TestTokens;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doThrow;
@@ -22,7 +23,6 @@ import org.springframework.data.domain.Range;
 import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.GenericContainer;
@@ -33,10 +33,8 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 // 실제 PostgreSQL과 Redis로 POST /api/recordings 규칙을 확인한다. Docker가 켜져 있어야 한다.
-// local 프로필의 임시 인증을 쓴다. 접속 정보는 컨테이너 값이 덮어쓰므로 비밀번호는 자리만 채운다.
-@SpringBootTest(properties = { "POSTGRES_PASSWORD=unused", "lolog.auth.dev-test-token=test-token",
-		"INTERNAL_TOKEN=internal-test-token" })
-@ActiveProfiles("local")
+// 회원은 테스트 액세스 토큰(TestTokens)의 sub다.
+@SpringBootTest
 @AutoConfigureMockMvc
 @Testcontainers
 @ExtendWith(OutputCaptureExtension.class)
@@ -75,7 +73,7 @@ class RecordingApiTests {
 	}
 
 	private org.springframework.test.web.servlet.ResultActions upload(String user, String json) throws Exception {
-		return mvc.perform(post("/api/recordings").header("X-User-Id", user)
+		return mvc.perform(post("/api/recordings").header("Authorization", TestTokens.bearer(user))
 			.contentType(MediaType.APPLICATION_JSON)
 			.content(json));
 	}
@@ -198,31 +196,17 @@ class RecordingApiTests {
 	}
 
 	@Test
-	void 앱의_테스트_토큰으로_올릴_수_있다() throws Exception {
-		mvc.perform(post("/api/recordings").header("Authorization", "Bearer test-token")
-			.contentType(MediaType.APPLICATION_JSON)
-			.content(body(UUID.randomUUID().toString(), 1, true, ONE)))
-			.andExpect(status().isAccepted())
-			.andExpect(jsonPath("$.recordingId").isNumber())
-			.andExpect(jsonPath("$.partNo").doesNotExist());
-		mvc.perform(post("/api/recordings").header("Authorization", "Bearer wrong")
-			.contentType(MediaType.APPLICATION_JSON)
-			.content(body(UUID.randomUUID().toString(), 1, true, ONE)))
-			.andExpect(status().isUnauthorized());
-	}
-
-	@Test
 	void 인증이_없으면_401이고_남의_녹음은_404다() throws Exception {
 		mvc.perform(post("/api/recordings").contentType(MediaType.APPLICATION_JSON)
 			.content(body(UUID.randomUUID().toString(), 1, false, ONE)))
 			.andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
 
 		long recordingId = recordingId("9", UUID.randomUUID().toString(), 1, false, ONE);
-		mvc.perform(get("/api/recordings/" + recordingId).header("X-User-Id", "9"))
+		mvc.perform(get("/api/recordings/" + recordingId).header("Authorization", TestTokens.bearer("9")))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.status").value("DETECTING"))
 			.andExpect(jsonPath("$.cardCount").value(0));
-		mvc.perform(get("/api/recordings/" + recordingId).header("X-User-Id", "10"))
+		mvc.perform(get("/api/recordings/" + recordingId).header("Authorization", TestTokens.bearer("10")))
 			.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("RECORDING_NOT_FOUND"))
 			.andExpect(jsonPath("$.field").isEmpty());
 	}
@@ -230,7 +214,7 @@ class RecordingApiTests {
 	@Test
 	void 상태_응답은_recordingId_status_cardCount다() throws Exception {
 		long recordingId = recordingId("11", UUID.randomUUID().toString(), 1, false, ONE);
-		mvc.perform(get("/api/recordings/" + recordingId).header("X-User-Id", "11"))
+		mvc.perform(get("/api/recordings/" + recordingId).header("Authorization", TestTokens.bearer("11")))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.length()").value(3))
 			.andExpect(jsonPath("$.recordingId").value(recordingId))
@@ -253,7 +237,7 @@ class RecordingApiTests {
 		doThrow(new IllegalStateException("바깥 " + conversation, new IllegalArgumentException("Failing row contains " + conversation)))
 			.when(service).status(anyLong(), anyLong());
 
-		mvc.perform(get("/api/recordings/1").header("X-User-Id", "13"))
+		mvc.perform(get("/api/recordings/1").header("Authorization", TestTokens.bearer("13")))
 			.andExpect(status().isInternalServerError())
 			.andExpect(jsonPath("$.code").value("INTERNAL_ERROR"))
 			.andExpect(jsonPath("$.message").value("서버 오류가 발생했습니다."));
@@ -265,7 +249,7 @@ class RecordingApiTests {
 	@Test
 	void 주소의_id가_숫자가_아니면_400이다() throws Exception {
 		for (String id : List.of("abc", "99999999999999999999")) {
-			mvc.perform(get("/api/recordings/" + id).header("X-User-Id", "14"))
+			mvc.perform(get("/api/recordings/" + id).header("Authorization", TestTokens.bearer("14")))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
 		}
@@ -273,7 +257,7 @@ class RecordingApiTests {
 
 	@Test
 	void 없는_주소는_500이_아니라_404다() throws Exception {
-		mvc.perform(get("/api/no-such-path").header("X-User-Id", "15")).andExpect(status().isNotFound());
+		mvc.perform(get("/api/no-such-path").header("Authorization", TestTokens.bearer("15"))).andExpect(status().isNotFound());
 	}
 
 }

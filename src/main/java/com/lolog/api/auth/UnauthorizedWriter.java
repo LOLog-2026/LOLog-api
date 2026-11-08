@@ -11,10 +11,17 @@ final class UnauthorizedWriter {
 	}
 
 	static void write(HttpServletResponse response) throws IOException {
+		write(response, false);
+	}
+
+	// 만료된 액세스 토큰이면 TOKEN_EXPIRED(앱은 이때만 갱신), 그 밖에는 UNAUTHORIZED.
+	static void write(HttpServletResponse response, boolean expired) throws IOException {
 		response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
 		response.setContentType(MediaType.APPLICATION_JSON_VALUE);
 		response.setCharacterEncoding("UTF-8");
-		response.getWriter().write("{\"code\":\"UNAUTHORIZED\",\"message\":\"인증이 필요합니다.\",\"field\":null}");
+		String body = expired ? "{\"code\":\"TOKEN_EXPIRED\",\"message\":\"토큰이 만료됐습니다.\",\"field\":null}"
+				: "{\"code\":\"UNAUTHORIZED\",\"message\":\"인증이 필요합니다.\",\"field\":null}";
+		response.getWriter().write(body);
 	}
 
 }
