@@ -3,14 +3,23 @@ package com.lolog.api.recording;
 import com.lolog.api.job.Job;
 import com.lolog.api.job.JobRepository;
 import com.lolog.api.common.ApiException;
+import com.lolog.api.common.PageRequestParams;
+import com.lolog.api.recording.RecordingDtos.RecordingListItem;
+import com.lolog.api.recording.RecordingDtos.RecordingPage;
 import com.lolog.api.recording.RecordingDtos.StatusResponse;
 import com.lolog.api.recording.RecordingDtos.UploadRequest;
 import com.lolog.api.recording.RecordingDtos.UploadResponse;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Limit;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
@@ -54,6 +63,41 @@ public class RecordingService {
 		Recording recording = recordings.findByIdAndUserId(id, userId)
 			.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "RECORDING_NOT_FOUND", "녹음을 찾을 수 없습니다."));
 		return new StatusResponse(recording.getId(), recording.getStatus(), Math.toIntExact(recordings.countCards(id)));
+	}
+
+	@Transactional(readOnly = true)
+	public RecordingPage list(long userId, String cursor, Integer size, String status) {
+		PageRequestParams params = PageRequestParams.of(cursor, size);
+		List<Recording> page = recordings.findPage(userId, parseStatuses(status), params.before(),
+				Limit.of(params.size() + 1));
+		boolean more = page.size() > params.size();
+		List<Recording> shown = more ? page.subList(0, params.size()) : page;
+		List<Long> ids = shown.stream().map(Recording::getId).toList();
+		Map<Long, Long> counts = ids.isEmpty() ? Map.of()
+				: recordings.countCardsByRecordingIds(ids).stream()
+					.collect(Collectors.toMap(r -> ((Number) r[0]).longValue(), r -> ((Number) r[1]).longValue()));
+		List<RecordingListItem> items = shown.stream()
+			.map(r -> new RecordingListItem(r.getId(), r.getClientRecordingId(), r.getStatus(), r.getStartedAt(),
+					Math.toIntExact(counts.getOrDefault(r.getId(), 0L))))
+			.toList();
+		return new RecordingPage(items, more ? String.valueOf(shown.getLast().getId()) : null);
+	}
+
+	// ?status=RECEIVED,DETECTING 처럼 쉼표로 잇는다. 빼거나 비우면 전부. 없는 상태 이름은 400.
+	private static Set<RecordingStatus> parseStatuses(String status) {
+		if (status == null || status.isBlank()) {
+			return EnumSet.allOf(RecordingStatus.class);
+		}
+		Set<RecordingStatus> result = EnumSet.noneOf(RecordingStatus.class);
+		for (String name : status.split(",")) {
+			try {
+				result.add(RecordingStatus.valueOf(name.strip()));
+			}
+			catch (IllegalArgumentException e) {
+				throw ApiException.invalid("status", "status는 RECEIVED, DETECTING, DONE, FAILED 중에서 고릅니다.");
+			}
+		}
+		return result;
 	}
 
 	// 앞 묶음의 감지가 끝났을 때 다음 묶음을 넣는다. 워커 결과는 DetectResultService가 같은 트랜잭션 안에서 dispatch를 부른다.
