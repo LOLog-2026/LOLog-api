@@ -37,7 +37,7 @@ set_tag() {
 
 wait_healthy() {
   for _ in $(seq 1 24); do
-    if docker compose exec -T gateway wget -q -O /dev/null "$health" 2>/dev/null; then
+    if docker compose exec -T nginx wget -q -O /dev/null "$health" 2>/dev/null; then
       return 0
     fi
     sleep 5

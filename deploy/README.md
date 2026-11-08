@@ -8,7 +8,7 @@
 앱 ──http──▶ 학교 Nginx(80, 강사님 관리)
                  │ lolog.java21.net
                  ▼
-          127.0.0.1:GATEWAY_PORT ─ gateway(우리 Nginx)
+          127.0.0.1:NGINX_PORT ─ nginx(우리 Nginx 컨테이너)
                                      ├─ /auth/**          → auth:8081
                                      ├─ /api/**           → api:8080
                                      ├─ /lolog-comics/**  → seaweedfs:8333 (GET만)
@@ -18,14 +18,14 @@ Jetson ──SSH 터널(8822)──▶ 127.0.0.1:TUNNEL_API_PORT   → api:8080 
 ```
 
 - 서버는 여러 학생이 같이 써요. 80은 학교 Nginx가 쓰고, 우리는 개인 포트 범위 안의 포트 3개만 `127.0.0.1`에 열어요.
-- 도메인은 학교 Nginx가 받아 우리 gateway로 넘겨요. 지금은 HTTP(`http://lolog.java21.net`)만 써요. gateway는 경로 나누기, `/internal` 막기, 로그인·가입 횟수 제한(IP마다 1분에 10번)을 해요.
+- 도메인은 학교 Nginx가 받아 우리 nginx 컨테이너로 넘겨요. 지금은 HTTP(`http://lolog.java21.net`)만 써요. 우리 nginx는 경로 나누기, `/internal` 막기, 로그인·가입 횟수 제한(IP마다 1분에 10번)을 해요.
 - 데이터는 Docker 볼륨(`lolog_pgdata`, `lolog_redisdata`, `lolog_seaweeddata`)에만 있고 백업하지 않아요. `docker compose down -v`는 쓰지 않아요.
 
 | 파일 | 하는 일 |
 | --- | --- |
 | `compose.yaml` | 서버 스택 전체 |
 | `.env.example` | 서버 `.env`의 틀(포트, 이미지 태그, 비밀값) |
-| `nginx/` | gateway Nginx 설정 |
+| `nginx/` | 우리 nginx 컨테이너 설정 |
 | `scripts/deploy.sh` | 서비스 하나를 새 태그로 바꾸고 헬스체크, 실패하면 이전 태그로 되돌림 |
 | `scripts/ssh-deploy-gate.sh` | GitHub Actions 키가 `deploy.sh`만 부르도록 묶음 |
 | `../.github/workflows/deploy.yml` | main push → 테스트 → GHCR 이미지 → 서버 배포 |
@@ -49,7 +49,7 @@ chmod 600 .env
 vi .env
 ```
 
-- `GATEWAY_PORT`, `TUNNEL_API_PORT`, `TUNNEL_REDIS_PORT`: 개인 포트 범위 안에서 다른 학생과 겹치지 않게 골라요. 비어 있는지는 `ss -ltn | grep <포트>`로 확인해요.
+- `NGINX_PORT`, `TUNNEL_API_PORT`, `TUNNEL_REDIS_PORT`: 개인 포트 범위 안에서 다른 학생과 겹치지 않게 골라요. 비어 있는지는 `ss -ltn | grep <포트>`로 확인해요.
 - 비밀값은 `openssl rand -hex 32`로 만들어요. `JWT_SECRET`, `INTERNAL_TOKEN`, `REDIS_PASSWORD`는 Jetson 워커와 같은 값이어야 해서 팀에 따로 전해요(레포·채팅에 올리지 않아요).
 - `API_TAG`, `AUTH_TAG`는 GHCR에 올라간 이미지의 커밋 SHA예요. 처음에는 Actions 첫 배포가 끝난 뒤 그 SHA를 넣거나, Actions가 넣게 둬요.
 
@@ -65,8 +65,8 @@ vi .env
 ```bash
 docker compose up -d
 docker compose ps
-curl -s http://127.0.0.1:<GATEWAY_PORT>/api/health    # {"status":"UP"}
-curl -s http://127.0.0.1:<GATEWAY_PORT>/auth/health
+curl -s http://127.0.0.1:<NGINX_PORT>/api/health    # {"status":"UP"}
+curl -s http://127.0.0.1:<NGINX_PORT>/auth/health
 ```
 
 ### 4. 학교 Nginx에 도메인 연결
@@ -74,7 +74,7 @@ curl -s http://127.0.0.1:<GATEWAY_PORT>/auth/health
 강사님이 알려 주신 Nginx 관리 웹사이트에 로그인해서 도메인을 등록해요.
 
 - 도메인: `lolog.java21.net`
-- 넘길 곳: `127.0.0.1:<GATEWAY_PORT>` (`.env`의 값)
+- 넘길 곳: `127.0.0.1:<NGINX_PORT>` (`.env`의 값)
 
 등록한 뒤 밖에서 `curl http://lolog.java21.net/api/health`가 `{"status":"UP"}`이면 돼요.
 
@@ -107,7 +107,7 @@ lolog-api, lolog-auth 레포(또는 조직)의 Actions secrets에 넣어요. 넣
 - `main`에 머지하면 Actions가 테스트 → `ghcr.io/lolog-2026/lolog-api:<SHA>` 빌드 → `ssh ... deploy api <SHA>`를 해요.
 - `deploy.sh`는 `.env`의 태그를 바꾸고 그 서비스만 다시 띄운 뒤 `/api/health`(또는 `/auth/health`)를 2분까지 기다려요. 안 뜨면 이전 태그로 되돌리고 Actions를 실패로 끝내요.
 - 손으로 되돌릴 때: `cd ~/lolog-api/deploy && scripts/deploy.sh api <이전 SHA>`
-- 이 폴더(compose, nginx 설정)가 바뀌면 서버에서 `git pull` 뒤 `docker compose up -d --force-recreate gateway`(nginx 설정만 바뀐 때) 또는 `docker compose up -d`를 해요. 자동으로 따라가지 않아요. nginx 설정 파일은 바인드 마운트라 `git pull`이나 `vi`로 파일이 새로 써지면 `nginx -s reload`로는 안 읽혀요. 컨테이너를 다시 만들어야 해요.
+- 이 폴더(compose, nginx 설정)가 바뀌면 서버에서 `git pull` 뒤 `docker compose up -d --force-recreate nginx`(nginx 설정만 바뀐 때) 또는 `docker compose up -d`를 해요. 자동으로 따라가지 않아요. nginx 설정 파일은 바인드 마운트라 `git pull`이나 `vi`로 파일이 새로 써지면 `nginx -s reload`로는 안 읽혀요. 컨테이너를 다시 만들어야 해요.
 - 새 환경 변수가 필요하면 머지 전에 서버 `.env`에 먼저 넣어요.
 
 ## Jetson 터널
