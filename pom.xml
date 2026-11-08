@@ -70,6 +70,12 @@
 				</exclusion>
 			</exclusions>
 		</dependency>
+		<!-- 푸시 알림(FCM) 보내기. 서비스 계정 키는 FCM_CREDENTIALS_PATH 파일에서 읽는다(deployment.md 4장). -->
+		<dependency>
+			<groupId>com.google.firebase</groupId>
+			<artifactId>firebase-admin</artifactId>
+			<version>9.11.0</version>
+		</dependency>
 		<dependency>
 			<groupId>org.flywaydb</groupId>
 			<artifactId>flyway-database-postgresql</artifactId>

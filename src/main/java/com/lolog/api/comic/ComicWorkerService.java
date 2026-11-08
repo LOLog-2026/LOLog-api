@@ -7,6 +7,7 @@ import com.lolog.api.comic.ComicWorkerDtos.Line;
 import com.lolog.api.comic.ComicWorkerDtos.Speaker;
 import com.lolog.api.common.ApiException;
 import com.lolog.api.job.JobRepository;
+import com.lolog.api.notification.PushService;
 import com.lolog.api.storage.ImageStorage;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -30,15 +31,17 @@ public class ComicWorkerService {
 	private final ImageStorage storage;
 	private final ObjectMapper objectMapper;
 	private final TransactionTemplate tx;
+	private final PushService push;
 
 	public ComicWorkerService(ComicRepository comics, CardRepository cards, JobRepository jobs, ImageStorage storage,
-			ObjectMapper objectMapper, TransactionTemplate tx) {
+			ObjectMapper objectMapper, TransactionTemplate tx, PushService push) {
 		this.comics = comics;
 		this.cards = cards;
 		this.jobs = jobs;
 		this.storage = storage;
 		this.objectMapper = objectMapper;
 		this.tx = tx;
+		this.push = push;
 	}
 
 	public ComicSource source(long comicId) {
@@ -85,7 +88,7 @@ public class ComicWorkerService {
 			}
 			comic.finish(key);
 			jobs.findByComicId(comic.getId()).ifPresent(job -> job.complete());
-			// 완성 푸시(COMIC_DONE)는 알림 이슈(#8)에서 붙인다.
+			push.notify(comic.getUserId(), PushService.comicDone(comic.getId(), comic.getCardId()));
 		});
 	}
 
