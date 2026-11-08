@@ -1,5 +1,6 @@
 package com.lolog.api.recording;
 
+import com.lolog.api.auth.TestTokens;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -18,7 +19,6 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.data.domain.Range;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -30,9 +30,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 // 워커 내부 API(감지 결과, 실패)와 그 뒤의 흐름을 실제 PostgreSQL·Redis로 확인한다. Docker가 켜져 있어야 한다.
-@SpringBootTest(properties = { "POSTGRES_PASSWORD=unused", "lolog.auth.dev-test-token=test-token",
-		"INTERNAL_TOKEN=internal-test-token" })
-@ActiveProfiles("local")
+@SpringBootTest
 @AutoConfigureMockMvc
 @Testcontainers
 class WorkerApiTests {
@@ -84,7 +82,7 @@ class WorkerApiTests {
 		String json = """
 				{"clientRecordingId":"%s","partNo":%d,"isLast":%b,"startedAt":"2026-11-10T12:30:00+09:00","durationSec":3600,"sentences":%s}
 				""".formatted(id, partNo, last, sentences);
-		String response = mvc.perform(post("/api/recordings").header("X-User-Id", user)
+		String response = mvc.perform(post("/api/recordings").header("Authorization", TestTokens.bearer(user))
 			.contentType(MediaType.APPLICATION_JSON)
 			.content(json)).andExpect(status().isAccepted()).andReturn().getResponse().getContentAsString();
 		return objectMapper.readTree(response).get("recordingId").asLong();
@@ -132,7 +130,7 @@ class WorkerApiTests {
 			.contentType(MediaType.APPLICATION_JSON)
 			.content("{\"reason\":\"x\"}")).andExpect(status().isUnauthorized());
 		// 앱의 임시 인증으로는 /internal을 부를 수 없다.
-		mvc.perform(post("/internal/jobs/1/fail").header("X-User-Id", "1")
+		mvc.perform(post("/internal/jobs/1/fail").header("Authorization", TestTokens.bearer("1"))
 			.contentType(MediaType.APPLICATION_JSON)
 			.content("{\"reason\":\"x\"}")).andExpect(status().isUnauthorized());
 	}
@@ -167,7 +165,7 @@ class WorkerApiTests {
 		assertThat(sentences.get(0).get("text").asString()).isEqualTo("넘길 글");
 		assertThat(sentences.get(1).get("text").asString()).isEqualTo("뒤");
 
-		mvc.perform(get("/api/recordings/" + recordingId).header("X-User-Id", "101"))
+		mvc.perform(get("/api/recordings/" + recordingId).header("Authorization", TestTokens.bearer("101")))
 			.andExpect(jsonPath("$.status").value("DETECTING"))
 			.andExpect(jsonPath("$.cardCount").value(1));
 
@@ -214,7 +212,7 @@ class WorkerApiTests {
 		long recordingId = upload("104", UUID.randomUUID().toString(), 1, true, TWO);
 		fail(jobId(recordingId, 0)).andExpect(status().isNoContent());
 		assertThat(recordingStatus(recordingId)).isEqualTo("FAILED");
-		mvc.perform(get("/api/recordings/" + recordingId).header("X-User-Id", "104"))
+		mvc.perform(get("/api/recordings/" + recordingId).header("Authorization", TestTokens.bearer("104")))
 			.andExpect(jsonPath("$.status").value("FAILED"));
 	}
 

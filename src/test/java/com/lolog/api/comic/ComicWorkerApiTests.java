@@ -1,5 +1,6 @@
 package com.lolog.api.comic;
 
+import com.lolog.api.auth.TestTokens;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -23,7 +24,6 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -37,10 +37,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import tools.jackson.databind.ObjectMapper;
 
 // 워커의 만화 단계(카드 내용 → 콘티 → 완성 이미지)를 실제 PostgreSQL·Redis·SeaweedFS로 확인한다. Docker가 켜져 있어야 한다.
-// local 프로필은 내 PC의 .env를 읽으므로, 토큰은 시험 값으로 직접 덮어쓴다.
-@SpringBootTest(properties = { "POSTGRES_PASSWORD=unused", "lolog.auth.dev-test-token=test-token",
-		"INTERNAL_TOKEN=internal-test-token" })
-@ActiveProfiles("local")
+@SpringBootTest
 @AutoConfigureMockMvc
 @Testcontainers
 class ComicWorkerApiTests {
@@ -106,7 +103,7 @@ class ComicWorkerApiTests {
 		card.addLine(1, "화자1", "양념 반 후라이드 반", null, null);
 		card.addLine(2, "화자2", "또 반반이야?", null, null);
 		long cardId = cards.save(card).getId();
-		String body = mvc.perform(post("/api/cards/" + cardId + "/comics").header("X-User-Id", String.valueOf(userId)))
+		String body = mvc.perform(post("/api/cards/" + cardId + "/comics").header("Authorization", TestTokens.bearer(String.valueOf(userId))))
 			.andExpect(status().isAccepted()).andReturn().getResponse().getContentAsString();
 		return new Made(userId, cardId, objectMapper.readTree(body).get("comicId").asLong());
 	}
@@ -174,7 +171,7 @@ class ComicWorkerApiTests {
 			.isEqualTo("DONE");
 
 		// 끝났으므로 카드를 다시 고칠 수 있고, 다음 만화도 요청할 수 있다.
-		mvc.perform(post("/api/cards/" + m.cardId() + "/comics").header("X-User-Id", String.valueOf(m.userId())))
+		mvc.perform(post("/api/cards/" + m.cardId() + "/comics").header("Authorization", TestTokens.bearer(String.valueOf(m.userId()))))
 			.andExpect(status().isAccepted());
 	}
 

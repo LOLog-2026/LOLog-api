@@ -1,5 +1,6 @@
 package com.lolog.api.card;
 
+import com.lolog.api.auth.TestTokens;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -16,7 +17,6 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -26,9 +26,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 // 카드 목록·자세히·고치기·지우기를 실제 PostgreSQL로 확인한다. Docker가 켜져 있어야 한다.
-@SpringBootTest(properties = { "POSTGRES_PASSWORD=unused", "lolog.auth.dev-test-token=test-token",
-		"INTERNAL_TOKEN=internal-test-token" })
-@ActiveProfiles("local")
+@SpringBootTest
 @AutoConfigureMockMvc
 @Testcontainers
 class CardApiTests {
@@ -78,7 +76,7 @@ class CardApiTests {
 	}
 
 	private ResultActions patchCard(long userId, long cardId, String json) throws Exception {
-		return mvc.perform(patch("/api/cards/" + cardId).header("X-User-Id", String.valueOf(userId))
+		return mvc.perform(patch("/api/cards/" + cardId).header("Authorization", TestTokens.bearer(String.valueOf(userId)))
 			.contentType(MediaType.APPLICATION_JSON)
 			.content(json));
 	}
@@ -95,7 +93,7 @@ class CardApiTests {
 		comic(third, me, "FAILED");
 		comic(third, me, "DRAWING");
 
-		String cursor = mvc.perform(get("/api/cards?size=2").header("X-User-Id", String.valueOf(me)))
+		String cursor = mvc.perform(get("/api/cards?size=2").header("Authorization", TestTokens.bearer(String.valueOf(me))))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.cards.length()").value(2))
 			.andExpect(jsonPath("$.cards[0].id").value(third))
@@ -107,15 +105,15 @@ class CardApiTests {
 			.andExpect(jsonPath("$.nextCursor").isString())
 			.andReturn().getResponse().getContentAsString().replaceAll(".*\"nextCursor\":\"([^\"]+)\".*", "$1");
 
-		mvc.perform(get("/api/cards?size=2&cursor=" + cursor).header("X-User-Id", String.valueOf(me)))
+		mvc.perform(get("/api/cards?size=2&cursor=" + cursor).header("Authorization", TestTokens.bearer(String.valueOf(me))))
 			.andExpect(jsonPath("$.cards.length()").value(1))
 			.andExpect(jsonPath("$.cards[0].id").value(first))
 			.andExpect(jsonPath("$.nextCursor").isEmpty());
 
-		mvc.perform(get("/api/cards?size=51").header("X-User-Id", String.valueOf(me)))
+		mvc.perform(get("/api/cards?size=51").header("Authorization", TestTokens.bearer(String.valueOf(me))))
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.field").value("size"));
-		mvc.perform(get("/api/cards?cursor=abc").header("X-User-Id", String.valueOf(me)))
+		mvc.perform(get("/api/cards?cursor=abc").header("Authorization", TestTokens.bearer(String.valueOf(me))))
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.field").value("cursor"));
 	}
@@ -128,7 +126,7 @@ class CardApiTests {
 		long newer = comic(cardId, me, "FAILED");
 		jdbc.update("update cards set comic_count = 1 where id = ?", cardId);
 
-		mvc.perform(get("/api/cards/" + cardId).header("X-User-Id", String.valueOf(me)))
+		mvc.perform(get("/api/cards/" + cardId).header("Authorization", TestTokens.bearer(String.valueOf(me))))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.recordingId").isEmpty())
 			.andExpect(jsonPath("$.speakers[0].key").value("화자1"))
@@ -140,7 +138,7 @@ class CardApiTests {
 			.andExpect(jsonPath("$.comics[1].status").value("DONE"))
 			.andExpect(jsonPath("$.comicRemaining").value(2));
 
-		mvc.perform(get("/api/cards/" + cardId).header("X-User-Id", String.valueOf(USERS.incrementAndGet())))
+		mvc.perform(get("/api/cards/" + cardId).header("Authorization", TestTokens.bearer(String.valueOf(USERS.incrementAndGet()))))
 			.andExpect(status().isNotFound())
 			.andExpect(jsonPath("$.code").value("CARD_NOT_FOUND"));
 	}
@@ -205,7 +203,7 @@ class CardApiTests {
 		patchCard(me, cardId, "{\"speakers\":[{\"key\":\"화자1\",\"name\":\"민수\"}],\"place\":\" \"}")
 			.andExpect(jsonPath("$.field").value("place"));
 
-		mvc.perform(get("/api/cards/" + cardId).header("X-User-Id", String.valueOf(me)))
+		mvc.perform(get("/api/cards/" + cardId).header("Authorization", TestTokens.bearer(String.valueOf(me))))
 			.andExpect(jsonPath("$.speakers[0].name").isEmpty())
 			.andExpect(jsonPath("$.lines[0].text").value("양념 반 후라이드 반"))
 			.andExpect(jsonPath("$.place").isEmpty());
@@ -232,7 +230,7 @@ class CardApiTests {
 		patchCard(me, cardId, "{\"place\":\"집\"}")
 			.andExpect(status().isConflict())
 			.andExpect(jsonPath("$.code").value("CARD_LOCKED"));
-		mvc.perform(delete("/api/cards/" + cardId).header("X-User-Id", String.valueOf(me)))
+		mvc.perform(delete("/api/cards/" + cardId).header("Authorization", TestTokens.bearer(String.valueOf(me))))
 			.andExpect(status().isConflict())
 			.andExpect(jsonPath("$.code").value("CARD_LOCKED"));
 
@@ -246,9 +244,9 @@ class CardApiTests {
 		long cardId = card(me, "카드");
 		long comicId = comic(cardId, me, "DONE");
 
-		mvc.perform(delete("/api/cards/" + cardId).header("X-User-Id", String.valueOf(USERS.incrementAndGet())))
+		mvc.perform(delete("/api/cards/" + cardId).header("Authorization", TestTokens.bearer(String.valueOf(USERS.incrementAndGet()))))
 			.andExpect(status().isNotFound());
-		mvc.perform(delete("/api/cards/" + cardId).header("X-User-Id", String.valueOf(me)))
+		mvc.perform(delete("/api/cards/" + cardId).header("Authorization", TestTokens.bearer(String.valueOf(me))))
 			.andExpect(status().isNoContent());
 
 		assertThat(cards.findById(cardId)).isEmpty();
@@ -256,7 +254,7 @@ class CardApiTests {
 		assertThat(jdbc.queryForObject("select card_id from comics where id = ?", Long.class, comicId)).isNull();
 		assertThat(jdbc.queryForObject("select card_summary from comics where id = ?", String.class, comicId))
 			.isEqualTo("요약");
-		mvc.perform(get("/api/cards/" + cardId).header("X-User-Id", String.valueOf(me)))
+		mvc.perform(get("/api/cards/" + cardId).header("Authorization", TestTokens.bearer(String.valueOf(me))))
 			.andExpect(status().isNotFound());
 	}
 
