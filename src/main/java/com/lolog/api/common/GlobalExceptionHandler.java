@@ -21,8 +21,6 @@ public class GlobalExceptionHandler {
 
 	private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
-	private static final int MAX_CAUSE_DEPTH = 10;
-
 	@ExceptionHandler(ApiException.class)
 	public ResponseEntity<ErrorResponse> handleApi(ApiException e) {
 		return ResponseEntity.status(e.getStatus())
@@ -85,18 +83,9 @@ public class GlobalExceptionHandler {
 				|| e instanceof AccessDeniedException) {
 			throw e;
 		}
-		log.error("처리하지 못한 예외", withoutMessages(e, 0));
+		log.error("처리하지 못한 예외", SafeLog.withoutMessages(e));
 		return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
 			.body(new ErrorResponse("INTERNAL_ERROR", "서버 오류가 발생했습니다."));
-	}
-
-	// DB 오류 등의 메시지에는 저장하려던 행, 즉 대화 글이 들어갈 수 있다. 로그에는 예외 종류와 스택만 남긴다.
-	private static RuntimeException withoutMessages(Throwable e, int depth) {
-		Throwable cause = e.getCause();
-		RuntimeException copy = new RuntimeException(e.getClass().getName(),
-				cause != null && depth < MAX_CAUSE_DEPTH ? withoutMessages(cause, depth + 1) : null);
-		copy.setStackTrace(e.getStackTrace());
-		return copy;
 	}
 
 }

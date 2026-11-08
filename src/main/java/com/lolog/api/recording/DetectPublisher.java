@@ -2,6 +2,7 @@ package com.lolog.api.recording;
 
 import com.lolog.api.job.Job;
 import com.lolog.api.job.JobRepository;
+import com.lolog.api.common.SafeLog;
 import com.lolog.api.recording.RecordingDtos.DetectMessage;
 import com.lolog.api.recording.RecordingDtos.Sentence;
 import java.time.OffsetDateTime;
@@ -48,7 +49,8 @@ public class DetectPublisher {
 			publish(jobId);
 		}
 		catch (RuntimeException e) {
-			log.error("감지 작업을 큐에 넣지 못했습니다. jobId={}", jobId, e);
+			// 감지 메시지에는 대화 글이 들어 있으므로 예외 메시지는 남기지 않는다(TR-12).
+			log.error("감지 작업을 큐에 넣지 못했습니다. jobId={}", jobId, SafeLog.withoutMessages(e));
 		}
 	}
 
