@@ -1,6 +1,7 @@
 package com.lolog.api.auth;
 
 import com.lolog.api.common.ApiException;
+import com.lolog.api.common.SafeLog;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
@@ -10,7 +11,11 @@ import javax.crypto.spec.SecretKeySpec;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.annotation.Order;
+import org.springframework.dao.DataAccessException;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -31,10 +36,19 @@ import org.springframework.security.web.SecurityFilterChain;
 // 인증 서비스(lolog-auth)가 발급한 액세스 토큰(JWT)으로 /api 사용자를 확인한다(TR-04, API 명세 "토큰").
 // 서명 HS256, 비밀값 JWT_SECRET(32바이트 이상)은 lolog-auth와 같다. sub = 사용자 ID 문자열, typ = "access".
 // 만료면 401 TOKEN_EXPIRED, 없거나 틀리면 401 UNAUTHORIZED. /internal은 InternalSecurityConfig(@Order(1))가 먼저 본다.
+// 탈퇴한 회원의 토큰은 만료 전이어도 401 UNAUTHORIZED다(API 명세 "탈퇴한 회원의 토큰").
 @Configuration
 public class JwtAuthConfig {
 
 	static final String EXPIRED = "token_expired";
+
+	// 탈퇴 여부를 Redis에서 확인하지 못함. 401이면 앱이 로그인을 풀어 버리므로 500으로 답한다.
+	static final String UNAVAILABLE = "withdrawn_check_unavailable";
+
+	private static final Logger log = LoggerFactory.getLogger(JwtAuthConfig.class);
+
+	// lolog-auth가 탈퇴 때 31분 동안 남기는 키. 값은 탈퇴 시각이고, 여기서는 키가 있는지만 본다.
+	static final String WITHDRAWN_KEY = "lolog:auth:withdrawn:";
 	private static final Duration CLOCK_SKEW = Duration.ofSeconds(30);
 
 	@Bean
@@ -47,13 +61,20 @@ public class JwtAuthConfig {
 			.authorizeHttpRequests(auth -> auth.requestMatchers(HttpMethod.GET, "/api/health").permitAll()
 				.anyRequest().authenticated())
 			.oauth2ResourceServer(oauth -> oauth.jwt(jwt -> jwt.decoder(decoder))
-				.authenticationEntryPoint((request, response, e) -> UnauthorizedWriter.write(response, isExpired(e))))
+				.authenticationEntryPoint((request, response, e) -> {
+					if (hasError(e, UNAVAILABLE)) {
+						UnauthorizedWriter.writeInternalError(response);
+					}
+					else {
+						UnauthorizedWriter.write(response, hasError(e, EXPIRED));
+					}
+				}))
 			.exceptionHandling(e -> e.authenticationEntryPoint((request, response, ex) -> UnauthorizedWriter.write(response)))
 			.build();
 	}
 
 	@Bean
-	JwtDecoder jwtDecoder(@Value("${lolog.auth.jwt-secret}") String secret) {
+	JwtDecoder jwtDecoder(@Value("${lolog.auth.jwt-secret}") String secret, StringRedisTemplate redis) {
 		byte[] bytes = secret.getBytes(StandardCharsets.UTF_8);
 		if (bytes.length < 32) {
 			throw new IllegalStateException("JWT_SECRET은 32바이트 이상이어야 합니다.");
@@ -61,7 +82,7 @@ public class JwtAuthConfig {
 		SecretKey key = new SecretKeySpec(bytes, "HmacSHA256");
 		NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(key).macAlgorithm(MacAlgorithm.HS256).build();
 		decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(JwtAuthConfig::checkExpiry,
-				JwtAuthConfig::checkClaims));
+				JwtAuthConfig::checkClaims, jwt -> checkWithdrawn(jwt, redis)));
 		return decoder;
 	}
 
@@ -103,13 +124,32 @@ public class JwtAuthConfig {
 		return OAuth2TokenValidatorResult.success();
 	}
 
+	// 요청마다 Redis를 한 번 본다. Redis에 못 붙으면 통과시키지 않고 500 INTERNAL_ERROR로 답한다(앱은 5xx를 다시 시도한다).
+	private static OAuth2TokenValidatorResult checkWithdrawn(Jwt jwt, StringRedisTemplate redis) {
+		String sub = jwt.getSubject();
+		if (sub == null || !sub.matches("\\d{1,18}")) {
+			// checkClaims가 거절한다.
+			return OAuth2TokenValidatorResult.success();
+		}
+		try {
+			if (Boolean.TRUE.equals(redis.hasKey(WITHDRAWN_KEY + sub))) {
+				return invalid("invalid_token", "탈퇴한 회원입니다.");
+			}
+			return OAuth2TokenValidatorResult.success();
+		}
+		catch (DataAccessException e) {
+			log.error("탈퇴한 회원인지 Redis에서 확인하지 못했습니다.", SafeLog.withoutMessages(e));
+			return invalid(UNAVAILABLE, "탈퇴 여부를 확인하지 못했습니다.");
+		}
+	}
+
 	private static OAuth2TokenValidatorResult invalid(String code, String description) {
 		return OAuth2TokenValidatorResult.failure(new OAuth2Error(code, description, null));
 	}
 
-	private static boolean isExpired(Throwable e) {
+	private static boolean hasError(Throwable e, String code) {
 		for (Throwable t = e; t != null; t = t.getCause()) {
-			if (t instanceof JwtValidationException v && v.getErrors().stream().anyMatch(err -> EXPIRED.equals(err.getErrorCode()))) {
+			if (t instanceof JwtValidationException v && v.getErrors().stream().anyMatch(err -> code.equals(err.getErrorCode()))) {
 				return true;
 			}
 		}

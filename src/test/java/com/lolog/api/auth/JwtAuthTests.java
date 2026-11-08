@@ -11,9 +11,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -28,8 +30,15 @@ class JwtAuthTests {
 	@ServiceConnection
 	static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:latest");
 
+	@Container
+	@ServiceConnection(name = "redis")
+	static GenericContainer<?> redis = new GenericContainer<>("redis:latest").withExposedPorts(6379);
+
 	@Autowired
 	MockMvc mvc;
+
+	@Autowired
+	StringRedisTemplate redisTemplate;
 
 	private ResultActions get404(String authorization) throws Exception {
 		var request = get("/api/recordings/999999");
@@ -65,6 +74,21 @@ class JwtAuthTests {
 			.andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
 		get404("Bearer " + TestTokens.token("abc", "access", Duration.ofMinutes(30), TestTokens.SECRET))
 			.andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+	}
+
+	@Test
+	void 탈퇴한_회원의_토큰은_만료_전이어도_401_UNAUTHORIZED다() throws Exception {
+		// lolog-auth가 탈퇴 때 남기는 키(API 명세 "탈퇴한 회원의 토큰")
+		redisTemplate.opsForValue().set("lolog:auth:withdrawn:7", "1762560000", Duration.ofMinutes(31));
+
+		get404(TestTokens.bearer(7)).andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+		// 다른 회원은 그대로 통과한다.
+		get404(TestTokens.bearer(8)).andExpect(status().isNotFound());
+
+		// 키가 사라지면(31분 뒤) 서명만 본다. 그때는 토큰도 이미 만료됐다.
+		redisTemplate.delete("lolog:auth:withdrawn:7");
+		get404(TestTokens.bearer(7)).andExpect(status().isNotFound());
 	}
 
 	@Test
