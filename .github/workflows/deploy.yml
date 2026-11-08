@@ -1,12 +1,12 @@
 # main에 머지하면 테스트 → 이미지 빌드(GHCR, 태그는 커밋 SHA) → 서버 배포(deployment.md 8장).
-# lolog-auth 레포에도 같은 파일을 두고 SERVICE와 IMAGE만 auth로 바꾼다. 서버 쪽 설명은 deploy/README.md.
+# lolog-auth 레포에도 같은 파일을 두고 SERVICE와 IMAGE만 auth로 바꾼다. 서버 쪽 설정과 설명은 LOLog-infra 레포.
 # 레포가 public이라 PR에서는 돌지 않고 main push에서만 돈다.
 #
 # 필요한 secrets (레포 Settings → Secrets and variables → Actions, 또는 org secrets):
 #   DEPLOY_HOST         서버 주소(s2.java21.net)
 #   DEPLOY_PORT         SSH 포트(8822)
 #   DEPLOY_USER         서버 계정(학번)
-#   DEPLOY_SSH_KEY      배포 계정 개인 키(ed25519). 서버에는 deploy/scripts/ssh-deploy-gate.sh로 묶어 등록한다
+#   DEPLOY_SSH_KEY      배포 계정 개인 키(ed25519). 서버에는 LOLog-infra의 scripts/ssh-deploy-gate.sh로 묶어 등록한다
 #   DEPLOY_KNOWN_HOSTS  `ssh-keyscan -p <포트> <서버>` 결과
 name: deploy
 
