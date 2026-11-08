@@ -5,6 +5,7 @@ import com.lolog.api.job.JobRepository;
 import com.lolog.api.card.Card;
 import com.lolog.api.card.CardRepository;
 import com.lolog.api.common.ApiException;
+import com.lolog.api.notification.PushService;
 import com.lolog.api.recording.RecordingDtos.Sentence;
 import com.lolog.api.recording.WorkerDtos.DetectResult;
 import com.lolog.api.recording.WorkerDtos.DetectedCard;
@@ -31,11 +32,13 @@ public class DetectResultService {
 	private final DetectPublisher publisher;
 	private final ObjectMapper objectMapper;
 	private final TransactionTemplate tx;
+	private final PushService push;
 	private final long latePartMinutes;
 
 	public DetectResultService(RecordingRepository recordings, RecordingPartRepository parts, JobRepository jobs,
 			CardRepository cards, RecordingService recordingService, DetectPublisher publisher, ObjectMapper objectMapper,
-			TransactionTemplate tx, @Value("${lolog.detect.late-part-minutes:70}") long latePartMinutes) {
+			TransactionTemplate tx, PushService push,
+			@Value("${lolog.detect.late-part-minutes:70}") long latePartMinutes) {
 		this.recordings = recordings;
 		this.parts = parts;
 		this.jobs = jobs;
@@ -44,6 +47,7 @@ public class DetectResultService {
 		this.publisher = publisher;
 		this.objectMapper = objectMapper;
 		this.tx = tx;
+		this.push = push;
 		this.latePartMinutes = latePartMinutes;
 	}
 
@@ -66,6 +70,10 @@ public class DetectResultService {
 			}
 			validate(result.cards());
 			result.cards().forEach(card -> cards.save(toCard(recording, card)));
+			// 새 카드가 1개 이상이면 묶음마다 한 번 알린다(FR-NOTI-01). 같은 jobId가 다시 오면 위에서 끝나 두 번 가지 않는다.
+			if (!result.cards().isEmpty()) {
+				push.notify(recording.getUserId(), PushService.cardsCreated(recordingId, result.cards().size()));
+			}
 
 			boolean carryOnly = jobs.existsByRecordingPartIdAndStatusAndIdNot(part.getId(), "DONE", job.getId());
 			job.complete();

@@ -5,6 +5,7 @@ import com.lolog.api.card.CardRepository;
 import com.lolog.api.common.ApiException;
 import com.lolog.api.job.Job;
 import com.lolog.api.job.JobRepository;
+import com.lolog.api.notification.PushService;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -19,14 +20,16 @@ public class ComicService {
 	private final JobRepository jobs;
 	private final ComicPublisher publisher;
 	private final TransactionTemplate tx;
+	private final PushService push;
 
 	public ComicService(CardRepository cards, ComicRepository comics, JobRepository jobs, ComicPublisher publisher,
-			TransactionTemplate tx) {
+			TransactionTemplate tx, PushService push) {
 		this.cards = cards;
 		this.comics = comics;
 		this.jobs = jobs;
 		this.publisher = publisher;
 		this.tx = tx;
+		this.push = push;
 	}
 
 	public record Created(Long comicId, ComicStatus status) {
@@ -77,7 +80,7 @@ public class ComicService {
 			if (comic.getCardId() != null) {
 				cards.decrementComicCount(comic.getCardId());
 			}
-			// 실패 푸시(COMIC_FAILED)는 알림 이슈(#8)에서 붙인다.
+			push.notify(comic.getUserId(), PushService.comicFailed(comic.getId(), comic.getCardId()));
 		});
 	}
 

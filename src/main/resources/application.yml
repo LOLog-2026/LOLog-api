@@ -35,3 +35,7 @@ lolog:
     region: ${S3_REGION:us-east-1}
     access-key: ${S3_ACCESS_KEY}
     secret-key: ${S3_SECRET_KEY}
+  # 푸시 알림(FCM) 서비스 계정 키 파일 경로(deployment.md 4장, 서버는 /run/secrets/fcm.json).
+  # 비어 있으면 푸시만 끄고 서버는 뜬다. 경로가 있는데 파일을 읽지 못하면 서버가 뜨지 않는다.
+  fcm:
+    credentials-path: ${FCM_CREDENTIALS_PATH:}
