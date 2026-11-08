@@ -64,8 +64,11 @@ public class DetectPublisher {
 			RecordingPart part = parts.findById(job.getRecordingPartId()).orElseThrow();
 			Long recordingId = part.getRecording().getId();
 			List<RecordingPart> all = parts.findByRecordingIdOrderByPartNo(recordingId);
-			DetectMessage message = new DetectMessage(job.getId(), recordingId, part.getPartNo(), part.isLast(),
-					sentencesFor(part, all));
+			// 늦게 온 묶음의 넘겨 둔 부분만 처리하는 작업이면, 넘겨 둔 글만 마지막 묶음처럼(isLast: true) 보낸다.
+			boolean carryOnly = jobs.existsByRecordingPartIdAndStatusAndIdNot(part.getId(), "DONE", job.getId());
+			DetectMessage message = carryOnly
+					? new DetectMessage(job.getId(), recordingId, part.getPartNo(), true, carriedFrom(part, all))
+					: new DetectMessage(job.getId(), recordingId, part.getPartNo(), part.isLast(), sentencesFor(part, all));
 			redis.opsForStream().add(StreamRecords.string(
 					Map.of("payload", objectMapper.writeValueAsString(message))).withStreamKey(STREAM));
 			job.markPublished();
@@ -80,19 +83,27 @@ public class DetectPublisher {
 			.findFirst()
 			.orElse(null);
 		if (previous != null && previous.getStatus() == RecordingStatus.DONE && previous.getCarryFromMs() != null) {
-			long from = previous.getCarryFromMs();
-			all.stream()
-				.filter(p -> p.getPartNo() < part.getPartNo())
-				.flatMap(p -> read(p).stream())
-				.filter(s -> s.startMs() >= from)
-				.sorted(Comparator.comparing(Sentence::startMs))
-				.forEach(result::add);
+			result.addAll(carriedFrom(previous, all));
 		}
 		result.addAll(read(part));
 		return result;
 	}
 
-	private List<Sentence> read(RecordingPart part) {
+	// part까지의 묶음에 남은 글 중 part의 carryFromMs 이후 구간. 넘겨 둔 이야기는 앞 묶음에서 시작했을 수 있다.
+	List<Sentence> carriedFrom(RecordingPart part, List<RecordingPart> all) {
+		if (part.getCarryFromMs() == null) {
+			return List.of();
+		}
+		long from = part.getCarryFromMs();
+		return all.stream()
+			.filter(p -> p.getPartNo() <= part.getPartNo())
+			.flatMap(p -> read(p).stream())
+			.filter(s -> s.startMs() >= from)
+			.sorted(Comparator.comparing(Sentence::startMs))
+			.toList();
+	}
+
+	List<Sentence> read(RecordingPart part) {
 		if (part.getSentences() == null) {
 			return List.of();
 		}

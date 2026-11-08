@@ -26,7 +26,7 @@ public class UploadSizeFilter extends OncePerRequestFilter {
 			response.setStatus(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
 			response.setContentType(MediaType.APPLICATION_JSON_VALUE);
 			response.setCharacterEncoding("UTF-8");
-			response.getWriter().write("{\"code\":\"PAYLOAD_TOO_LARGE\",\"message\":\"본문이 너무 큽니다.\"}");
+			response.getWriter().write("{\"code\":\"PAYLOAD_TOO_LARGE\",\"message\":\"본문이 너무 큽니다.\",\"field\":null}");
 			return;
 		}
 		chain.doFilter(request, response);

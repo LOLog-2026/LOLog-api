@@ -54,7 +54,7 @@ public class RecordingService {
 		return new StatusResponse(recording.getId(), recording.getStatus(), Math.toIntExact(recordings.countCards(id)));
 	}
 
-	// 앞 묶음의 감지가 끝났을 때 부른다. 워커 결과 API(#3)에서 쓴다.
+	// 앞 묶음의 감지가 끝났을 때 다음 묶음을 넣는다. 워커 결과는 DetectResultService가 같은 트랜잭션 안에서 dispatch를 부른다.
 	public void dispatchNext(long recordingId) {
 		List<Long> jobIds = tx.execute(status -> {
 			Recording recording = recordings.findByIdForUpdate(recordingId).orElseThrow();
@@ -67,9 +67,10 @@ public class RecordingService {
 		if (request.sentences().size() > MAX_SENTENCES) {
 			throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE", "묶음의 구간이 너무 많습니다.");
 		}
-		boolean badTime = request.sentences().stream().anyMatch(s -> s.endMs() <= s.startMs());
-		if (badTime) {
-			throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "구간의 끝은 시작보다 뒤여야 합니다.");
+		for (int i = 0; i < request.sentences().size(); i++) {
+			if (request.sentences().get(i).endMs() <= request.sentences().get(i).startMs()) {
+				throw ApiException.invalid("sentences[" + i + "].endMs", "구간의 끝은 시작보다 뒤여야 합니다.");
+			}
 		}
 	}
 
@@ -97,13 +98,13 @@ public class RecordingService {
 	}
 
 	// 앞 묶음이 모두 끝났으면 다음 묶음을 큐에 넣을 작업으로 만든다. 앞 묶음의 carryFromMs를 알아야 해서 한 번에 하나만 넣는다.
-	private List<Long> dispatch(Recording recording) {
+	// 넣을 묶음이 없고 마지막 묶음까지 끝났으면 녹음 상태를 정한다. 부르는 쪽이 녹음 행을 잠근 트랜잭션 안에서 부른다.
+	List<Long> dispatch(Recording recording) {
 		List<RecordingPart> all = parts.findByRecordingIdOrderByPartNo(recording.getId());
 		boolean running = all.stream().anyMatch(p -> p.getStatus() == RecordingStatus.DETECTING);
 		if (running) {
 			return List.of();
 		}
-		List<Long> jobIds = new ArrayList<>();
 		for (RecordingPart part : all) {
 			if (part.getStatus() != RecordingStatus.RECEIVED) {
 				continue;
@@ -111,17 +112,30 @@ public class RecordingService {
 			if (publisher.sentencesFor(part, all).isEmpty()) {
 				// 새 글도 넘겨받을 글도 없으면 감지할 것이 없다.
 				part.setStatus(RecordingStatus.DONE);
-				if (part.isLast()) {
-					recording.setStatus(RecordingStatus.DONE);
-				}
 				continue;
 			}
 			part.setStatus(RecordingStatus.DETECTING);
 			recording.setStatus(RecordingStatus.DETECTING);
-			jobIds.add(jobs.save(new DetectJob(part.getId(), recording.getUserId())).getId());
-			break;
+			return List.of(jobs.save(new DetectJob(part.getId(), recording.getUserId())).getId());
 		}
-		return jobIds;
+		finishIfLastDone(recording, all);
+		return List.of();
+	}
+
+	// 마지막 묶음까지 끝났으면 DONE. 감지한 묶음이 모두 실패했을 때만 FAILED다(하나라도 성공했으면 DONE).
+	private void finishIfLastDone(Recording recording, List<RecordingPart> all) {
+		if (all.isEmpty() || !all.getLast().isLast()) {
+			return;
+		}
+		boolean allFinished = all.stream()
+			.allMatch(p -> p.getStatus() == RecordingStatus.DONE || p.getStatus() == RecordingStatus.FAILED);
+		if (!allFinished) {
+			return;
+		}
+		boolean anyFailed = all.stream().anyMatch(p -> p.getStatus() == RecordingStatus.FAILED);
+		jobs.flush();
+		boolean anyDetected = jobs.countDoneByRecordingId(recording.getId()) > 0;
+		recording.setStatus(anyFailed && !anyDetected ? RecordingStatus.FAILED : RecordingStatus.DONE);
 	}
 
 	private UploadResponse response(Recording recording) {

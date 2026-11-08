@@ -1,5 +1,6 @@
 package com.lolog.api.common;
 
+import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import tools.jackson.core.JacksonException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -21,13 +23,44 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(ApiException.class)
 	public ResponseEntity<ErrorResponse> handleApi(ApiException e) {
-		return ResponseEntity.status(e.getStatus()).body(new ErrorResponse(e.getCode(), e.getMessage()));
+		return ResponseEntity.status(e.getStatus())
+			.body(new ErrorResponse(e.getCode(), e.getMessage(), e.getField()));
 	}
 
-	@ExceptionHandler({ MethodArgumentNotValidException.class, HttpMessageNotReadableException.class,
-			MethodArgumentTypeMismatchException.class })
-	public ResponseEntity<ErrorResponse> handleInvalid(Exception e) {
-		return ResponseEntity.badRequest().body(new ErrorResponse("INVALID_REQUEST", "요청 형식이 올바르지 않습니다."));
+	@ExceptionHandler(MethodArgumentNotValidException.class)
+	public ResponseEntity<ErrorResponse> handleNotValid(MethodArgumentNotValidException e) {
+		String field = e.getBindingResult().getFieldError() != null ? e.getBindingResult().getFieldError().getField()
+				: null;
+		return invalid(field);
+	}
+
+	@ExceptionHandler(HttpMessageNotReadableException.class)
+	public ResponseEntity<ErrorResponse> handleNotReadable(HttpMessageNotReadableException e) {
+		return invalid(e.getCause() instanceof JacksonException je ? path(je.getPath()) : null);
+	}
+
+	@ExceptionHandler(MethodArgumentTypeMismatchException.class)
+	public ResponseEntity<ErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
+		return invalid(e.getName());
+	}
+
+	private static ResponseEntity<ErrorResponse> invalid(String field) {
+		return ResponseEntity.badRequest()
+			.body(new ErrorResponse("INVALID_REQUEST", "요청 형식이 올바르지 않습니다.", field));
+	}
+
+	// JSON을 읽다 틀린 위치를 lines[2].text 모양으로 만든다. 위치를 모르면 null이다.
+	private static String path(List<JacksonException.Reference> references) {
+		StringBuilder result = new StringBuilder();
+		for (JacksonException.Reference reference : references) {
+			if (reference.getPropertyName() != null) {
+				result.append(result.isEmpty() ? "" : ".").append(reference.getPropertyName());
+			}
+			else if (reference.getIndex() >= 0) {
+				result.append('[').append(reference.getIndex()).append(']');
+			}
+		}
+		return result.isEmpty() ? null : result.toString();
 	}
 
 	@ExceptionHandler(Exception.class)

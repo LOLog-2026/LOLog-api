@@ -34,7 +34,8 @@ import tools.jackson.databind.ObjectMapper;
 
 // 실제 PostgreSQL과 Redis로 POST /api/recordings 규칙을 확인한다. Docker가 켜져 있어야 한다.
 // local 프로필의 임시 인증을 쓴다. 접속 정보는 컨테이너 값이 덮어쓰므로 비밀번호는 자리만 채운다.
-@SpringBootTest(properties = { "POSTGRES_PASSWORD=unused", "lolog.auth.dev-test-token=test-token" })
+@SpringBootTest(properties = { "POSTGRES_PASSWORD=unused", "lolog.auth.dev-test-token=test-token",
+		"INTERNAL_TOKEN=internal-test-token" })
 @ActiveProfiles("local")
 @AutoConfigureMockMvc
 @Testcontainers
@@ -174,10 +175,13 @@ class RecordingApiTests {
 	void 형식이_틀리면_400이다() throws Exception {
 		String id = UUID.randomUUID().toString();
 		upload("7", body(id, 1, false, "[{\"startMs\":2000,\"endMs\":1000,\"text\":\"글\"}]"))
-			.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
-		upload("7", body(id, 1, false, "[{\"startMs\":1,\"endMs\":2,\"text\":\" \"}]"))
-			.andExpect(status().isBadRequest());
-		upload("7", "{\"partNo\":1}").andExpect(status().isBadRequest());
+			.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+			.andExpect(jsonPath("$.field").value("sentences[0].endMs"));
+		upload("7", body(id, 1, false, "[{\"startMs\":1,\"endMs\":2,\"text\":\"글\"},{\"startMs\":1,\"endMs\":2,\"text\":\" \"}]"))
+			.andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").value("sentences[1].text"));
+		upload("7", "{\"partNo\":1}").andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").isNotEmpty());
+		upload("7", body(id, 1, false, ONE).replace("\"partNo\":1", "\"partNo\":\"하나\""))
+			.andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").value("partNo"));
 	}
 
 	@Test
@@ -219,7 +223,8 @@ class RecordingApiTests {
 			.andExpect(jsonPath("$.status").value("DETECTING"))
 			.andExpect(jsonPath("$.cardCount").value(0));
 		mvc.perform(get("/api/recordings/" + recordingId).header("X-User-Id", "10"))
-			.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("RECORDING_NOT_FOUND"));
+			.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("RECORDING_NOT_FOUND"))
+			.andExpect(jsonPath("$.field").isEmpty());
 	}
 
 	@Test
