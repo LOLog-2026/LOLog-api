@@ -12,6 +12,7 @@ import jakarta.persistence.Table;
 import java.time.OffsetDateTime;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
@@ -32,6 +33,8 @@ public class CardSpeaker {
 	@Column(name = "speaker_key", nullable = false, length = 20)
 	private String speakerKey;
 
+	// 사용자가 붙인 이름. 카드가 생길 때는 null이다.
+	@Setter
 	@Column(length = 50)
 	private String name;
 
