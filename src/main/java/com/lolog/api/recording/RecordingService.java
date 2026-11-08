@@ -1,5 +1,7 @@
 package com.lolog.api.recording;
 
+import com.lolog.api.job.Job;
+import com.lolog.api.job.JobRepository;
 import com.lolog.api.common.ApiException;
 import com.lolog.api.recording.RecordingDtos.StatusResponse;
 import com.lolog.api.recording.RecordingDtos.UploadRequest;
@@ -19,12 +21,12 @@ public class RecordingService {
 
 	private final RecordingRepository recordings;
 	private final RecordingPartRepository parts;
-	private final DetectJobRepository jobs;
+	private final JobRepository jobs;
 	private final DetectPublisher publisher;
 	private final ObjectMapper objectMapper;
 	private final TransactionTemplate tx;
 
-	public RecordingService(RecordingRepository recordings, RecordingPartRepository parts, DetectJobRepository jobs,
+	public RecordingService(RecordingRepository recordings, RecordingPartRepository parts, JobRepository jobs,
 			DetectPublisher publisher, ObjectMapper objectMapper, TransactionTemplate tx) {
 		this.recordings = recordings;
 		this.parts = parts;
@@ -116,7 +118,7 @@ public class RecordingService {
 			}
 			part.setStatus(RecordingStatus.DETECTING);
 			recording.setStatus(RecordingStatus.DETECTING);
-			return List.of(jobs.save(new DetectJob(part.getId(), recording.getUserId())).getId());
+			return List.of(jobs.save(new Job(part.getId(), recording.getUserId())).getId());
 		}
 		finishIfLastDone(recording, all);
 		return List.of();

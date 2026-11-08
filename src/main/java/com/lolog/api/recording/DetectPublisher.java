@@ -1,5 +1,7 @@
 package com.lolog.api.recording;
 
+import com.lolog.api.job.Job;
+import com.lolog.api.job.JobRepository;
 import com.lolog.api.recording.RecordingDtos.DetectMessage;
 import com.lolog.api.recording.RecordingDtos.Sentence;
 import java.time.OffsetDateTime;
@@ -25,13 +27,13 @@ public class DetectPublisher {
 	static final String STREAM = "lolog:detect";
 	private static final Logger log = LoggerFactory.getLogger(DetectPublisher.class);
 
-	private final DetectJobRepository jobs;
+	private final JobRepository jobs;
 	private final RecordingPartRepository parts;
 	private final StringRedisTemplate redis;
 	private final ObjectMapper objectMapper;
 	private final TransactionTemplate tx;
 
-	public DetectPublisher(DetectJobRepository jobs, RecordingPartRepository parts, StringRedisTemplate redis,
+	public DetectPublisher(JobRepository jobs, RecordingPartRepository parts, StringRedisTemplate redis,
 			ObjectMapper objectMapper, PlatformTransactionManager transactionManager) {
 		this.jobs = jobs;
 		this.parts = parts;
@@ -52,12 +54,12 @@ public class DetectPublisher {
 
 	@Scheduled(fixedDelayString = "${lolog.detect.republish-delay-ms:60000}")
 	void republishPending() {
-		jobs.findUnpublishedIds(OffsetDateTime.now().minusMinutes(1)).forEach(this::publishQuietly);
+		jobs.findUnpublishedIds("DETECT", OffsetDateTime.now().minusMinutes(1)).forEach(this::publishQuietly);
 	}
 
 	private void publish(Long jobId) {
 		tx.executeWithoutResult(status -> {
-			DetectJob job = jobs.findById(jobId).orElseThrow();
+			Job job = jobs.findById(jobId).orElseThrow();
 			if (job.getAttempts() > 0) {
 				return;
 			}

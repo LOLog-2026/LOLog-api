@@ -14,7 +14,7 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
-// 카드로 만든 4컷만화. 지금은 카드 화면에서 읽기만 한다. 만들기는 #5, 콘티·이미지 칸은 #6에서 붙인다.
+// 카드로 만든 4컷만화. 콘티·이미지 칸은 #6에서 붙인다.
 @Entity
 @Table(name = "comics")
 @Getter
@@ -36,8 +36,13 @@ public class Comic {
 	@Column(nullable = false, length = 20)
 	private ComicStatus status = ComicStatus.QUEUED;
 
+	// 만화를 요청할 때 카드 요약을 복사해 둔다. 카드를 지워도 만화 응답에 쓴다.
 	@Column(name = "card_summary", columnDefinition = "text")
 	private String cardSummary;
+
+	// 서버 기록용. 앱에는 보내지 않는다.
+	@Column(name = "fail_reason", length = 500)
+	private String failReason;
 
 	@CreationTimestamp
 	@Column(name = "created_at", nullable = false, updatable = false)
@@ -46,5 +51,16 @@ public class Comic {
 	@UpdateTimestamp
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
+
+	public Comic(Long cardId, Long userId, String cardSummary) {
+		this.cardId = cardId;
+		this.userId = userId;
+		this.cardSummary = cardSummary;
+	}
+
+	public void fail(String reason) {
+		status = ComicStatus.FAILED;
+		failReason = reason;
+	}
 
 }

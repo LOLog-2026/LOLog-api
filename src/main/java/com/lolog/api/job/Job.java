@@ -1,4 +1,4 @@
-package com.lolog.api.recording;
+package com.lolog.api.job;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -12,13 +12,13 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
-// jobs 테이블의 작업. 지금은 DETECT만 만들고, COMIC은 #5에서 만든다.
+// jobs 테이블의 작업. DETECT는 묶음 하나(recording_part_id), COMIC은 만화 하나(comic_id)를 처리한다.
 // attempts는 큐에 넣은 횟수이고, 0이면 아직 넣지 못한 작업이다. 결과나 fail을 받으면 DONE·FAILED가 되고 그 뒤로는 바뀌지 않는다.
 @Entity
 @Table(name = "jobs")
 @Getter
 @NoArgsConstructor
-public class DetectJob {
+public class Job {
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -26,6 +26,9 @@ public class DetectJob {
 
 	@Column(name = "recording_part_id")
 	private Long recordingPartId;
+
+	@Column(name = "comic_id")
+	private Long comicId;
 
 	@Column(name = "user_id", nullable = false)
 	private Long userId;
@@ -50,9 +53,17 @@ public class DetectJob {
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
 
-	public DetectJob(Long recordingPartId, Long userId) {
+	public Job(Long recordingPartId, Long userId) {
 		this.recordingPartId = recordingPartId;
 		this.userId = userId;
+	}
+
+	public static Job comic(Long comicId, Long userId) {
+		Job job = new Job();
+		job.jobType = "COMIC";
+		job.comicId = comicId;
+		job.userId = userId;
+		return job;
 	}
 
 	public void markPublished() {
