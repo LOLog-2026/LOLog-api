@@ -1,5 +1,7 @@
 package com.lolog.api.recording;
 
+import com.lolog.api.job.Job;
+import com.lolog.api.job.JobRepository;
 import com.lolog.api.card.Card;
 import com.lolog.api.card.CardRepository;
 import com.lolog.api.common.ApiException;
@@ -23,7 +25,7 @@ public class DetectResultService {
 
 	private final RecordingRepository recordings;
 	private final RecordingPartRepository parts;
-	private final DetectJobRepository jobs;
+	private final JobRepository jobs;
 	private final CardRepository cards;
 	private final RecordingService recordingService;
 	private final DetectPublisher publisher;
@@ -31,7 +33,7 @@ public class DetectResultService {
 	private final TransactionTemplate tx;
 	private final long latePartMinutes;
 
-	public DetectResultService(RecordingRepository recordings, RecordingPartRepository parts, DetectJobRepository jobs,
+	public DetectResultService(RecordingRepository recordings, RecordingPartRepository parts, JobRepository jobs,
 			CardRepository cards, RecordingService recordingService, DetectPublisher publisher, ObjectMapper objectMapper,
 			TransactionTemplate tx, @Value("${lolog.detect.late-part-minutes:70}") long latePartMinutes) {
 		this.recordings = recordings;
@@ -49,7 +51,7 @@ public class DetectResultService {
 		List<Long> next = tx.execute(status -> {
 			Recording recording = recordings.findByIdForUpdate(recordingId)
 				.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "RECORDING_NOT_FOUND", "녹음을 찾을 수 없습니다."));
-			DetectJob job = jobs.findById(result.jobId()).filter(DetectJob::isDetect)
+			Job job = jobs.findById(result.jobId()).filter(Job::isDetect)
 				.orElseThrow(() -> ApiException.invalid("jobId", "감지 작업을 찾을 수 없습니다."));
 			RecordingPart part = parts.findById(job.getRecordingPartId()).orElseThrow();
 			if (!part.getRecording().getId().equals(recordingId)) {
@@ -82,7 +84,7 @@ public class DetectResultService {
 			Long recordingId = jobs.findRecordingIdByJobId(jobId)
 				.orElseThrow(() -> ApiException.invalid(null, "감지 작업을 찾을 수 없습니다."));
 			Recording recording = recordings.findByIdForUpdate(recordingId).orElseThrow();
-			DetectJob job = jobs.findById(jobId).orElseThrow();
+			Job job = jobs.findById(jobId).orElseThrow();
 			if (job.isFinished()) {
 				return List.<Long>of();
 			}
@@ -117,7 +119,7 @@ public class DetectResultService {
 				}
 				last.setStatus(RecordingStatus.DETECTING);
 				recording.setStatus(RecordingStatus.DETECTING);
-				return List.of(jobs.save(new DetectJob(last.getId(), recording.getUserId())).getId());
+				return List.of(jobs.save(new Job(last.getId(), recording.getUserId())).getId());
 			});
 			jobIds.forEach(publisher::publishQuietly);
 		}

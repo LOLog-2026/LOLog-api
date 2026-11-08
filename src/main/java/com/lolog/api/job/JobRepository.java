@@ -1,16 +1,27 @@
-package com.lolog.api.recording;
+package com.lolog.api.job;
 
+import jakarta.persistence.LockModeType;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-public interface DetectJobRepository extends JpaRepository<DetectJob, Long> {
+public interface JobRepository extends JpaRepository<Job, Long> {
 
-	@Query("select j.id from DetectJob j where j.jobType = 'DETECT' and j.status = 'QUEUED' and j.attempts = 0 and j.createdAt < :before order by j.id")
-	List<Long> findUnpublishedIds(@Param("before") OffsetDateTime before);
+	// 커밋 뒤 큐에 넣지 못한 작업(attempts = 0). type은 DETECT 또는 COMIC.
+	@Query("select j.id from Job j where j.jobType = :type and j.status = 'QUEUED' and j.attempts = 0 and j.createdAt < :before order by j.id")
+	List<Long> findUnpublishedIds(@Param("type") String type, @Param("before") OffsetDateTime before);
+
+	@Query("select j.jobType from Job j where j.id = :id")
+	Optional<String> findTypeById(@Param("id") Long id);
+
+	// 같은 작업의 fail이 동시에 두 번 와도 한 번만 처리하게 행을 잠근다.
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select j from Job j where j.id = :id")
+	Optional<Job> findByIdForUpdate(@Param("id") Long id);
 
 	// 같은 묶음에 앞서 끝난 작업이 있으면, 이 작업은 늦게 온 묶음의 넘겨 둔 부분만 처리하는 작업이다.
 	boolean existsByRecordingPartIdAndStatusAndIdNot(Long recordingPartId, String status, Long id);
