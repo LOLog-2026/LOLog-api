@@ -5,7 +5,7 @@
 ## 구조
 
 ```
-앱 ──https──▶ 학교 Nginx(80·443, 강사님 관리)
+앱 ──http──▶ 학교 Nginx(80, 강사님 관리)
                  │ lolog.java21.net
                  ▼
           127.0.0.1:GATEWAY_PORT ─ gateway(우리 Nginx)
@@ -17,8 +17,8 @@ Jetson ──SSH 터널(8822)──▶ 127.0.0.1:TUNNEL_API_PORT   → api:8080 
                           127.0.0.1:TUNNEL_REDIS_PORT → redis:6379 (작업 큐)
 ```
 
-- 서버는 여러 학생이 같이 써요. 80·443은 학교 Nginx가 쓰고, 우리는 개인 포트 범위 안의 포트 3개만 `127.0.0.1`에 열어요.
-- HTTPS와 도메인은 학교 Nginx가 끝내요. gateway는 경로 나누기, `/internal` 막기, 로그인·가입 횟수 제한(IP마다 1분에 10번)을 해요.
+- 서버는 여러 학생이 같이 써요. 80은 학교 Nginx가 쓰고, 우리는 개인 포트 범위 안의 포트 3개만 `127.0.0.1`에 열어요.
+- 도메인은 학교 Nginx가 받아 우리 gateway로 넘겨요. 지금은 HTTP(`http://lolog.java21.net`)만 써요. gateway는 경로 나누기, `/internal` 막기, 로그인·가입 횟수 제한(IP마다 1분에 10번)을 해요.
 - 데이터는 Docker 볼륨(`lolog_pgdata`, `lolog_redisdata`, `lolog_seaweeddata`)에만 있고 백업하지 않아요. `docker compose down -v`는 쓰지 않아요.
 
 | 파일 | 하는 일 |
@@ -26,7 +26,6 @@ Jetson ──SSH 터널(8822)──▶ 127.0.0.1:TUNNEL_API_PORT   → api:8080 
 | `compose.yaml` | 서버 스택 전체 |
 | `.env.example` | 서버 `.env`의 틀(포트, 이미지 태그, 비밀값) |
 | `nginx/` | gateway Nginx 설정 |
-| `host-nginx/lolog.java21.net.conf` | 학교 Nginx에 넣을 설정 |
 | `scripts/deploy.sh` | 서비스 하나를 새 태그로 바꾸고 헬스체크, 실패하면 이전 태그로 되돌림 |
 | `scripts/ssh-deploy-gate.sh` | GitHub Actions 키가 `deploy.sh`만 부르도록 묶음 |
 | `../.github/workflows/deploy.yml` | main push → 테스트 → GHCR 이미지 → 서버 배포 |
@@ -72,12 +71,12 @@ curl -s http://127.0.0.1:<GATEWAY_PORT>/auth/health
 
 ### 4. 학교 Nginx에 도메인 연결
 
-```bash
-cp host-nginx/lolog.java21.net.conf ~/nginx/lolog.java21.net.conf
-vi ~/nginx/lolog.java21.net.conf    # <학번>, <GATEWAY_PORT> 바꾸기
-```
+강사님이 알려 주신 Nginx 관리 웹사이트에 로그인해서 도메인을 등록해요.
 
-강사님께 `lolog.java21.net.conf` 적용을 요청해요. 로그는 `~/nginx/logs/lolog.java21.net.*.log`에 쌓여요.
+- 도메인: `lolog.java21.net`
+- 넘길 곳: `127.0.0.1:<GATEWAY_PORT>` (`.env`의 값)
+
+등록한 뒤 밖에서 `curl http://lolog.java21.net/api/health`가 `{"status":"UP"}`이면 돼요.
 
 ### 5. GitHub Actions 배포 키
 
@@ -134,6 +133,8 @@ autossh -M 0 -N -p 8822 \
 확인: Jetson에서 `redis-cli -a <REDIS_PASSWORD> ping`이 `PONG`, `curl -s localhost:18080/api/health`가 `{"status":"UP"}`이면 돼요.
 
 ## 공용 서버라서 조심할 것
+
+- 지금은 HTTP라 비밀번호와 토큰이 암호화되지 않고 오가요. 시연용 계정만 쓰고, 나중에 HTTPS가 되면 `.env`의 `PUBLIC_URL`만 `https://`로 바꾸면 돼요.
 
 - docker 그룹에 있는 다른 학생은 `docker inspect`로 우리 컨테이너의 환경 변수(비밀번호, JWT 비밀값)를 볼 수 있어요. 시연용 데이터만 두고, 다른 곳에서 쓰는 비밀번호를 재사용하지 않아요.
 - `127.0.0.1` 포트도 같은 서버의 다른 계정에서는 보여요. Redis는 비밀번호, `/internal`은 `X-Internal-Token`으로 막혀 있어요.
