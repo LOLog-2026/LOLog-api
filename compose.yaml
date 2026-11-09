@@ -1,0 +1,28 @@
+services:
+  postgres:
+    image: 'postgres:latest'
+    environment:
+      - 'POSTGRES_DB=lolog_api'
+      - 'POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?.env에 POSTGRES_PASSWORD가 필요합니다. .env.example을 복사해 만드세요}'
+      - 'POSTGRES_USER=myuser'
+    ports:
+      - '5432:5432'
+  redis:
+    image: 'redis:latest'
+    ports:
+      - '6379:6379'
+  # 만화 이미지 저장소(TR-06). S3 API만 8333으로 연다. 접근 키는 .env의 S3_ACCESS_KEY, S3_SECRET_KEY다.
+  seaweedfs:
+    image: 'chrislusf/seaweedfs:4.48'
+    command: 'server -s3 -s3.config=/etc/seaweedfs/s3.json -dir=/data'
+    ports:
+      - '8333:8333'
+    configs:
+      - source: seaweedfs-s3
+        target: /etc/seaweedfs/s3.json
+
+configs:
+  # SeaweedFS S3 접근 키. 값은 .env에서 읽어 넣는다.
+  seaweedfs-s3:
+    content: |
+      {"identities":[{"name":"lolog-api","credentials":[{"accessKey":"${S3_ACCESS_KEY:?.env에 S3_ACCESS_KEY가 필요합니다}","secretKey":"${S3_SECRET_KEY:?.env에 S3_SECRET_KEY가 필요합니다}"}],"actions":["Admin","Read","Write","List","Tagging"]}]}

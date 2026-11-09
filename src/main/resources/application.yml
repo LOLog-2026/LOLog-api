@@ -1,0 +1,41 @@
+spring:
+  application:
+    name: lolog-api
+  jpa:
+    # 요청 내내 DB 세션을 열어 두지 않는다. 열어 두면 트랜잭션 밖에서 읽은 엔티티가 남아,
+    # 뒤의 잠금 조회(SELECT ... FOR UPDATE)가 최신 값 대신 그 옛 값을 돌려준다. 응답은 서비스 안에서 DTO로 만든다.
+    open-in-view: false
+  data:
+    redis:
+      # 모든 /api 요청이 탈퇴 여부를 Redis에서 본다. Redis가 멈추면 기본값(60초) 동안 요청이 붙잡히므로 짧게 둔다.
+      # 넘으면 500 INTERNAL_ERROR이고 앱은 다시 시도한다(API 명세 "탈퇴한 회원의 토큰").
+      timeout: 2s
+      connect-timeout: 2s
+  servlet:
+    multipart:
+      # 워커가 올리는 완성 4컷 PNG는 20MB까지(API DTO 명세 5장). 넘으면 413 PAYLOAD_TOO_LARGE
+      max-file-size: 20MB
+      max-request-size: 21MB
+
+lolog:
+  auth:
+    # 액세스 토큰(JWT, HS256) 서명 비밀값. lolog-auth와 같은 값이고 32바이트 이상이어야 한다. 없으면 서버가 뜨지 않는다.
+    jwt-secret: ${JWT_SECRET}
+  internal:
+    # /internal 주소의 X-Internal-Token 값. 워커·인증 서비스와 같은 값을 쓴다. 없으면 서버가 뜨지 않는다.
+    token: ${INTERNAL_TOKEN}
+  # 만화 이미지 저장소(S3 호환. 배포는 교육기관 MinIO, 로컬은 SeaweedFS). 환경 변수 이름은 LOLog-docs deployment.md 5장과 같다.
+  storage:
+    # 업로드·삭제에 쓰는 서버 안 주소
+    endpoint: ${S3_ENDPOINT}
+    # imageUrl 서명에 쓰는 공개 주소. 서명에 주소가 들어가므로 앱이 여는 주소와 같아야 한다.
+    public-endpoint: ${S3_PUBLIC_ENDPOINT}
+    bucket: ${S3_BUCKET}
+    # 서명에 들어가는 지역 이름이라 저장소 지역과 맞아야 한다. 교육기관 MinIO 안내 자료와 같은 us-east-1로 둔다.
+    region: ${S3_REGION:us-east-1}
+    access-key: ${S3_ACCESS_KEY}
+    secret-key: ${S3_SECRET_KEY}
+  # 푸시 알림(FCM) 서비스 계정 키 파일 경로(deployment.md 4장, 서버는 /run/secrets/fcm.json).
+  # 비어 있으면 푸시만 끄고 서버는 뜬다. 경로가 있는데 파일을 읽지 못하면 서버가 뜨지 않는다.
+  fcm:
+    credentials-path: ${FCM_CREDENTIALS_PATH:}

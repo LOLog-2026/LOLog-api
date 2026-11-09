@@ -1,0 +1,28 @@
+# 배포용 설정. 접속 값은 서버의 환경 변수 DB_URL, DB_USERNAME, DB_PASSWORD로 넣는다.
+# 스키마는 DB_URL의 currentSchema로 지정한다. Redis는 REDIS_HOST, REDIS_PORT, REDIS_PASSWORD(deployment.md 4장).
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      password: ${REDIS_PASSWORD}
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    # 인증 서비스와 스키마를 함께 쓰므로 이력 테이블을 나누고,
+    # 상대 테이블이 먼저 있어도 V1부터 적용되도록 기준 버전을 0으로 둔다.
+    table: flyway_schema_history_api
+    baseline-on-migrate: true
+    baseline-version: 0
+  docker:
+    compose:
+      enabled: false
+
+server:
+  # HTTPS는 Nginx가 끝낸다. Nginx가 붙인 X-Forwarded-* 헤더로 원래 주소(https, 호스트)를 알아낸다(deployment.md 4장).
+  forward-headers-strategy: framework
