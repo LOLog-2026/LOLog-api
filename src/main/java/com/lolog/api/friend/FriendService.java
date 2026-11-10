@@ -1,5 +1,7 @@
 package com.lolog.api.friend;
 
+import com.lolog.api.character.CharacterDetacher;
+import com.lolog.api.character.CharacterViews;
 import com.lolog.api.common.ApiException;
 import com.lolog.api.friend.FriendDtos.BlockItem;
 import com.lolog.api.friend.FriendDtos.BlockList;
@@ -33,11 +35,16 @@ public class FriendService {
 	private final JdbcTemplate jdbc;
 	private final FriendCodeAttemptLimiter limiter;
 	private final PushService push;
+	private final CharacterDetacher detacher;
+	private final CharacterViews characters;
 
-	public FriendService(JdbcTemplate jdbc, FriendCodeAttemptLimiter limiter, PushService push) {
+	public FriendService(JdbcTemplate jdbc, FriendCodeAttemptLimiter limiter, PushService push,
+			CharacterDetacher detacher, CharacterViews characters) {
 		this.jdbc = jdbc;
 		this.limiter = limiter;
 		this.push = push;
+		this.detacher = detacher;
+		this.characters = characters;
 	}
 
 	private record Friendship(long id, long requesterId, long addresseeId, String status, OffsetDateTime createdAt) {
@@ -151,9 +158,10 @@ public class FriendService {
 		return new FriendList(friendItems(me, "", null));
 	}
 
-	// 친구가 아니어도 204다.
+	// 친구가 아니어도 204다. 끊으면 서로의 프로필 캐릭터가 상대 카드 화자에서 빠진다(characters.md 3장).
 	@Transactional
 	public void unfriend(long me, long userId) {
+		detacher.detachBetween(me, userId);
 		jdbc.update("""
 				delete from friendships where status = 'ACCEPTED'
 				and ((requester_id = ? and addressee_id = ?) or (requester_id = ? and addressee_id = ?))
@@ -174,6 +182,7 @@ public class FriendService {
 		Friendship pair = findPair(me, userId)
 			.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "차단할 수 있는 사람이 아니에요."));
 		jdbc.update("delete from friendships where id = ?", pair.id());
+		detacher.detachBetween(me, userId);
 		jdbc.update("insert into user_blocks (blocker_id, blocked_id) values (?, ?) on conflict do nothing", me, userId);
 	}
 
@@ -260,7 +269,7 @@ public class FriendService {
 	// 내 친구 목록. extra는 더 거를 조건(예: 친구 관계 ID 하나).
 	private List<FriendItem> friendItems(long me, String extra, Long arg) {
 		String sql = """
-				select f.updated_at, p.user_id, p.nickname, p.friend_code
+				select f.updated_at, p.user_id, p.nickname, p.friend_code, p.character_thumb_key
 				from friendships f
 				join user_profiles p on p.user_id = case when f.requester_id = ? then f.addressee_id else f.requester_id end
 				where f.status = 'ACCEPTED' and (f.requester_id = ? or f.addressee_id = ?) %s
@@ -268,7 +277,8 @@ public class FriendService {
 				""".formatted(extra);
 		Object[] args = arg == null ? new Object[] { me, me, me } : new Object[] { me, me, me, arg };
 		return jdbc.query(sql, (rs, n) -> new FriendItem(rs.getLong("user_id"), rs.getString("nickname"),
-				rs.getString("friend_code"), rs.getObject("updated_at", OffsetDateTime.class), null), args);
+				rs.getString("friend_code"), rs.getObject("updated_at", OffsetDateTime.class),
+				characters.friendCharacter(rs.getString("character_thumb_key"))), args);
 	}
 
 	private static Friendship friendship(java.sql.ResultSet rs) throws java.sql.SQLException {

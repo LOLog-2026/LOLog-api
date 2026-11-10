@@ -1,5 +1,10 @@
 package com.lolog.api.comic;
 
+import com.lolog.api.character.CharacterViews;
+import com.lolog.api.character.CharacterViews.Ref;
+import com.lolog.api.character.CharacterViews.SourceCharacter;
+import java.util.List;
+import java.util.Map;
 import com.lolog.api.card.Card;
 import com.lolog.api.card.CardRepository;
 import com.lolog.api.comic.ComicWorkerDtos.ComicSource;
@@ -32,9 +37,11 @@ public class ComicWorkerService {
 	private final ObjectMapper objectMapper;
 	private final TransactionTemplate tx;
 	private final PushService push;
+	private final CharacterViews characters;
 
 	public ComicWorkerService(ComicRepository comics, CardRepository cards, JobRepository jobs, ImageStorage storage,
-			ObjectMapper objectMapper, TransactionTemplate tx, PushService push) {
+			ObjectMapper objectMapper, TransactionTemplate tx, PushService push, CharacterViews characters) {
+		this.characters = characters;
 		this.comics = comics;
 		this.cards = cards;
 		this.jobs = jobs;
@@ -51,8 +58,18 @@ public class ComicWorkerService {
 			Card card = cards.findById(comic.getCardId() == null ? -1L : comic.getCardId())
 				.orElseThrow(ComicWorkerService::notFound);
 			comic.startStoryboard();
+			// 붙어 있던 프로필 캐릭터가 지워졌거나 친구가 끊겼으면 그 화자는 그림 없이 만든다(오류 아님).
+			List<Ref> refs = card.getSpeakers().stream()
+				.filter(s -> s.getCharacterType() != null)
+				.map(s -> new Ref(s.getCharacterType(), s.getCharacterId()))
+				.toList();
+			Map<Ref, SourceCharacter> found = refs.isEmpty() ? Map.of()
+					: characters.sourceCharacters(card.getUserId(), refs);
 			return new ComicSource(comic.getId(), card.getId(), card.getKind(), card.getSummary(), card.getPlace(),
-					card.getSpeakers().stream().map(s -> new Speaker(s.getSpeakerKey(), s.getName())).toList(),
+					card.getSpeakers().stream()
+						.map(s -> new Speaker(s.getSpeakerKey(), s.getName(), s.getCharacterType() == null ? null
+								: found.get(new Ref(s.getCharacterType(), s.getCharacterId()))))
+						.toList(),
 					card.getLines().stream().map(l -> new Line(l.getId(), l.getSpeakerKey(), l.getText())).toList());
 		});
 	}

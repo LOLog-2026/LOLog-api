@@ -219,8 +219,9 @@ class CardApiTests {
 			.andExpect(jsonPath("$.field").value("speakers[0].name"));
 		patchCard(me, cardId, "{\"speakers\":[{\"key\":\"화자1\",\"name\":\"   \"}]}")
 			.andExpect(jsonPath("$.field").value("speakers[0].name"));
+		// name과 character가 둘 다 빠지면 그 화자 항목이 틀린 것(characters.md SpeakerUpdate)
 		patchCard(me, cardId, "{\"speakers\":[{\"key\":\"화자1\"}]}")
-			.andExpect(jsonPath("$.field").value("speakers[0].name"));
+			.andExpect(jsonPath("$.field").value("speakers[0]"));
 		patchCard(me, cardId, "{\"place\":\"" + "가".repeat(21) + "\"}").andExpect(jsonPath("$.field").value("place"));
 		patchCard(me, cardId, "{\"lines\":[{\"id\":%d,\"text\":\"%s\"}]}".formatted(line1, "가".repeat(201)))
 			.andExpect(jsonPath("$.field").value("lines[0].text"));

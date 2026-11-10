@@ -1,6 +1,7 @@
 package com.lolog.api.card;
 
 import com.fasterxml.jackson.annotation.JsonSetter;
+import com.lolog.api.character.CharacterViews.SpeakerCharacter;
 import com.lolog.api.comic.ComicStatus;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -25,7 +26,8 @@ public final class CardDtos {
 			List<ComicRef> comics, int comicRemaining, OffsetDateTime createdAt) {
 	}
 
-	public record Speaker(String key, String name) {
+	// character는 붙인 그림 { type, id, label, thumbnailUrl } 또는 null(characters.md 4장)
+	public record Speaker(String key, String name, SpeakerCharacter character) {
 	}
 
 	public record Line(Long id, String speaker, String text) {
@@ -77,7 +79,12 @@ public final class CardDtos {
 
 	}
 
-	// name은 꼭 보내야 하고(null이면 이름을 지움), 빠지면 400이다.
+	// 붙일 그림. type은 DEFAULT·PROFILE, id는 기본 화자 id 또는 회원 ID(글자)
+	public record CharacterRef(String type, String id) {
+	}
+
+	// name과 character는 둘 다 선택이지만 둘 중 하나는 있어야 한다(api-dto SpeakerUpdate).
+	// 빠짐(안 바꿈)과 null(지움·뗌)을 구분해야 해서 record 대신 setter로 받는다.
 	public static class SpeakerUpdate {
 
 		@NotNull
@@ -107,6 +114,24 @@ public final class CardDtos {
 
 		public boolean isNameSent() {
 			return nameSent;
+		}
+
+		private CharacterRef character;
+
+		private boolean characterSent;
+
+		public CharacterRef getCharacter() {
+			return character;
+		}
+
+		@JsonSetter("character")
+		public void setCharacter(CharacterRef character) {
+			this.character = character;
+			this.characterSent = true;
+		}
+
+		public boolean isCharacterSent() {
+			return characterSent;
 		}
 
 	}

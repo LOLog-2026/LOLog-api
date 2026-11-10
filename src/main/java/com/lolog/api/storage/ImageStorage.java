@@ -50,6 +50,37 @@ public class ImageStorage {
 		return "users/" + userId + "/cards/" + cardId + "/audio.aac";
 	}
 
+	// 기본 화자 그림(768 PNG)과 썸네일(256 WebP). characters.md 2장
+	public static String defaultCharacterKey(String id) {
+		return "defaults/characters/" + id + ".png";
+	}
+
+	public static String defaultCharacterThumbKey(String id) {
+		return "defaults/characters/" + id + "_thumb.webp";
+	}
+
+	// 프로필 캐릭터 그림(768 PNG), 썸네일(256 PNG), 원본 사진(그림을 받거나 실패하면 바로 지움). characters.md 3장
+	public static String profileCharacterKey(long userId) {
+		return "users/" + userId + "/character/avatar.png";
+	}
+
+	public static String profileCharacterThumbKey(long userId) {
+		return "users/" + userId + "/character/avatar_thumb.png";
+	}
+
+	public static String profilePhotoKey(long userId) {
+		return "users/" + userId + "/character/photo";
+	}
+
+	// 파일 내용과 올릴 때 적은 Content-Type
+	public record StoredObject(byte[] bytes, String contentType) {
+	}
+
+	public StoredObject getObject(String key) {
+		var response = s3.getObjectAsBytes(b -> b.bucket(bucket).key(key));
+		return new StoredObject(response.asByteArray(), response.response().contentType());
+	}
+
 	public void putPng(String key, byte[] png) {
 		put(key, png, "image/png");
 	}
@@ -59,7 +90,7 @@ public class ImageStorage {
 	}
 
 	// 같은 키면 덮어쓴다. 버킷이 아직 없으면(처음 띄운 로컬 SeaweedFS. 배포 MinIO는 미리 만들어 둠) 만들고 한 번 더 올린다.
-	private void put(String key, byte[] bytes, String contentType) {
+	public void put(String key, byte[] bytes, String contentType) {
 		try {
 			upload(key, bytes, contentType);
 		}
