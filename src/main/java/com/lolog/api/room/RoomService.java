@@ -104,6 +104,8 @@ public class RoomService {
 			jdbc.update("insert into room_members (room_id, user_id, created_at) values (?, ?, clock_timestamp())", roomId,
 					userId);
 		}
+		// "방을 만들었어요" 줄. 마지막 소식에도 보인다(앱 PR #53 화면과 같게).
+		addMessage(roomId, me, "CREATED", null, null);
 		return items(List.of(roomId), me).getFirst();
 	}
 
@@ -290,15 +292,15 @@ public class RoomService {
 				rs -> {
 					memberIds.computeIfAbsent(rs.getLong("room_id"), k -> new ArrayList<>()).add(rs.getLong("user_id"));
 				});
-		record Last(String type, long userId, OffsetDateTime at) {
+		record Last(String type, long userId, OffsetDateTime at, String body) {
 		}
 		Map<Long, Last> last = new HashMap<>();
 		named.query("""
-				select distinct on (room_id) room_id, message_type, user_id, created_at from room_messages
+				select distinct on (room_id) room_id, message_type, user_id, created_at, body from room_messages
 				where room_id in (:ids) order by room_id, id desc
 				""", ids, rs -> {
 			last.put(rs.getLong("room_id"), new Last(rs.getString("message_type"), rs.getLong("user_id"),
-					rs.getObject("created_at", OffsetDateTime.class)));
+					rs.getObject("created_at", OffsetDateTime.class), rs.getString("body")));
 		});
 		Map<Long, Integer> unread = new HashMap<>();
 		named.query("""
@@ -318,7 +320,7 @@ public class RoomService {
 			Last l = last.get(id);
 			RoomActivity activity = l == null ? null
 					: new RoomActivity("COMMENT".equals(l.type()) ? "COMMENTED" : l.type(),
-							people.get(l.userId()).nickname(), l.userId() == me, l.at());
+							people.get(l.userId()).nickname(), l.userId() == me, l.at(), l.body());
 			byId.put(id, new RoomItem(id, rs.getString("name"),
 					memberIds.getOrDefault(id, List.of()).stream().map(people::get).toList(), activity,
 					unread.getOrDefault(id, 0), rs.getObject("created_at", OffsetDateTime.class)));

@@ -39,9 +39,9 @@ CREATE TABLE room_messages (
     body VARCHAR(200),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT room_messages_pk PRIMARY KEY (id),
-    CONSTRAINT ck_room_messages_type CHECK (message_type IN ('POSTED', 'LIKED', 'COMMENT')),
+    CONSTRAINT ck_room_messages_type CHECK (message_type IN ('CREATED', 'POSTED', 'LIKED', 'COMMENT')),
     CONSTRAINT ck_room_messages_body CHECK ((message_type = 'COMMENT') = (body IS NOT NULL)),
-    CONSTRAINT ck_room_messages_post CHECK (message_type = 'COMMENT' OR post_id IS NOT NULL)
+    CONSTRAINT ck_room_messages_post CHECK (message_type IN ('CREATED', 'COMMENT') OR post_id IS NOT NULL)
 );
 
 ALTER TABLE room_members ADD CONSTRAINT fk_room_members_rooms FOREIGN KEY (room_id) REFERENCES rooms (id) ON DELETE CASCADE;
@@ -80,11 +80,11 @@ COMMENT ON TABLE room_post_likes IS '좋아요-----한 사람이 올린 만화 �
 COMMENT ON COLUMN room_post_likes.post_id IS '올린 만화 ID';
 COMMENT ON COLUMN room_post_likes.user_id IS '누른 회원 ID';
 COMMENT ON COLUMN room_post_likes.created_at IS '생성 일시';
-COMMENT ON TABLE room_messages IS '방 대화-----만화를 올림(POSTED), 좋아요(LIKED), 댓글(COMMENT)';
+COMMENT ON TABLE room_messages IS '방 대화-----방을 만듦(CREATED), 만화를 올림(POSTED), 좋아요(LIKED), 댓글(COMMENT)';
 COMMENT ON COLUMN room_messages.id IS '대화 줄 ID';
 COMMENT ON COLUMN room_messages.room_id IS '방 ID';
 COMMENT ON COLUMN room_messages.user_id IS '남긴 회원 ID';
-COMMENT ON COLUMN room_messages.message_type IS '종류-----POSTED, LIKED, COMMENT';
+COMMENT ON COLUMN room_messages.message_type IS '종류-----CREATED, POSTED, LIKED, COMMENT';
 COMMENT ON COLUMN room_messages.post_id IS '올린 만화 ID-----방 전체 댓글이면 NULL. 만화를 내리면 같이 지움';
 COMMENT ON COLUMN room_messages.body IS '댓글-----COMMENT일 때만. 1~200자';
 COMMENT ON COLUMN room_messages.created_at IS '생성 일시';

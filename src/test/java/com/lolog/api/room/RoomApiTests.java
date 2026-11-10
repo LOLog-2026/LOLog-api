@@ -143,8 +143,12 @@ class RoomApiTests {
 			.andExpect(jsonPath("$.members[0].isMe").value(true))
 			.andExpect(jsonPath("$.members[1].nickname").value("준"))
 			.andExpect(jsonPath("$.members[2].userId").value(b))
-			.andExpect(jsonPath("$.lastActivity").isEmpty())
+			.andExpect(jsonPath("$.lastActivity.type").value("CREATED"))
+			.andExpect(jsonPath("$.lastActivity.isMe").value(true))
 			.andExpect(jsonPath("$.unread").value(0));
+		// 초대받은 사람에게는 "방을 만들었어요"가 받지 않은 글 1이다
+		call(get("/api/rooms"), a).andExpect(jsonPath("$.rooms[0].unread").value(1))
+			.andExpect(jsonPath("$.rooms[0].lastActivity.nickname").value("나"));
 		call(get("/api/rooms"), a).andExpect(jsonPath("$.rooms[0].members[1].isMe").value(true));
 		long outsider = user("남");
 		long id = json(call(get("/api/rooms"), me)).get("rooms").get(0).get("id").asLong();
@@ -198,7 +202,7 @@ class RoomApiTests {
 			.andExpect(jsonPath("$.code").value("COMIC_NOT_FOUND"));
 		postComic(a, roomId, comic(a, "DRAWING", "그리는 중")).andExpect(status().isNotFound());
 
-		call(get("/api/rooms"), b).andExpect(jsonPath("$.rooms[0].unread").value(1))
+		call(get("/api/rooms"), b).andExpect(jsonPath("$.rooms[0].unread").value(2))
 			.andExpect(jsonPath("$.rooms[0].lastActivity.type").value("POSTED"))
 			.andExpect(jsonPath("$.rooms[0].lastActivity.nickname").value("준"))
 			.andExpect(jsonPath("$.rooms[0].lastActivity.isMe").value(false));
@@ -220,32 +224,34 @@ class RoomApiTests {
 			.andExpect(jsonPath("$.code").value("ROOM_POST_NOT_FOUND"));
 
 		call(get("/api/rooms"), a).andExpect(jsonPath("$.rooms[0].unread").value(3))
-			.andExpect(jsonPath("$.rooms[0].lastActivity.type").value("COMMENTED"));
+			.andExpect(jsonPath("$.rooms[0].lastActivity.type").value("COMMENTED"))
+			.andExpect(jsonPath("$.rooms[0].lastActivity.text").value("다들 뭐 해"));
 		call(get("/api/rooms/" + roomId + "/posts"), a).andExpect(jsonPath("$.posts[0].likeCount").value(1))
 			.andExpect(jsonPath("$.posts[0].likedByMe").value(false))
 			.andExpect(jsonPath("$.posts[0].commentCount").value(1));
 		call(get("/api/rooms/" + roomId + "/messages"), a).andExpect(status().isOk())
-			.andExpect(jsonPath("$.messages.length()").value(4))
-			.andExpect(jsonPath("$.messages[0].type").value("POSTED"))
-			.andExpect(jsonPath("$.messages[0].member.isMe").value(true))
-			.andExpect(jsonPath("$.messages[1].type").value("LIKED"))
-			.andExpect(jsonPath("$.messages[2].text").value("민트초코 최고"))
-			.andExpect(jsonPath("$.messages[2].post.id").value(postId))
-			.andExpect(jsonPath("$.messages[3].post").isEmpty());
+			.andExpect(jsonPath("$.messages.length()").value(5))
+			.andExpect(jsonPath("$.messages[0].type").value("CREATED"))
+			.andExpect(jsonPath("$.messages[1].type").value("POSTED"))
+			.andExpect(jsonPath("$.messages[1].member.isMe").value(true))
+			.andExpect(jsonPath("$.messages[2].type").value("LIKED"))
+			.andExpect(jsonPath("$.messages[3].text").value("민트초코 최고"))
+			.andExpect(jsonPath("$.messages[3].post.id").value(postId))
+			.andExpect(jsonPath("$.messages[4].post").isEmpty());
 		call(get("/api/rooms"), a).andExpect(jsonPath("$.rooms[0].unread").value(0));
 
 		// 좋아요를 취소하면 알림 줄도 빠진다
 		call(delete(likePath), b).andExpect(jsonPath("$.likeCount").value(0)).andExpect(jsonPath("$.likedByMe").value(false));
 		call(delete(likePath), b).andExpect(status().isOk());
-		call(get("/api/rooms/" + roomId + "/messages"), b).andExpect(jsonPath("$.messages.length()").value(3));
+		call(get("/api/rooms/" + roomId + "/messages"), b).andExpect(jsonPath("$.messages.length()").value(4));
 
 		// 올린 사람만 내리고, 내리면 그 만화의 댓글도 지워진다
 		call(delete("/api/rooms/" + roomId + "/posts/" + postId), b).andExpect(status().isForbidden())
 			.andExpect(jsonPath("$.code").value("ROOM_POST_NOT_MINE"));
 		call(delete("/api/rooms/" + roomId + "/posts/" + postId), a).andExpect(status().isNoContent());
 		call(get("/api/rooms/" + roomId + "/posts"), a).andExpect(jsonPath("$.posts").isEmpty());
-		call(get("/api/rooms/" + roomId + "/messages"), a).andExpect(jsonPath("$.messages.length()").value(1))
-			.andExpect(jsonPath("$.messages[0].text").value("다들 뭐 해"));
+		call(get("/api/rooms/" + roomId + "/messages"), a).andExpect(jsonPath("$.messages.length()").value(2))
+			.andExpect(jsonPath("$.messages[1].text").value("다들 뭐 해"));
 		call(put(likePath), b).andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("ROOM_POST_NOT_FOUND"));
 	}
 
