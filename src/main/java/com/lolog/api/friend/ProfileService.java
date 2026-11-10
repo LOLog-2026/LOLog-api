@@ -71,7 +71,7 @@ public class ProfileService {
 		return jdbc.queryForObject("select nickname, friend_code from user_profiles where user_id = ?",
 				(rs, n) -> {
 					String nickname = rs.getString("nickname");
-					return new ProfileResponse(nickname, nickname == null ? null : rs.getString("friend_code"),
+					return new ProfileResponse(userId, nickname, nickname == null ? null : rs.getString("friend_code"),
 							characters.profileResponse(userId));
 				}, userId);
 	}
