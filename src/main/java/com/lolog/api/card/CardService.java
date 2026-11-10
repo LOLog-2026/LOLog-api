@@ -14,16 +14,23 @@ import com.lolog.api.comic.ComicStatus;
 import com.lolog.api.common.ApiException;
 import com.lolog.api.common.PageRequestParams;
 import com.lolog.api.common.PageSort;
+import com.lolog.api.common.SafeLog;
+import com.lolog.api.storage.ImageStorage;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Limit;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 public class CardService {
@@ -33,12 +40,18 @@ public class CardService {
 	static final int MAX_PLACE = 20;
 	static final int MAX_TEXT = 200;
 
+	private static final Logger log = LoggerFactory.getLogger(CardService.class);
+
 	private final CardRepository cards;
 	private final ComicRepository comics;
+	private final JdbcTemplate jdbc;
+	private final ImageStorage storage;
 
-	public CardService(CardRepository cards, ComicRepository comics) {
+	public CardService(CardRepository cards, ComicRepository comics, JdbcTemplate jdbc, ImageStorage storage) {
 		this.cards = cards;
 		this.comics = comics;
+		this.jdbc = jdbc;
+		this.storage = storage;
 	}
 
 	@Transactional(readOnly = true)
@@ -134,7 +147,23 @@ public class CardService {
 	// 카드를 지워도 그 카드로 만든 만화는 남는다(DB가 comics.card_id를 null로 바꾼다).
 	@Transactional
 	public void delete(long userId, long id) {
-		cards.delete(findLocked(userId, id));
+		Card card = findLocked(userId, id);
+		// 카드 구간 음성도 같이 지운다(audio.md 5장). 행을 잠근 뒤 읽어서, 자르는 중인 쪽과 엇갈리지 않는다.
+		String audioKey = jdbc.queryForObject("select audio_key from cards where id = ?", String.class, card.getId());
+		cards.delete(card);
+		if (audioKey != null) {
+			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+				@Override
+				public void afterCommit() {
+					try {
+						storage.delete(audioKey);
+					}
+					catch (Exception e) {
+						log.warn("지운 카드 {}의 구간 음성 파일을 지우지 못했습니다.", id, SafeLog.withoutMessages(e));
+					}
+				}
+			});
+		}
 	}
 
 	private Card find(long userId, long id) {
