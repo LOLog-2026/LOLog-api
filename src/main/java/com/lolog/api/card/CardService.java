@@ -1,5 +1,6 @@
 package com.lolog.api.card;
 
+import com.lolog.api.audio.CardAudioViews;
 import com.lolog.api.card.CardDtos.CardDetail;
 import com.lolog.api.card.CardDtos.CharacterRef;
 import com.lolog.api.character.CharacterViews;
@@ -52,9 +53,11 @@ public class CardService {
 	private final JdbcTemplate jdbc;
 	private final ImageStorage storage;
 	private final CharacterViews characters;
+	private final CardAudioViews audio;
 
 	public CardService(CardRepository cards, ComicRepository comics, JdbcTemplate jdbc, ImageStorage storage,
-			CharacterViews characters) {
+			CharacterViews characters, CardAudioViews audio) {
+		this.audio = audio;
 		this.cards = cards;
 		this.comics = comics;
 		this.jdbc = jdbc;
@@ -75,10 +78,13 @@ public class CardService {
 		List<Long> ids = shown.stream().map(Card::getId).toList();
 		Map<Long, Long> lineCounts = ids.isEmpty() ? Map.of() : toMap(cards.countLinesByCardIds(ids));
 		Map<Long, Long> comicCounts = ids.isEmpty() ? Map.of() : toMap(comics.countNotFailedByCardIds(ids));
+		// 들을 수 있는 카드 구간 음성이 있으면 true(replay.md 4장)
+		Map<Long, Boolean> hasAudio = audio.ready(ids);
 		List<CardSummary> items = shown.stream()
 			.map(c -> new CardSummary(c.getId(), c.getKind(), c.getSummary(), c.getRecordedAt(), c.getStartMs(),
 					c.getEndMs(), c.getPlace(), Math.toIntExact(lineCounts.getOrDefault(c.getId(), 0L)),
-					Math.toIntExact(comicCounts.getOrDefault(c.getId(), 0L)), c.getCreatedAt()))
+					Math.toIntExact(comicCounts.getOrDefault(c.getId(), 0L)), hasAudio.getOrDefault(c.getId(), false),
+					c.getCreatedAt()))
 			.toList();
 		return new CardPage(items, more ? String.valueOf(shown.getLast().getId()) : null);
 	}
@@ -255,7 +261,7 @@ public class CardService {
 			.toList();
 		return new CardDetail(card.getId(), card.getRecordingId(), card.getKind(), card.getSummary(), card.getPlace(),
 				card.getRecordedAt(), card.getStartMs(), card.getEndMs(), speakers, lines, comicRefs,
-				MAX_COMICS - card.getComicCount(), card.getCreatedAt());
+				MAX_COMICS - card.getComicCount(), audio.detail(card.getId()), card.getCreatedAt());
 	}
 
 	// 앞뒤 공백을 뺀 뒤 1~max자. null은 "지움"이라 통과한다(대사 text는 null이면 부르지 않는다).

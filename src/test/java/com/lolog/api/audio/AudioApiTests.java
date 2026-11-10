@@ -3,6 +3,7 @@ package com.lolog.api.audio;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -384,6 +385,57 @@ class AudioApiTests {
 			.isInstanceOf(NoSuchKeyException.class);
 		assertThat(jdbc.queryForObject("select count(*) from recording_audio_files where recording_id = ?", Long.class,
 				recording)).isZero();
+	}
+
+	// ---- 순간 다시 듣기(replay.md) ----
+
+	private ResultActions cardDetail(long userId, long cardId) throws Exception {
+		return mvc.perform(get("/api/cards/" + cardId).header("Authorization", TestTokens.bearer(userId)));
+	}
+
+	@Test
+	void 카드_음성_상태는_READY_PENDING_NONE이고_목록에는_hasAudio가_있다() throws Exception {
+		long user = USERS.incrementAndGet();
+		long saved = newRecording(user, false);
+		long off = upload(user, UUID.randomUUID().toString(), 1, false, 60, false);
+		long pendingCard = insertCard(user, saved, 1000, 2000);
+		long offCard = insertCard(user, off, 1000, 2000);
+		long orphanCard = jdbc.queryForObject("""
+				insert into cards (user_id, kind, summary, start_ms, end_ms, recorded_at)
+				values (?, '웃김', '요약', 0, 1, now()) returning id
+				""", Long.class, user);
+
+		cardDetail(user, pendingCard).andExpect(status().isOk())
+			.andExpect(jsonPath("$.audio.status").value("PENDING"))
+			.andExpect(jsonPath("$.audio.url").isEmpty())
+			.andExpect(jsonPath("$.audio.durationMs").isEmpty());
+		cardDetail(user, offCard).andExpect(jsonPath("$.audio.status").value("NONE"));
+		cardDetail(user, orphanCard).andExpect(jsonPath("$.audio.status").value("NONE"));
+
+		putAudio(user, saved, 1, aac(1, 100), 0, 6400).andExpect(status().isNoContent());
+		awaitAudio(pendingCard);
+		String body = cardDetail(user, pendingCard).andExpect(jsonPath("$.audio.status").value("READY"))
+			.andExpect(jsonPath("$.audio.durationMs").value(33 * 64))
+			.andReturn().getResponse().getContentAsString();
+		String url = objectMapper.readTree(body).get("audio").get("url").asString();
+		try (var in = java.net.URI.create(url).toURL().openStream()) {
+			assertThat(in.readAllBytes()).isEqualTo(frames(1, 7, 39));
+		}
+
+		String list = mvc.perform(get("/api/cards").header("Authorization", TestTokens.bearer(user)))
+			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		for (var card : objectMapper.readTree(list).get("cards")) {
+			assertThat(card.get("hasAudio").asBoolean()).as("카드 " + card.get("id"))
+				.isEqualTo(card.get("id").asLong() == pendingCard);
+		}
+
+		// 7일이 지나도록 안 올라온 카드는 NONE
+		long late = insertCard(user, off, 3000, 4000);
+		long lateSaved = newRecording(user, false);
+		long lateCard = insertCard(user, lateSaved, 1000, 2000);
+		jdbc.update("update recordings set ended_at = now() - interval '8 days' where id = ?", lateSaved);
+		cardDetail(user, lateCard).andExpect(jsonPath("$.audio.status").value("NONE"));
+		cardDetail(user, late).andExpect(jsonPath("$.audio.status").value("NONE"));
 	}
 
 }
