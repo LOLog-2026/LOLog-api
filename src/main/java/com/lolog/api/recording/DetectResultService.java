@@ -1,5 +1,6 @@
 package com.lolog.api.recording;
 
+import com.lolog.api.audio.CardAudioClipper;
 import com.lolog.api.job.Job;
 import com.lolog.api.job.JobRepository;
 import com.lolog.api.card.Card;
@@ -33,11 +34,12 @@ public class DetectResultService {
 	private final ObjectMapper objectMapper;
 	private final TransactionTemplate tx;
 	private final PushService push;
+	private final CardAudioClipper audioClipper;
 	private final long latePartMinutes;
 
 	public DetectResultService(RecordingRepository recordings, RecordingPartRepository parts, JobRepository jobs,
 			CardRepository cards, RecordingService recordingService, DetectPublisher publisher, ObjectMapper objectMapper,
-			TransactionTemplate tx, PushService push,
+			TransactionTemplate tx, PushService push, CardAudioClipper audioClipper,
 			@Value("${lolog.detect.late-part-minutes:70}") long latePartMinutes) {
 		this.recordings = recordings;
 		this.parts = parts;
@@ -48,6 +50,7 @@ public class DetectResultService {
 		this.objectMapper = objectMapper;
 		this.tx = tx;
 		this.push = push;
+		this.audioClipper = audioClipper;
 		this.latePartMinutes = latePartMinutes;
 	}
 
@@ -75,6 +78,10 @@ public class DetectResultService {
 			// 같은 jobId가 다시 오면 위에서 끝나 두 번 가지 않는다.
 			if (!fresh.isEmpty()) {
 				push.notify(recording.getUserId(), PushService.cardsCreated(recordingId, fresh.size()));
+				// 음성 파일이 먼저 올라와 있으면 새 카드의 구간 음성을 커밋 뒤에 자른다(audio.md 4장).
+				if (recording.isAudioSaved()) {
+					audioClipper.clipRecordingLater(recordingId);
+				}
 			}
 
 			boolean carryOnly = jobs.existsByRecordingPartIdAndStatusAndIdNot(part.getId(), "DONE", job.getId());
