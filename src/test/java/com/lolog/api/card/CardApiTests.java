@@ -119,6 +119,33 @@ class CardApiTests {
 	}
 
 	@Test
+	void sort가_oldest면_오래된순으로_나눠_준다() throws Exception {
+		long me = USERS.incrementAndGet();
+		long first = card(me, "첫 카드");
+		long second = card(me, "둘째 카드");
+		long third = card(me, "셋째 카드");
+
+		String cursor = mvc.perform(get("/api/cards?sort=oldest&size=2").header("Authorization", TestTokens.bearer(String.valueOf(me))))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.cards.length()").value(2))
+			.andExpect(jsonPath("$.cards[0].id").value(first))
+			.andExpect(jsonPath("$.cards[1].id").value(second))
+			.andExpect(jsonPath("$.nextCursor").isString())
+			.andReturn().getResponse().getContentAsString().replaceAll(".*\"nextCursor\":\"([^\"]+)\".*", "$1");
+
+		mvc.perform(get("/api/cards?sort=oldest&size=2&cursor=" + cursor).header("Authorization", TestTokens.bearer(String.valueOf(me))))
+			.andExpect(jsonPath("$.cards.length()").value(1))
+			.andExpect(jsonPath("$.cards[0].id").value(third))
+			.andExpect(jsonPath("$.nextCursor").isEmpty());
+
+		mvc.perform(get("/api/cards?sort=latest&size=1").header("Authorization", TestTokens.bearer(String.valueOf(me))))
+			.andExpect(jsonPath("$.cards[0].id").value(third));
+		mvc.perform(get("/api/cards?sort=popular").header("Authorization", TestTokens.bearer(String.valueOf(me))))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.field").value("sort"));
+	}
+
+	@Test
 	void 자세히는_화자_대사_만화와_남은_횟수를_준다() throws Exception {
 		long me = USERS.incrementAndGet();
 		long cardId = card(me, "치킨 주문하다 생긴 일");

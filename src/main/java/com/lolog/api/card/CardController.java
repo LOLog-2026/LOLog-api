@@ -29,8 +29,9 @@ public class CardController {
 	}
 
 	@GetMapping
-	public CardPage list(@RequestParam(required = false) String cursor, @RequestParam(required = false) Integer size) {
-		return cardService.list(currentUser.currentUserId(), cursor, size);
+	public CardPage list(@RequestParam(required = false) String cursor, @RequestParam(required = false) Integer size,
+			@RequestParam(required = false) String sort) {
+		return cardService.list(currentUser.currentUserId(), cursor, size, sort);
 	}
 
 	@GetMapping("/{id}")

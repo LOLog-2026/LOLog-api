@@ -13,6 +13,7 @@ import com.lolog.api.comic.ComicRepository;
 import com.lolog.api.comic.ComicStatus;
 import com.lolog.api.common.ApiException;
 import com.lolog.api.common.PageRequestParams;
+import com.lolog.api.common.PageSort;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -41,10 +42,13 @@ public class CardService {
 	}
 
 	@Transactional(readOnly = true)
-	public CardPage list(long userId, String cursor, Integer size) {
+	public CardPage list(long userId, String cursor, Integer size, String sort) {
+		PageSort order = PageSort.of(sort);
 		PageRequestParams params = PageRequestParams.of(cursor, size);
 		int limit = params.size();
-		List<Card> page = cards.findPage(userId, params.before(), Limit.of(limit + 1));
+		List<Card> page = order == PageSort.OLDEST
+				? cards.findPageOldest(userId, params.before(), Limit.of(limit + 1))
+				: cards.findPage(userId, params.before(), Limit.of(limit + 1));
 		boolean more = page.size() > limit;
 		List<Card> shown = more ? page.subList(0, limit) : page;
 		List<Long> ids = shown.stream().map(Card::getId).toList();
