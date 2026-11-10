@@ -29,6 +29,10 @@ public interface ComicRepository extends JpaRepository<Comic, Long> {
 	@Query("select m from Comic m where m.userId = :userId and (:before is null or m.id < :before) order by m.id desc")
 	List<Comic> findPage(@Param("userId") Long userId, @Param("before") Long before, Limit limit);
 
+	// 오래된순(id 오름차순). after가 null이면 처음부터.
+	@Query("select m from Comic m where m.userId = :userId and (:after is null or m.id > :after) order by m.id asc")
+	List<Comic> findPageOldest(@Param("userId") Long userId, @Param("after") Long after, Limit limit);
+
 	boolean existsByCardIdAndStatusIn(Long cardId, Collection<ComicStatus> statuses);
 
 	// 카드 목록의 comicCount. 남아 있는 만화 중 실패 아닌 것(지운 만화는 행이 없으므로 빠진다).

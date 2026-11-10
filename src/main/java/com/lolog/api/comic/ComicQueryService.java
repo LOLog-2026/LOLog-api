@@ -4,6 +4,7 @@ import com.lolog.api.comic.ComicDtos.ComicPage;
 import com.lolog.api.comic.ComicDtos.ComicResponse;
 import com.lolog.api.common.ApiException;
 import com.lolog.api.common.PageRequestParams;
+import com.lolog.api.common.PageSort;
 import com.lolog.api.storage.ImageStorage;
 import java.util.List;
 import org.slf4j.Logger;
@@ -29,9 +30,12 @@ public class ComicQueryService {
 		this.tx = tx;
 	}
 
-	public ComicPage list(long userId, String cursor, Integer size) {
+	public ComicPage list(long userId, String cursor, Integer size, String sort) {
+		PageSort order = PageSort.of(sort);
 		PageRequestParams params = PageRequestParams.of(cursor, size);
-		List<Comic> page = comics.findPage(userId, params.before(), Limit.of(params.size() + 1));
+		List<Comic> page = order == PageSort.OLDEST
+				? comics.findPageOldest(userId, params.before(), Limit.of(params.size() + 1))
+				: comics.findPage(userId, params.before(), Limit.of(params.size() + 1));
 		boolean more = page.size() > params.size();
 		List<Comic> shown = more ? page.subList(0, params.size()) : page;
 		return new ComicPage(shown.stream().map(this::toResponse).toList(),

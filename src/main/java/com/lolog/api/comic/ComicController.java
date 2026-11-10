@@ -34,8 +34,9 @@ public class ComicController {
 	}
 
 	@GetMapping("/api/comics")
-	public ComicPage list(@RequestParam(required = false) String cursor, @RequestParam(required = false) Integer size) {
-		return comicQueries.list(currentUser.currentUserId(), cursor, size);
+	public ComicPage list(@RequestParam(required = false) String cursor, @RequestParam(required = false) Integer size,
+			@RequestParam(required = false) String sort) {
+		return comicQueries.list(currentUser.currentUserId(), cursor, size, sort);
 	}
 
 	@GetMapping("/api/comics/{id}")
