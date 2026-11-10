@@ -29,6 +29,10 @@ public class UserDataService {
 			jdbc.update("delete from cards where user_id = ?", userId);
 			jdbc.update("delete from recordings where user_id = ?", userId);
 			jdbc.update("delete from device_tokens where user_id = ?", userId);
+			// 친구 관계·요청·차단은 이 회원이 어느 쪽이든 지운다. 친구들 목록에서는 이 회원이 빠지기만 한다(friends.md).
+			jdbc.update("delete from friendships where requester_id = ? or addressee_id = ?", userId, userId);
+			jdbc.update("delete from user_blocks where blocker_id = ? or blocked_id = ?", userId, userId);
+			jdbc.update("delete from user_profiles where user_id = ?", userId);
 		});
 		// DB를 지운 뒤 이미지를 지운다. 실패하면 예외가 그대로 나가 500이 되고, 다시 부르면 남은 이미지만 지운다.
 		storage.deleteUser(userId);
