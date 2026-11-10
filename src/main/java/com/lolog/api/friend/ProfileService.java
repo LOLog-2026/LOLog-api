@@ -8,6 +8,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 // 회원 프로필(user_profiles): 닉네임과 친구 코드. 처음 볼 때(GET) 또는 닉네임을 정할 때(PATCH) 만든다(friends.md).
+// 친구 코드는 프로필을 만들 때 발급하지만, 닉네임을 정하기 전에는 응답에 보이지 않고(null) 코드로 찾아지지도 않는다.
+// 닉네임 없는 사람이 요청을 받고도 수락하지 못하는 흐름을 막는다(#40에서 정함).
 @Service
 public class ProfileService {
 
@@ -64,7 +66,10 @@ public class ProfileService {
 
 	private ProfileResponse read(long userId) {
 		return jdbc.queryForObject("select nickname, friend_code from user_profiles where user_id = ?",
-				(rs, n) -> new ProfileResponse(rs.getString("nickname"), rs.getString("friend_code"), null), userId);
+				(rs, n) -> {
+					String nickname = rs.getString("nickname");
+					return new ProfileResponse(nickname, nickname == null ? null : rs.getString("friend_code"), null);
+				}, userId);
 	}
 
 	String newCode() {

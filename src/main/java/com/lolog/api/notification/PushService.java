@@ -48,9 +48,9 @@ public class PushService implements DisposableBean {
 		return comic("COMIC_FAILED", comicId, cardId);
 	}
 
-	// 친구 요청을 받음(friends.md 3장). 문구는 앱이 만든다.
-	public static Map<String, String> friendRequest(long requestId) {
-		return Map.of("type", "FRIEND_REQUEST", "requestId", String.valueOf(requestId));
+	// 친구 요청을 받음(friends.md 3장). 문구는 앱이 만들고, 문구에 넣을 보낸 사람 닉네임을 같이 보낸다.
+	public static Map<String, String> friendRequest(long requestId, String nickname) {
+		return Map.of("type", "FRIEND_REQUEST", "requestId", String.valueOf(requestId), "nickname", nickname);
 	}
 
 	// 카드를 지웠으면 cardId는 빈 문자열이다.

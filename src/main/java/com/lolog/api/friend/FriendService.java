@@ -52,7 +52,10 @@ public class FriendService {
 		}
 		requireNickname(me);
 		limiter.check(me);
-		long target = jdbc.queryForList("select user_id from user_profiles where friend_code = ?", Long.class, code)
+		// 닉네임을 정하지 않은 사람의 코드는 없는 코드와 같다(코드가 앱에 보이지 않는 상태).
+		long target = jdbc
+			.queryForList("select user_id from user_profiles where friend_code = ? and nickname is not null", Long.class,
+					code)
 			.stream()
 			.findFirst()
 			.orElseThrow(FriendService::codeNotFound);
@@ -85,7 +88,8 @@ public class FriendService {
 				insert into friendships (requester_id, addressee_id) values (?, ?)
 				returning id, requester_id, addressee_id, status, created_at
 				""", (rs, n) -> friendship(rs), me, target);
-		push.notify(target, PushService.friendRequest(created.id()));
+		String myNickname = jdbc.queryForObject("select nickname from user_profiles where user_id = ?", String.class, me);
+		push.notify(target, PushService.friendRequest(created.id(), myNickname));
 		return new FriendRequestResponse(created.id(), "SENT", user, PENDING, created.createdAt());
 	}
 

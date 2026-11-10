@@ -10,6 +10,7 @@ public final class FriendDtos {
 	private FriendDtos() {
 	}
 
+	// friendCode는 닉네임을 정하기 전에는 null이다.
 	// character는 프로필 캐릭터 기능(characters.md)에서 채운다. 그 전까지는 항상 null이다.
 	public record ProfileResponse(String nickname, String friendCode, Object character) {
 	}

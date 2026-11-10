@@ -151,19 +151,34 @@ class FriendApiTests {
 	}
 
 	@Test
-	void 처음_프로필을_보면_친구_코드를_발급하고_닉네임은_null이다() throws Exception {
+	void 친구_코드는_닉네임을_정한_뒤에_보이고_바뀌지_않는다() throws Exception {
 		long id = USERS.incrementAndGet();
-		JsonNode first = json(call(get("/api/me/profile"), id).andExpect(status().isOk())
+		call(get("/api/me/profile"), id).andExpect(status().isOk())
 			.andExpect(jsonPath("$.nickname").isEmpty())
-			.andExpect(jsonPath("$.character").isEmpty()));
-		String code = first.get("friendCode").asString();
-		assertThat(code).matches("[ABCDEFGHJKMNPQRSTUVWXYZ2-9]{8}");
+			.andExpect(jsonPath("$.friendCode").isEmpty())
+			.andExpect(jsonPath("$.character").isEmpty());
+		// 서버 안에는 처음 볼 때 발급해 둔다
+		String issued = jdbc.queryForObject("select friend_code from user_profiles where user_id = ?", String.class, id);
+		assertThat(issued).matches("[ABCDEFGHJKMNPQRSTUVWXYZ2-9]{8}");
 
-		// 코드는 바뀌지 않는다
-		call(get("/api/me/profile"), id).andExpect(jsonPath("$.friendCode").value(code));
 		patchNickname(id, "  민수  ").andExpect(status().isOk())
 			.andExpect(jsonPath("$.nickname").value("민수"))
-			.andExpect(jsonPath("$.friendCode").value(code));
+			.andExpect(jsonPath("$.friendCode").value(issued));
+		patchNickname(id, "지원").andExpect(jsonPath("$.friendCode").value(issued));
+		call(get("/api/me/profile"), id).andExpect(jsonPath("$.friendCode").value(issued));
+	}
+
+	@Test
+	void 닉네임을_정하지_않은_사람의_코드로는_요청할_수_없다() throws Exception {
+		User a = user("민수");
+		long b = USERS.incrementAndGet();
+		call(get("/api/me/profile"), b).andExpect(status().isOk());
+		String hidden = jdbc.queryForObject("select friend_code from user_profiles where user_id = ?", String.class, b);
+
+		request(a.id(), hidden).andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.code").value("FRIEND_CODE_NOT_FOUND"));
+		patchNickname(b, "지원").andExpect(status().isOk());
+		request(a.id(), hidden).andExpect(status().isCreated());
 	}
 
 	@Test
@@ -192,7 +207,7 @@ class FriendApiTests {
 			.andExpect(jsonPath("$.user.friendCode").value(b.code())));
 		long id = sent.get("id").asLong();
 		verify(sender, timeout(WAIT_MS)).send(eq(List.of(b.token())),
-				eq(Map.of("type", "FRIEND_REQUEST", "requestId", String.valueOf(id))));
+				eq(Map.of("type", "FRIEND_REQUEST", "requestId", String.valueOf(id), "nickname", "민수")));
 
 		call(get("/api/friend-requests?direction=received"), b.id()).andExpect(status().isOk())
 			.andExpect(jsonPath("$.requests[0].id").value(id))
@@ -265,19 +280,6 @@ class FriendApiTests {
 		call(get("/api/friend-requests"), a.id()).andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.field").value("direction"));
 		call(get("/api/friend-requests?direction=RECEIVED"), a.id()).andExpect(status().isBadRequest());
-	}
-
-	@Test
-	void 닉네임이_없으면_수락할_수_없다() throws Exception {
-		User a = user("민수");
-		long b = USERS.incrementAndGet();
-		String bCode = json(call(get("/api/me/profile"), b)).get("friendCode").asString();
-		long id = requestId(a.id(), new User(b, bCode, null));
-
-		call(post("/api/friend-requests/" + id + "/accept"), b).andExpect(status().isConflict())
-			.andExpect(jsonPath("$.code").value("PROFILE_REQUIRED"));
-		// 받은 요청에서는 닉네임이 없는 쪽도 보인다(보낸 사람에게 상대 닉네임은 null)
-		call(get("/api/friend-requests?direction=sent"), a.id()).andExpect(jsonPath("$.requests[0].user.nickname").isEmpty());
 	}
 
 	@Test
@@ -373,6 +375,10 @@ class FriendApiTests {
 	@Test
 	void 친구_코드는_1분에_10번까지_넣을_수_있다() throws Exception {
 		User a = user("민수");
+		// 형식이 틀린 입력은 코드를 찾기 전에 400이라 세지 않는다
+		for (int i = 0; i < FriendCodeAttemptLimiter.LIMIT + 2; i++) {
+			request(a.id(), "ABC").andExpect(status().isBadRequest());
+		}
 		for (int i = 0; i < FriendCodeAttemptLimiter.LIMIT; i++) {
 			request(a.id(), "ZZZZZZZZ").andExpect(status().isNotFound());
 		}
