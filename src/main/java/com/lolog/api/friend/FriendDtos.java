@@ -12,8 +12,9 @@ public final class FriendDtos {
 	private FriendDtos() {
 	}
 
+	// userId는 내 회원 ID. 앱이 화자에 내 프로필 캐릭터를 붙일 때 CharacterRef의 id로 쓴다(LOLog-docs PR #56).
 	// friendCode는 닉네임을 정하기 전에는 null이다. character는 내 프로필 캐릭터(만든 적 없거나 지웠으면 null).
-	public record ProfileResponse(String nickname, String friendCode, ProfileCharacterResponse character) {
+	public record ProfileResponse(Long userId, String nickname, String friendCode, ProfileCharacterResponse character) {
 	}
 
 	// nickname 길이는 앞뒤 공백을 뺀 뒤에 보므로 서비스에서 확인한다.
