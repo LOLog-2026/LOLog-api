@@ -26,6 +26,10 @@ public interface CardRepository extends JpaRepository<Card, Long> {
 	@Query("select c from Card c where c.userId = :userId and (:before is null or c.id < :before) order by c.id desc")
 	List<Card> findPage(@Param("userId") Long userId, @Param("before") Long before, Limit limit);
 
+	// 오래된순(id 오름차순). after가 null이면 처음부터.
+	@Query("select c from Card c where c.userId = :userId and (:after is null or c.id > :after) order by c.id asc")
+	List<Card> findPageOldest(@Param("userId") Long userId, @Param("after") Long after, Limit limit);
+
 	// 만들기 횟수를 3보다 작을 때만 늘린다. 바뀐 줄이 0이면 이미 3번 만든 카드다. 조건을 붙인 UPDATE 한 줄이라 동시에 눌러도 3을 넘지 않는다.
 	@Modifying(flushAutomatically = true, clearAutomatically = true)
 	@Query(value = "update cards set comic_count = comic_count + 1 where id = :id and comic_count < 3", nativeQuery = true)

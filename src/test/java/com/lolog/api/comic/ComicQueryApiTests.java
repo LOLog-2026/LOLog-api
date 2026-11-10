@@ -149,6 +149,27 @@ class ComicQueryApiTests {
 	}
 
 	@Test
+	void sort가_oldest면_오래된순으로_나눠_준다() throws Exception {
+		long me = USERS.incrementAndGet();
+		long first = request(me, card(me, "첫 카드"));
+		long second = request(me, card(me, "둘째 카드"));
+
+		String cursor = mvc.perform(get("/api/comics?sort=oldest&size=1").header("Authorization", TestTokens.bearer(String.valueOf(me))))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.comics[0].id").value(first))
+			.andExpect(jsonPath("$.nextCursor").isString())
+			.andReturn().getResponse().getContentAsString().replaceAll(".*\"nextCursor\":\"([^\"]+)\".*", "$1");
+
+		mvc.perform(get("/api/comics?sort=oldest&size=1&cursor=" + cursor).header("Authorization", TestTokens.bearer(String.valueOf(me))))
+			.andExpect(jsonPath("$.comics.length()").value(1))
+			.andExpect(jsonPath("$.comics[0].id").value(second))
+			.andExpect(jsonPath("$.nextCursor").isEmpty());
+
+		mvc.perform(get("/api/comics?sort=wrong").header("Authorization", TestTokens.bearer(String.valueOf(me))))
+			.andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").value("sort"));
+	}
+
+	@Test
 	void 자세히의_imageUrl로_이미지를_열_수_있고_카드를_지워도_요약이_남는다() throws Exception {
 		long me = USERS.incrementAndGet();
 		long cardId = card(me, "치킨 주문하다 생긴 일");
