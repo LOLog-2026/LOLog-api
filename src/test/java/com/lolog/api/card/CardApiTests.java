@@ -205,7 +205,8 @@ class CardApiTests {
 
 		patchCard(me, cardId, "{}").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
 		patchCard(me, cardId, "{\"speakers\":[],\"lines\":[]}").andExpect(status().isBadRequest());
-		patchCard(me, cardId, "{\"speakers\":[{\"key\":\"화자3\",\"name\":\"민수\"}]}")
+		// 화자3은 새 화자가 될 수 있으니(화자 더하기) 다음 번호가 아닌 화자4로 본다
+		patchCard(me, cardId, "{\"speakers\":[{\"key\":\"화자4\",\"name\":\"민수\"}]}")
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.code").value("UNKNOWN_SPEAKER"))
 			.andExpect(jsonPath("$.field").value("speakers[0].key"));
@@ -294,6 +295,136 @@ class CardApiTests {
 		org.assertj.core.api.Assertions
 			.assertThatThrownBy(() -> jdbc.update("update cards set comic_count = 4 where id = ?", cardId))
 			.hasMessageContaining("ck_cards_comic_count");
+	}
+
+	// ---- 화자 더하기·빼기(api-dto CardUpdateRequest, #48) ----
+
+	// 화자 n명, 화자마다 대사 하나(대사 i는 화자 i)와 이름(A, B, C, D)
+	private long cardWithSpeakers(long userId, int n) {
+		Card card = new Card(null, userId, "웃김", "요약", 1000, 9000, OffsetDateTime.parse("2026-11-10T12:30:01+09:00"));
+		for (int i = 1; i <= n; i++) {
+			card.addSpeaker("화자" + i);
+			card.addLine(i, "화자" + i, "대사 " + i, null, null);
+		}
+		long id = cards.save(card).getId();
+		for (int i = 1; i <= n; i++) {
+			jdbc.update("update card_speakers set name = ? where card_id = ? and speaker_key = ?",
+					String.valueOf((char) ('A' + i - 1)), id, "화자" + i);
+		}
+		return id;
+	}
+
+	private String speakerOfLine(long lineId) {
+		return jdbc.queryForObject("select speaker_key from card_lines where id = ?", String.class, lineId);
+	}
+
+	@Test
+	void 화자를_더하면_다음_번호로_만들고_같은_요청에서_대사를_옮긴다() throws Exception {
+		long me = USERS.incrementAndGet();
+		long cardId = card(me, "치킨");
+		long line2 = lineId(cardId, 2);
+
+		patchCard(me, cardId, """
+				{"speakers":[{"key":"화자3","name":"지수"}],"lines":[{"id":%d,"speaker":"화자3"}]}
+				""".formatted(line2))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.speakers.length()").value(3))
+			.andExpect(jsonPath("$.speakers[2].key").value("화자3"))
+			.andExpect(jsonPath("$.speakers[2].name").value("지수"))
+			.andExpect(jsonPath("$.lines[1].speaker").value("화자3"));
+
+		// 이름·그림 없이도 더할 수 있다. 화자2는 대사가 없어도 남는다
+		patchCard(me, cardId, """
+				{"speakers":[{"key":"화자4"}],"lines":[{"id":%d,"speaker":"화자4"}]}
+				""".formatted(line2))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.speakers[3].key").value("화자4"))
+			.andExpect(jsonPath("$.speakers[3].name").isEmpty());
+	}
+
+	@Test
+	void 화자_더하기_오류() throws Exception {
+		long me = USERS.incrementAndGet();
+		long cardId = card(me, "치킨");
+		long line2 = lineId(cardId, 2);
+
+		// 다음 번호가 아니면 없는 화자
+		patchCard(me, cardId, "{\"speakers\":[{\"key\":\"화자4\"}],\"lines\":[{\"id\":%d,\"speaker\":\"화자4\"}]}"
+			.formatted(line2)).andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("UNKNOWN_SPEAKER")).andExpect(jsonPath("$.field").value("speakers[0].key"));
+		// 새 화자에게 대사가 없음
+		patchCard(me, cardId, "{\"speakers\":[{\"key\":\"화자3\",\"name\":\"지수\"}]}")
+			.andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").value("speakers[0]"));
+		// 같은 요청에서 만들지 않은 key로 대사를 옮김
+		patchCard(me, cardId, "{\"lines\":[{\"id\":%d,\"speaker\":\"화자3\"}]}".formatted(line2))
+			.andExpect(jsonPath("$.code").value("UNKNOWN_SPEAKER"));
+
+		long full = cardWithSpeakers(me, 4);
+		patchCard(me, full, "{\"speakers\":[{\"key\":\"화자5\"}],\"lines\":[{\"id\":%d,\"speaker\":\"화자5\"}]}"
+			.formatted(lineId(full, 1))).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SPEAKER_LIMIT"));
+		assertThat(jdbc.queryForObject("select count(*) from card_speakers where card_id = ?", Long.class, cardId)).isEqualTo(2);
+		assertThat(speakerOfLine(line2)).isEqualTo("화자2");
+	}
+
+	@Test
+	void 화자를_빼면_남은_화자의_key를_다시_매기고_이름_그림_대사가_따라간다() throws Exception {
+		long me = USERS.incrementAndGet();
+		long cardId = cardWithSpeakers(me, 4);
+		long l2 = lineId(cardId, 2);
+		long l3 = lineId(cardId, 3);
+		long l4 = lineId(cardId, 4);
+		jdbc.update("insert into default_characters (id, age_group, gender, label, appearance, image_key, thumb_key, sort_order) "
+				+ "values ('kid-f-01', 'CHILD', 'F', '소녀', 'a girl', 'k.png', 'k.webp', 1) on conflict do nothing");
+		jdbc.update("update card_speakers set character_type = 'DEFAULT', character_id = 'kid-f-01' "
+				+ "where card_id = ? and speaker_key = '화자3'", cardId);
+
+		// 화자2의 대사를 화자1로 옮기면서 화자2를 뺀다(key는 빼기 전 기준)
+		patchCard(me, cardId, "{\"lines\":[{\"id\":%d,\"speaker\":\"화자1\"}],\"removeSpeakers\":[\"화자2\"]}"
+			.formatted(l2))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.speakers.length()").value(3))
+			.andExpect(jsonPath("$.speakers[0].name").value("A"))
+			.andExpect(jsonPath("$.speakers[1].key").value("화자2"))
+			.andExpect(jsonPath("$.speakers[1].name").value("C"))
+			.andExpect(jsonPath("$.speakers[1].character.id").value("kid-f-01"))
+			.andExpect(jsonPath("$.speakers[2].key").value("화자3"))
+			.andExpect(jsonPath("$.speakers[2].name").value("D"));
+		assertThat(speakerOfLine(l2)).isEqualTo("화자1");
+		assertThat(speakerOfLine(l3)).isEqualTo("화자2");
+		assertThat(speakerOfLine(l4)).isEqualTo("화자3");
+	}
+
+	@Test
+	void 한_요청에서_더하고_빼면_더한_화자도_다시_매긴다() throws Exception {
+		long me = USERS.incrementAndGet();
+		long cardId = card(me, "치킨");
+		long line2 = lineId(cardId, 2);
+
+		patchCard(me, cardId, """
+				{"speakers":[{"key":"화자3","name":"지수"}],"lines":[{"id":%d,"speaker":"화자3"}],"removeSpeakers":["화자2"]}
+				""".formatted(line2))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.speakers.length()").value(2))
+			.andExpect(jsonPath("$.speakers[1].key").value("화자2"))
+			.andExpect(jsonPath("$.speakers[1].name").value("지수"))
+			.andExpect(jsonPath("$.lines[1].speaker").value("화자2"));
+	}
+
+	@Test
+	void 화자_빼기_오류() throws Exception {
+		long me = USERS.incrementAndGet();
+		long cardId = card(me, "치킨");
+
+		patchCard(me, cardId, "{\"removeSpeakers\":[\"화자2\"]}").andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("SPEAKER_HAS_LINES"));
+		patchCard(me, cardId, "{\"removeSpeakers\":[\"화자9\"]}").andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("UNKNOWN_SPEAKER")).andExpect(jsonPath("$.field").value("removeSpeakers[0]"));
+		patchCard(me, cardId, "{\"speakers\":[{\"key\":\"화자2\",\"name\":\"x\"}],\"removeSpeakers\":[\"화자2\"]}")
+			.andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").value("removeSpeakers[0]"));
+		patchCard(me, cardId, "{\"removeSpeakers\":[\"화자1\",\"화자1\"]}").andExpect(jsonPath("$.field").value("removeSpeakers[1]"));
+		patchCard(me, cardId, "{\"removeSpeakers\":[\"화자1\",\"화자2\"]}").andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.field").value("removeSpeakers"));
+		assertThat(jdbc.queryForObject("select count(*) from card_speakers where card_id = ?", Long.class, cardId)).isEqualTo(2);
 	}
 
 }

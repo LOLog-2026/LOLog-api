@@ -44,6 +44,17 @@ public final class CardDtos {
 
 		private List<@Valid @NotNull LineUpdate> lines;
 
+		// 뺄 화자의 key(빼기 전 기준). 대사가 없는 화자만 뺄 수 있다.
+		private List<@NotNull String> removeSpeakers;
+
+		public List<String> getRemoveSpeakers() {
+			return removeSpeakers == null ? List.of() : removeSpeakers;
+		}
+
+		public void setRemoveSpeakers(List<String> removeSpeakers) {
+			this.removeSpeakers = removeSpeakers;
+		}
+
 		private String place;
 
 		private boolean placeSent;

@@ -6,6 +6,8 @@ import com.lolog.api.card.CardDtos.CharacterRef;
 import com.lolog.api.character.CharacterViews;
 import com.lolog.api.character.CharacterViews.Ref;
 import com.lolog.api.character.CharacterViews.SpeakerCharacter;
+import jakarta.persistence.EntityManager;
+import java.util.Comparator;
 import java.util.HashMap;
 import com.lolog.api.card.CardDtos.CardPage;
 import com.lolog.api.card.CardDtos.CardSummary;
@@ -45,6 +47,8 @@ public class CardService {
 	static final int MAX_NAME = 10;
 	static final int MAX_PLACE = 20;
 	static final int MAX_TEXT = 200;
+	static final int MAX_SPEAKERS = 4;
+	static final String SPEAKER_PREFIX = "화자";
 
 	private static final Logger log = LoggerFactory.getLogger(CardService.class);
 
@@ -54,9 +58,11 @@ public class CardService {
 	private final ImageStorage storage;
 	private final CharacterViews characters;
 	private final CardAudioViews audio;
+	private final EntityManager entityManager;
 
 	public CardService(CardRepository cards, ComicRepository comics, JdbcTemplate jdbc, ImageStorage storage,
-			CharacterViews characters, CardAudioViews audio) {
+			CharacterViews characters, CardAudioViews audio, EntityManager entityManager) {
+		this.entityManager = entityManager;
 		this.audio = audio;
 		this.cards = cards;
 		this.comics = comics;
@@ -94,9 +100,12 @@ public class CardService {
 		return toDetail(find(userId, id));
 	}
 
+	// 바꾼 것만 받는다(api-dto CardUpdateRequest). 모두 검사한 뒤에 바꾸고, 하나라도 틀리면 아무것도 바꾸지 않는다.
+	// 순서: 화자 더하기·이름·그림 → 대사 → 장소 → 화자 빼기와 key 다시 매기기. 요청 안의 key는 모두 빼기 전 기준이다.
 	@Transactional
 	public CardDetail update(long userId, long id, CardUpdateRequest request) {
-		if (request.getSpeakers().isEmpty() && request.getLines().isEmpty() && !request.isPlaceSent()) {
+		if (request.getSpeakers().isEmpty() && request.getRemoveSpeakers().isEmpty() && request.getLines().isEmpty()
+				&& !request.isPlaceSent()) {
 			throw ApiException.invalid(null, "바꿀 내용이 없습니다.");
 		}
 		Card card = findLocked(userId, id);
@@ -105,7 +114,17 @@ public class CardService {
 		Map<Long, CardLine> lines = card.getLines().stream()
 			.collect(Collectors.toMap(CardLine::getId, Function.identity()));
 
-		// 모두 검사한 뒤에 바꾼다. 하나라도 틀리면 아무것도 바꾸지 않는다.
+		// 카드에 없는 key는 새 화자다. 지금 화자 수 다음 번호부터 빠짐없이여야 한다(2명이면 화자3, 둘을 더하면 화자3·화자4).
+		List<String> newKeys = request.getSpeakers().stream()
+			.map(SpeakerUpdate::getKey)
+			.filter(key -> key != null && !speakers.containsKey(key))
+			.distinct()
+			.toList();
+		Set<String> allowedNew = new HashSet<>();
+		for (int n = speakers.size() + 1; n <= speakers.size() + newKeys.size(); n++) {
+			allowedNew.add(SPEAKER_PREFIX + n);
+		}
+
 		Set<String> seenKeys = new HashSet<>();
 		for (int i = 0; i < request.getSpeakers().size(); i++) {
 			SpeakerUpdate update = request.getSpeakers().get(i);
@@ -113,10 +132,12 @@ public class CardService {
 			if (!seenKeys.add(update.getKey())) {
 				throw ApiException.invalid(at + ".key", "같은 화자를 두 번 보냈습니다.");
 			}
-			if (!speakers.containsKey(update.getKey())) {
+			boolean isNew = !speakers.containsKey(update.getKey());
+			if (isNew && !allowedNew.contains(update.getKey())) {
 				throw unknownSpeaker(at + ".key");
 			}
-			if (!update.isNameSent() && !update.isCharacterSent()) {
+			// 새 화자는 이름·그림 없이 만들어도 된다.
+			if (!isNew && !update.isNameSent() && !update.isCharacterSent()) {
 				throw ApiException.invalid(at, "name이나 character가 필요합니다. 지우려면 null을 보내세요.");
 			}
 			if (update.isNameSent()) {
@@ -133,7 +154,22 @@ public class CardService {
 				characters.checkAttachable(userId, new Ref(ref.type(), ref.id()), at + ".character");
 			}
 		}
-		checkNoDuplicateCharacter(card, request.getSpeakers());
+
+		Set<String> removeKeys = new HashSet<>();
+		for (int i = 0; i < request.getRemoveSpeakers().size(); i++) {
+			String key = request.getRemoveSpeakers().get(i);
+			String at = "removeSpeakers[" + i + "]";
+			if (!removeKeys.add(key)) {
+				throw ApiException.invalid(at, "같은 화자를 두 번 보냈습니다.");
+			}
+			if (!speakers.containsKey(key)) {
+				throw unknownSpeaker(at);
+			}
+			if (seenKeys.contains(key)) {
+				throw ApiException.invalid(at, "speakers에도 있는 화자는 뺄 수 없습니다.");
+			}
+		}
+
 		Set<Long> seenIds = new HashSet<>();
 		for (int j = 0; j < request.getLines().size(); j++) {
 			LineUpdate update = request.getLines().get(j);
@@ -144,7 +180,9 @@ public class CardService {
 			if (!lines.containsKey(update.id())) {
 				throw ApiException.invalid(at + ".id", "이 카드의 대사가 아닙니다.");
 			}
-			if (update.speaker() != null && !speakers.containsKey(update.speaker())) {
+			// 같은 요청에서 만드는 새 화자의 key도 쓸 수 있다.
+			if (update.speaker() != null && !speakers.containsKey(update.speaker())
+					&& !newKeys.contains(update.speaker())) {
 				throw unknownSpeaker(at + ".speaker");
 			}
 			if (update.text() != null) {
@@ -155,6 +193,38 @@ public class CardService {
 			checkText(request.getPlace(), MAX_PLACE, "place");
 		}
 
+		// 대사를 바꾼 뒤 각 대사의 화자
+		Map<Long, String> speakerOfLine = new HashMap<>();
+		lines.forEach((lineId, line) -> speakerOfLine.put(lineId, line.getSpeakerKey()));
+		request.getLines().stream()
+			.filter(u -> u.speaker() != null)
+			.forEach(u -> speakerOfLine.put(u.id(), u.speaker()));
+		// 새 화자에게는 같은 요청에서 바꾼 대사가 하나 이상 있어야 한다.
+		for (int i = 0; i < request.getSpeakers().size(); i++) {
+			String key = request.getSpeakers().get(i).getKey();
+			if (newKeys.contains(key) && !speakerOfLine.containsValue(key)) {
+				throw ApiException.invalid("speakers[" + i + "]", "새 화자에게 줄 대사가 없습니다.");
+			}
+		}
+		int countAfter = speakers.size() + newKeys.size() - removeKeys.size();
+		if (countAfter < 1) {
+			throw ApiException.invalid("removeSpeakers", "화자가 한 명은 남아야 합니다.");
+		}
+		if (countAfter > MAX_SPEAKERS) {
+			throw new ApiException(HttpStatus.CONFLICT, "SPEAKER_LIMIT", "화자는 4명까지예요.");
+		}
+		// 빼는 화자에게 대사가 남아 있으면 뺄 수 없다(대사 변경을 적용한 뒤 기준).
+		for (int i = 0; i < request.getRemoveSpeakers().size(); i++) {
+			if (speakerOfLine.containsValue(request.getRemoveSpeakers().get(i))) {
+				throw new ApiException(HttpStatus.CONFLICT, "SPEAKER_HAS_LINES", "대사가 남아 있는 화자는 뺄 수 없어요.");
+			}
+		}
+		checkNoDuplicateCharacter(card, request.getSpeakers(), removeKeys);
+
+		for (String key : newKeys.stream().sorted(Comparator.comparingInt(CardService::speakerNumber)).toList()) {
+			card.addSpeaker(key);
+			speakers.put(key, card.getSpeakers().getLast());
+		}
 		for (SpeakerUpdate update : request.getSpeakers()) {
 			CardSpeaker speaker = speakers.get(update.getKey());
 			if (update.isNameSent()) {
@@ -177,7 +247,37 @@ public class CardService {
 		if (request.isPlaceSent()) {
 			card.setPlace(trimOrNull(request.getPlace()));
 		}
+		if (!removeKeys.isEmpty()) {
+			card.getSpeakers().removeIf(s -> removeKeys.contains(s.getSpeakerKey()));
+			// 뺄 화자 줄을 먼저 지운 뒤(flush) 남은 화자와 대사의 key를 바꾼다. 거꾸로 하면 UNIQUE(card_id, speaker_key)에 걸린다.
+			entityManager.flush();
+			renumberSpeakers(card.getId());
+			entityManager.clear();
+			card = cards.findById(card.getId()).orElseThrow();
+		}
 		return toDetail(card);
+	}
+
+	// 남은 화자의 key를 화자1부터 빠짐없이 다시 매긴다. 이름·그림과 그 화자의 대사가 따라간다.
+	// 작은 번호부터 바꾸면 바꿀 자리는 늘 비어 있다(앞 화자는 이미 더 작은 번호로 옮겼고, 뒤 화자는 더 큰 번호다).
+	private void renumberSpeakers(long cardId) {
+		List<String> remaining = jdbc.queryForList("select speaker_key from card_speakers where card_id = ?", String.class,
+				cardId).stream().sorted(Comparator.comparingInt(CardService::speakerNumber)).toList();
+		for (int i = 0; i < remaining.size(); i++) {
+			String from = remaining.get(i);
+			String to = SPEAKER_PREFIX + (i + 1);
+			if (from.equals(to)) {
+				continue;
+			}
+			jdbc.update("update card_speakers set speaker_key = ?, updated_at = current_timestamp "
+					+ "where card_id = ? and speaker_key = ?", to, cardId, from);
+			jdbc.update("update card_lines set speaker_key = ?, updated_at = current_timestamp "
+					+ "where card_id = ? and speaker_key = ?", to, cardId, from);
+		}
+	}
+
+	private static int speakerNumber(String key) {
+		return Integer.parseInt(key.substring(SPEAKER_PREFIX.length()));
 	}
 
 	// 카드를 지워도 그 카드로 만든 만화는 남는다(DB가 comics.card_id를 null로 바꾼다).
@@ -216,7 +316,7 @@ public class CardService {
 	}
 
 	// 한 카드에서 같은 그림을 두 화자에 붙일 수 없다(한 컷에 같은 얼굴이 둘 나온다). 고친 뒤 모습으로 본다.
-	private static void checkNoDuplicateCharacter(Card card, List<SpeakerUpdate> updates) {
+	private static void checkNoDuplicateCharacter(Card card, List<SpeakerUpdate> updates, Set<String> removed) {
 		Map<String, Ref> after = new HashMap<>();
 		for (CardSpeaker speaker : card.getSpeakers()) {
 			if (speaker.getCharacterType() != null) {
@@ -234,6 +334,7 @@ public class CardService {
 				}
 			}
 		}
+		removed.forEach(after::remove);
 		for (int i = 0; i < updates.size(); i++) {
 			Ref ref = after.get(updates.get(i).getKey());
 			if (ref != null && updates.get(i).isCharacterSent() && after.values().stream().filter(ref::equals).count() > 1) {
