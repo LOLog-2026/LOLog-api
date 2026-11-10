@@ -154,6 +154,7 @@ class FriendApiTests {
 	void 친구_코드는_닉네임을_정한_뒤에_보이고_바뀌지_않는다() throws Exception {
 		long id = USERS.incrementAndGet();
 		call(get("/api/me/profile"), id).andExpect(status().isOk())
+			.andExpect(jsonPath("$.userId").value(id))
 			.andExpect(jsonPath("$.nickname").isEmpty())
 			.andExpect(jsonPath("$.friendCode").isEmpty())
 			.andExpect(jsonPath("$.character").isEmpty());
@@ -162,6 +163,7 @@ class FriendApiTests {
 		assertThat(issued).matches("[ABCDEFGHJKMNPQRSTUVWXYZ2-9]{8}");
 
 		patchNickname(id, "  민수  ").andExpect(status().isOk())
+			.andExpect(jsonPath("$.userId").value(id))
 			.andExpect(jsonPath("$.nickname").value("민수"))
 			.andExpect(jsonPath("$.friendCode").value(issued));
 		patchNickname(id, "지원").andExpect(jsonPath("$.friendCode").value(issued));
