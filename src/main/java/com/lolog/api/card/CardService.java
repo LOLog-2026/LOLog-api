@@ -1,6 +1,11 @@
 package com.lolog.api.card;
 
 import com.lolog.api.card.CardDtos.CardDetail;
+import com.lolog.api.card.CardDtos.CharacterRef;
+import com.lolog.api.character.CharacterViews;
+import com.lolog.api.character.CharacterViews.Ref;
+import com.lolog.api.character.CharacterViews.SpeakerCharacter;
+import java.util.HashMap;
 import com.lolog.api.card.CardDtos.CardPage;
 import com.lolog.api.card.CardDtos.CardSummary;
 import com.lolog.api.card.CardDtos.CardUpdateRequest;
@@ -46,12 +51,15 @@ public class CardService {
 	private final ComicRepository comics;
 	private final JdbcTemplate jdbc;
 	private final ImageStorage storage;
+	private final CharacterViews characters;
 
-	public CardService(CardRepository cards, ComicRepository comics, JdbcTemplate jdbc, ImageStorage storage) {
+	public CardService(CardRepository cards, ComicRepository comics, JdbcTemplate jdbc, ImageStorage storage,
+			CharacterViews characters) {
 		this.cards = cards;
 		this.comics = comics;
 		this.jdbc = jdbc;
 		this.storage = storage;
+		this.characters = characters;
 	}
 
 	@Transactional(readOnly = true)
@@ -102,11 +110,24 @@ public class CardService {
 			if (!speakers.containsKey(update.getKey())) {
 				throw unknownSpeaker(at + ".key");
 			}
-			if (!update.isNameSent()) {
-				throw ApiException.invalid(at + ".name", "name이 필요합니다. 지우려면 null을 보내세요.");
+			if (!update.isNameSent() && !update.isCharacterSent()) {
+				throw ApiException.invalid(at, "name이나 character가 필요합니다. 지우려면 null을 보내세요.");
 			}
-			checkText(update.getName(), MAX_NAME, at + ".name");
+			if (update.isNameSent()) {
+				checkText(update.getName(), MAX_NAME, at + ".name");
+			}
+			if (update.isCharacterSent() && update.getCharacter() != null) {
+				CharacterRef ref = update.getCharacter();
+				if (!CharacterViews.DEFAULT.equals(ref.type()) && !CharacterViews.PROFILE.equals(ref.type())) {
+					throw ApiException.invalid(at + ".character.type", "type은 DEFAULT 또는 PROFILE이에요.");
+				}
+				if (ref.id() == null || ref.id().isBlank()) {
+					throw ApiException.invalid(at + ".character.id", "id가 필요합니다.");
+				}
+				characters.checkAttachable(userId, new Ref(ref.type(), ref.id()), at + ".character");
+			}
 		}
+		checkNoDuplicateCharacter(card, request.getSpeakers());
 		Set<Long> seenIds = new HashSet<>();
 		for (int j = 0; j < request.getLines().size(); j++) {
 			LineUpdate update = request.getLines().get(j);
@@ -128,7 +149,16 @@ public class CardService {
 			checkText(request.getPlace(), MAX_PLACE, "place");
 		}
 
-		request.getSpeakers().forEach(u -> speakers.get(u.getKey()).setName(trimOrNull(u.getName())));
+		for (SpeakerUpdate update : request.getSpeakers()) {
+			CardSpeaker speaker = speakers.get(update.getKey());
+			if (update.isNameSent()) {
+				speaker.setName(trimOrNull(update.getName()));
+			}
+			if (update.isCharacterSent()) {
+				CharacterRef ref = update.getCharacter();
+				speaker.setCharacter(ref == null ? null : ref.type(), ref == null ? null : ref.id());
+			}
+		}
 		for (LineUpdate update : request.getLines()) {
 			CardLine line = lines.get(update.id());
 			if (update.speaker() != null) {
@@ -179,9 +209,43 @@ public class CardService {
 		return card;
 	}
 
+	// 한 카드에서 같은 그림을 두 화자에 붙일 수 없다(한 컷에 같은 얼굴이 둘 나온다). 고친 뒤 모습으로 본다.
+	private static void checkNoDuplicateCharacter(Card card, List<SpeakerUpdate> updates) {
+		Map<String, Ref> after = new HashMap<>();
+		for (CardSpeaker speaker : card.getSpeakers()) {
+			if (speaker.getCharacterType() != null) {
+				after.put(speaker.getSpeakerKey(), new Ref(speaker.getCharacterType(), speaker.getCharacterId()));
+			}
+		}
+		for (SpeakerUpdate update : updates) {
+			if (update.isCharacterSent()) {
+				CharacterRef ref = update.getCharacter();
+				if (ref == null) {
+					after.remove(update.getKey());
+				}
+				else {
+					after.put(update.getKey(), new Ref(ref.type(), ref.id()));
+				}
+			}
+		}
+		for (int i = 0; i < updates.size(); i++) {
+			Ref ref = after.get(updates.get(i).getKey());
+			if (ref != null && updates.get(i).isCharacterSent() && after.values().stream().filter(ref::equals).count() > 1) {
+				throw new ApiException(HttpStatus.BAD_REQUEST, "DUPLICATE_CHARACTER", "한 카드에서 같은 그림을 두 화자에 붙일 수 없어요.",
+						"speakers[" + i + "].character");
+			}
+		}
+	}
+
 	private CardDetail toDetail(Card card) {
+		List<Ref> refs = card.getSpeakers().stream()
+			.filter(s -> s.getCharacterType() != null)
+			.map(s -> new Ref(s.getCharacterType(), s.getCharacterId()))
+			.toList();
+		Map<Ref, SpeakerCharacter> views = refs.isEmpty() ? Map.of() : characters.speakerCharacters(refs);
 		List<Speaker> speakers = card.getSpeakers().stream()
-			.map(s -> new Speaker(s.getSpeakerKey(), s.getName()))
+			.map(s -> new Speaker(s.getSpeakerKey(), s.getName(),
+					s.getCharacterType() == null ? null : views.get(new Ref(s.getCharacterType(), s.getCharacterId()))))
 			.toList();
 		List<Line> lines = card.getLines().stream()
 			.map(l -> new Line(l.getId(), l.getSpeakerKey(), l.getText()))

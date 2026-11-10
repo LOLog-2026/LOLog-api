@@ -40,7 +40,11 @@ public class ComicPublisher {
 	record ComicMessage(Long jobId, Long comicId, Long cardId) {
 	}
 
-	void publishQuietly(Long jobId) {
+	// 프로필 캐릭터 작업(characters.md 큐). 만화와 같은 스트림을 써서 2호 젯슨 GPU 하나에서 차례로 돈다.
+	record AvatarMessage(Long jobId, String kind, Long userId) {
+	}
+
+	public void publishQuietly(Long jobId) {
 		try {
 			publish(jobId);
 		}
@@ -52,6 +56,7 @@ public class ComicPublisher {
 	@Scheduled(fixedDelayString = "${lolog.detect.republish-delay-ms:60000}")
 	void republishPending() {
 		jobs.findUnpublishedIds("COMIC", OffsetDateTime.now().minusMinutes(1)).forEach(this::publishQuietly);
+		jobs.findUnpublishedIds("AVATAR", OffsetDateTime.now().minusMinutes(1)).forEach(this::publishQuietly);
 	}
 
 	private void publish(Long jobId) {
@@ -60,8 +65,14 @@ public class ComicPublisher {
 			if (job.getAttempts() > 0) {
 				return;
 			}
-			Comic comic = comics.findById(job.getComicId()).orElseThrow();
-			ComicMessage message = new ComicMessage(job.getId(), comic.getId(), comic.getCardId());
+			Object message;
+			if ("AVATAR".equals(job.getJobType())) {
+				message = new AvatarMessage(job.getId(), "avatar", job.getUserId());
+			}
+			else {
+				Comic comic = comics.findById(job.getComicId()).orElseThrow();
+				message = new ComicMessage(job.getId(), comic.getId(), comic.getCardId());
+			}
 			redis.opsForStream().add(StreamRecords.string(
 					Map.of("payload", objectMapper.writeValueAsString(message))).withStreamKey(STREAM));
 			job.markPublished();

@@ -1,5 +1,7 @@
 package com.lolog.api.friend;
 
+import com.lolog.api.character.CharacterViews.FriendCharacter;
+import com.lolog.api.character.ProfileCharacterService.ProfileCharacterResponse;
 import jakarta.validation.constraints.NotNull;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -10,9 +12,9 @@ public final class FriendDtos {
 	private FriendDtos() {
 	}
 
-	// friendCode는 닉네임을 정하기 전에는 null이다.
-	// character는 프로필 캐릭터 기능(characters.md)에서 채운다. 그 전까지는 항상 null이다.
-	public record ProfileResponse(String nickname, String friendCode, Object character) {
+	// userId는 내 회원 ID. 앱이 화자에 내 프로필 캐릭터를 붙일 때 CharacterRef의 id로 쓴다(LOLog-docs PR #56).
+	// friendCode는 닉네임을 정하기 전에는 null이다. character는 내 프로필 캐릭터(만든 적 없거나 지웠으면 null).
+	public record ProfileResponse(Long userId, String nickname, String friendCode, ProfileCharacterResponse character) {
 	}
 
 	// nickname 길이는 앞뒤 공백을 뺀 뒤에 보므로 서비스에서 확인한다.
@@ -33,9 +35,9 @@ public final class FriendDtos {
 	public record FriendRequestList(List<FriendRequestResponse> requests) {
 	}
 
-	// character는 프로필 캐릭터 기능에서 { thumbnailUrl }로 채운다. 그 전까지는 항상 null이다.
+	// character는 친구에게 쓸 수 있는 그림이 있으면 { thumbnailUrl }, 없으면 null(친구의 status는 보내지 않는다).
 	public record FriendItem(Long userId, String nickname, String friendCode, OffsetDateTime friendsSince,
-			Object character) {
+			FriendCharacter character) {
 	}
 
 	public record FriendList(List<FriendItem> friends) {

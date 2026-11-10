@@ -1,5 +1,6 @@
 package com.lolog.api.friend;
 
+import com.lolog.api.character.CharacterViews;
 import com.lolog.api.common.ApiException;
 import com.lolog.api.friend.FriendDtos.ProfileResponse;
 import java.security.SecureRandom;
@@ -21,10 +22,12 @@ public class ProfileService {
 	private static final int CODE_TRIES = 5;
 
 	private final JdbcTemplate jdbc;
+	private final CharacterViews characters;
 	private final SecureRandom random = new SecureRandom();
 
-	public ProfileService(JdbcTemplate jdbc) {
+	public ProfileService(JdbcTemplate jdbc, CharacterViews characters) {
 		this.jdbc = jdbc;
+		this.characters = characters;
 	}
 
 	@Transactional
@@ -48,7 +51,7 @@ public class ProfileService {
 
 	// 프로필이 없으면 만든다. 같은 사용자가 동시에 불러도 줄은 하나다(user_profiles_pk).
 	// 친구 코드가 겹쳐 넣지 못했으면 코드를 다시 뽑는다.
-	void ensure(long userId) {
+	public void ensure(long userId) {
 		for (int i = 0; i < CODE_TRIES; i++) {
 			jdbc.update("insert into user_profiles (user_id, friend_code) values (?, ?) on conflict do nothing", userId,
 					newCode());
@@ -68,7 +71,8 @@ public class ProfileService {
 		return jdbc.queryForObject("select nickname, friend_code from user_profiles where user_id = ?",
 				(rs, n) -> {
 					String nickname = rs.getString("nickname");
-					return new ProfileResponse(nickname, nickname == null ? null : rs.getString("friend_code"), null);
+					return new ProfileResponse(userId, nickname, nickname == null ? null : rs.getString("friend_code"),
+							characters.profileResponse(userId));
 				}, userId);
 	}
 

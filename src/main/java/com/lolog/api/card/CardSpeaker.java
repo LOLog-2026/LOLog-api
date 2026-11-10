@@ -38,6 +38,13 @@ public class CardSpeaker {
 	@Column(length = 50)
 	private String name;
 
+	// 붙인 그림(characters.md). DEFAULT(기본 화자 id) 또는 PROFILE(회원 ID를 글자로). 안 붙였으면 둘 다 null이다.
+	@Column(name = "character_type", length = 10)
+	private String characterType;
+
+	@Column(name = "character_id", length = 20)
+	private String characterId;
+
 	@CreationTimestamp
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private OffsetDateTime createdAt;
@@ -45,6 +52,11 @@ public class CardSpeaker {
 	@UpdateTimestamp
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
+
+	public void setCharacter(String type, String id) {
+		this.characterType = type;
+		this.characterId = type == null ? null : id;
+	}
 
 	CardSpeaker(Card card, String speakerKey) {
 		this.card = card;
