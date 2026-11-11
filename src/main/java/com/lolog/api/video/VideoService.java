@@ -2,6 +2,7 @@ package com.lolog.api.video;
 
 import com.lolog.api.common.ApiException;
 import com.lolog.api.common.PageRequestParams;
+import com.lolog.api.common.PageSort;
 import com.lolog.api.common.SafeLog;
 import com.lolog.api.job.Job;
 import com.lolog.api.job.JobRepository;
@@ -60,8 +61,8 @@ public class VideoService {
 		VideoAccepted[] created = new VideoAccepted[1];
 		Long jobId = tx.execute(status -> {
 			// 카드 행을 잠가, 같은 카드의 요청·고치기·지우기가 한 번에 하나씩 일어나게 한다.
-			List<Long> card = jdbc.queryForList("select id from cards where id = ? and user_id = ? for update", Long.class,
-					cardId, userId);
+			List<String> card = jdbc.queryForList("select summary from cards where id = ? and user_id = ? for update",
+					String.class, cardId, userId);
 			if (card.isEmpty()) {
 				throw new ApiException(HttpStatus.NOT_FOUND, "CARD_NOT_FOUND", "카드를 찾을 수 없습니다.");
 			}
@@ -77,8 +78,9 @@ public class VideoService {
 			}
 			long videoId;
 			try {
-				videoId = jdbc.queryForObject("insert into videos (card_id, user_id) values (?, ?) returning id", Long.class,
-						cardId, userId);
+				videoId = jdbc.queryForObject(
+						"insert into videos (card_id, user_id, card_summary) values (?, ?, ?) returning id", Long.class, cardId,
+						userId, card.getFirst());
 			}
 			catch (DataIntegrityViolationException e) {
 				throw inProgress();
@@ -90,13 +92,16 @@ public class VideoService {
 		return created[0];
 	}
 
-	// 최근 것이 위. 커서는 마지막으로 받은 영상 ID.
+	// sort는 만화 목록과 같다(latest 기본, oldest). 커서는 마지막으로 받은 영상 ID라 다음 페이지도 같은 sort로 부른다.
 	@Transactional(readOnly = true)
-	public VideoPage list(long userId, String cursor, Integer size) {
+	public VideoPage list(long userId, String cursor, Integer size, String sort) {
+		PageSort order = PageSort.of(sort);
 		PageRequestParams page = PageRequestParams.of(cursor, size);
-		List<VideoResponse> items = new ArrayList<>(jdbc.query("""
-				select * from videos where user_id = ? and (?::bigint is null or id < ?) order by id desc limit ?
-				""", (rs, n) -> response(rs), userId, page.before(), page.before(), page.size() + 1));
+		String sql = order == PageSort.OLDEST
+				? "select * from videos where user_id = ? and (?::bigint is null or id > ?) order by id asc limit ?"
+				: "select * from videos where user_id = ? and (?::bigint is null or id < ?) order by id desc limit ?";
+		List<VideoResponse> items = new ArrayList<>(jdbc.query(sql, (rs, n) -> response(rs), userId, page.before(),
+				page.before(), page.size() + 1));
 		String next = null;
 		if (items.size() > page.size()) {
 			items = new ArrayList<>(items.subList(0, page.size()));
@@ -178,7 +183,9 @@ public class VideoService {
 
 	private VideoResponse response(ResultSet rs) throws SQLException {
 		boolean done = "DONE".equals(rs.getString("status"));
-		return new VideoResponse(rs.getLong("id"), (Long) rs.getObject("card_id"), rs.getString("status"),
+		String summary = rs.getString("card_summary");
+		return new VideoResponse(rs.getLong("id"), (Long) rs.getObject("card_id"), summary == null ? "" : summary,
+				rs.getString("status"),
 				done ? url(rs.getString("video_key")) : null, done ? url(rs.getString("thumb_key")) : null,
 				done ? (Long) rs.getObject("duration_ms") : null, rs.getObject("created_at", OffsetDateTime.class));
 	}

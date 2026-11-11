@@ -15,8 +15,9 @@ public final class VideoDtos {
 	}
 
 	// videoUrl·thumbnailUrl·durationMs는 DONE일 때만(10분 서명 주소). cardId는 카드를 지웠으면 null.
-	public record VideoResponse(Long id, Long cardId, String status, String videoUrl, String thumbnailUrl,
-			Long durationMs, OffsetDateTime createdAt) {
+	// cardSummary는 만화 목록(ComicResponse)과 같게 요청할 때의 카드 요약이다(앱 컨텐츠 미디어 탭 제목).
+	public record VideoResponse(Long id, Long cardId, String cardSummary, String status, String videoUrl,
+			String thumbnailUrl, Long durationMs, OffsetDateTime createdAt) {
 	}
 
 	public record VideoPage(List<VideoResponse> videos, String nextCursor) {

@@ -32,8 +32,9 @@ public class VideoController {
 	}
 
 	@GetMapping("/api/videos")
-	public VideoPage list(@RequestParam(required = false) String cursor, @RequestParam(required = false) Integer size) {
-		return videos.list(currentUser.currentUserId(), cursor, size);
+	public VideoPage list(@RequestParam(required = false) String cursor, @RequestParam(required = false) Integer size,
+			@RequestParam(required = false) String sort) {
+		return videos.list(currentUser.currentUserId(), cursor, size, sort);
 	}
 
 	@GetMapping("/api/videos/{id}")

@@ -264,9 +264,19 @@ class VideoApiTests {
 		internal(get("/internal/videos/" + videoId + "/storyboard")).andExpect(status().isNotFound());
 		video(videoId, mp4(), jpeg(), "1").andExpect(status().isNoContent());
 
-		// 목록, 다른 사람은 못 봄
+		// 목록(만화 목록과 같은 모양: cardSummary, sort), 다른 사람은 못 봄
 		call(get("/api/videos"), me).andExpect(jsonPath("$.videos[0].id").value(videoId))
+			.andExpect(jsonPath("$.videos[0].cardSummary").value("치킨 주문"))
 			.andExpect(jsonPath("$.nextCursor").isEmpty());
+		long second = request(me, cardId);
+		call(get("/api/videos").param("sort", "oldest").param("size", "1"), me)
+			.andExpect(jsonPath("$.videos[0].id").value(videoId))
+			.andExpect(jsonPath("$.nextCursor").value(String.valueOf(videoId)));
+		call(get("/api/videos").param("sort", "oldest").param("cursor", String.valueOf(videoId)), me)
+			.andExpect(jsonPath("$.videos[0].id").value(second));
+		call(get("/api/videos").param("size", "1"), me).andExpect(jsonPath("$.videos[0].id").value(second));
+		call(get("/api/videos").param("sort", "x"), me).andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.field").value("sort"));
 		call(get("/api/videos/" + videoId), me + 1000).andExpect(status().isNotFound());
 	}
 
