@@ -183,25 +183,24 @@ public class FriendService {
 				""", me, userId, userId, me);
 	}
 
-	// 요청이 오간 사람과 같은 방 멤버를 차단할 수 있다. 친구는 먼저 끊어야 한다(409 UNFRIEND_FIRST, 초안).
-	// 차단하면 두 사람 사이의 친구 요청을 지운다. 이미 차단했으면 그대로 204다(숨기기 설정은 PATCH로 바꾼다).
+	// 회원이면 누구나 차단할 수 있다(사용자 결정, 2026-11-11). 친구를 차단하면 친구 관계가 저절로 끊긴다.
+	// 차단하면 두 사람 사이의 친구 관계와 요청을 지운다. 이미 차단했으면 그대로 204다(숨기기 설정은 PATCH로 바꾼다).
+	// 메인 백엔드는 인증 DB를 보지 않으므로, 프로필이 없는 회원 ID는 없는 회원과 같은 404다.
 	@Transactional
 	public void block(long me, long userId, boolean hideInRooms) {
 		if (userId == me) {
 			throw new ApiException(HttpStatus.BAD_REQUEST, "CANNOT_FRIEND_SELF", "나는 차단할 수 없어요.");
 		}
+		Boolean exists = jdbc.queryForObject("select exists (select 1 from user_profiles where user_id = ?)",
+				Boolean.class, userId);
+		if (!Boolean.TRUE.equals(exists)) {
+			throw new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "회원을 찾을 수 없어요.");
+		}
 		lockPair(me, userId);
 		if (blocked(me, userId)) {
 			return;
 		}
-		Optional<Friendship> pair = findPair(me, userId);
-		if (pair.isPresent() && ACCEPTED.equals(pair.get().status())) {
-			throw new ApiException(HttpStatus.CONFLICT, "UNFRIEND_FIRST", "친구는 먼저 끊고 차단해 주세요.");
-		}
-		if (pair.isEmpty() && !sameRoom(me, userId)) {
-			throw new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "차단할 수 있는 사람이 아니에요.");
-		}
-		pair.ifPresent(p -> jdbc.update("delete from friendships where id = ?", p.id()));
+		findPair(me, userId).ifPresent(p -> jdbc.update("delete from friendships where id = ?", p.id()));
 		detacher.detachBetween(me, userId);
 		jdbc.update("insert into user_blocks (blocker_id, blocked_id, hide_in_rooms) values (?, ?, ?) on conflict do nothing",
 				me, userId, hideInRooms);
@@ -248,14 +247,6 @@ public class FriendService {
 	private void lockPair(long a, long b) {
 		jdbc.queryForList("select user_id from user_profiles where user_id in (?, ?) order by user_id for update",
 				Long.class, Math.min(a, b), Math.max(a, b));
-	}
-
-	// 지금 같은 방에 있는지
-	private boolean sameRoom(long a, long b) {
-		return Boolean.TRUE.equals(jdbc.queryForObject("""
-				select exists (select 1 from room_members x join room_members y on y.room_id = x.room_id
-				  where x.user_id = ? and y.user_id = ?)
-				""", Boolean.class, a, b));
 	}
 
 	private boolean blocked(long blocker, long blockedUser) {
