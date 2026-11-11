@@ -23,7 +23,9 @@ public final class RecordingDtos {
 			@NotNull Boolean isLast,
 			@NotNull OffsetDateTime startedAt,
 			@NotNull @PositiveOrZero @Max(86400) Integer durationSec,
-			@NotNull List<@Valid @NotNull Sentence> sentences) {
+			@NotNull List<@Valid @NotNull Sentence> sentences,
+			// 음성 저장을 켰는지(audio.md 6장). 없으면 false(예전 앱).
+			Boolean audioSaved) {
 	}
 
 	public record Sentence(@NotNull @PositiveOrZero Long startMs, @NotNull Long endMs, @NotBlank String text) {

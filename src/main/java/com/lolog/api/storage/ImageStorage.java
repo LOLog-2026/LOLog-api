@@ -13,7 +13,8 @@ import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
-// 만화 이미지를 S3 호환 저장소(배포는 교육기관 MinIO, 로컬은 SeaweedFS) 버킷에 두고 꺼낸다. 버킷은 비공개이고, 앱에는 잠깐 열리는 서명 주소만 준다.
+// 만화 이미지와 녹음 음성을 S3 호환 저장소(배포는 교육기관 MinIO, 로컬은 SeaweedFS) 버킷에 두고 꺼낸다. 버킷은 비공개이고, 앱에는 잠깐 열리는 서명 주소만 준다.
+// 음성도 같은 버킷의 users/{userId}/ 아래에 둔다(audio.md 저장 위치). 탈퇴하면 한 번에 지워진다.
 @Component
 public class ImageStorage {
 
@@ -35,14 +36,67 @@ public class ImageStorage {
 		return "users/" + userId + "/comics/" + comicId + ".png";
 	}
 
-	// 같은 키면 덮어쓴다. 버킷이 아직 없으면(처음 띄운 로컬 SeaweedFS. 배포 MinIO는 미리 만들어 둠) 만들고 한 번 더 올린다.
+	// 녹음 전체 음성 파일(10분 단위, seq는 1부터)
+	public static String recordingAudioKey(long userId, long recordingId, int seq) {
+		return recordingAudioPrefix(userId, recordingId) + seq + ".aac";
+	}
+
+	public static String recordingAudioPrefix(long userId, long recordingId) {
+		return "users/" + userId + "/recordings/" + recordingId + "/audio/";
+	}
+
+	// 카드 구간 음성
+	public static String cardAudioKey(long userId, long cardId) {
+		return "users/" + userId + "/cards/" + cardId + "/audio.aac";
+	}
+
+	// 기본 화자 그림(768 PNG)과 썸네일(256 WebP). characters.md 2장
+	public static String defaultCharacterKey(String id) {
+		return "defaults/characters/" + id + ".png";
+	}
+
+	public static String defaultCharacterThumbKey(String id) {
+		return "defaults/characters/" + id + "_thumb.webp";
+	}
+
+	// 프로필 캐릭터 그림(768 PNG), 썸네일(256 PNG), 원본 사진(그림을 받거나 실패하면 바로 지움). characters.md 3장
+	public static String profileCharacterKey(long userId) {
+		return "users/" + userId + "/character/avatar.png";
+	}
+
+	public static String profileCharacterThumbKey(long userId) {
+		return "users/" + userId + "/character/avatar_thumb.png";
+	}
+
+	public static String profilePhotoKey(long userId) {
+		return "users/" + userId + "/character/photo";
+	}
+
+	// 파일 내용과 올릴 때 적은 Content-Type
+	public record StoredObject(byte[] bytes, String contentType) {
+	}
+
+	public StoredObject getObject(String key) {
+		var response = s3.getObjectAsBytes(b -> b.bucket(bucket).key(key));
+		return new StoredObject(response.asByteArray(), response.response().contentType());
+	}
+
 	public void putPng(String key, byte[] png) {
+		put(key, png, "image/png");
+	}
+
+	public void putAac(String key, byte[] aac) {
+		put(key, aac, "audio/aac");
+	}
+
+	// 같은 키면 덮어쓴다. 버킷이 아직 없으면(처음 띄운 로컬 SeaweedFS. 배포 MinIO는 미리 만들어 둠) 만들고 한 번 더 올린다.
+	public void put(String key, byte[] bytes, String contentType) {
 		try {
-			put(key, png);
+			upload(key, bytes, contentType);
 		}
 		catch (NoSuchBucketException e) {
 			s3.createBucket(b -> b.bucket(bucket));
-			put(key, png);
+			upload(key, bytes, contentType);
 		}
 	}
 
@@ -60,9 +114,13 @@ public class ImageStorage {
 		}
 	}
 
-	// 사용자 한 명의 이미지를 모두 지운다(탈퇴). users/{userId}/ 아래를 1,000개씩 나눠 지운다. 실패하면 예외를 던진다.
+	// 사용자 한 명의 이미지와 음성을 모두 지운다(탈퇴). 실패하면 예외를 던진다.
 	public void deleteUser(long userId) {
-		String prefix = "users/" + userId + "/";
+		deletePrefix("users/" + userId + "/");
+	}
+
+	// prefix 아래를 1,000개씩 나눠 지운다. 실패하면 예외를 던진다.
+	public void deletePrefix(String prefix) {
 		try {
 			String token = null;
 			do {
@@ -74,7 +132,7 @@ public class ImageStorage {
 				if (!keys.isEmpty()) {
 					DeleteObjectsResponse deleted = s3.deleteObjects(b -> b.bucket(bucket).delete(d -> d.objects(keys).quiet(true)));
 					if (!deleted.errors().isEmpty()) {
-						throw new IllegalStateException("이미지 " + deleted.errors().size() + "개를 지우지 못했습니다.");
+						throw new IllegalStateException("파일 " + deleted.errors().size() + "개를 지우지 못했습니다.");
 					}
 				}
 				token = page.isTruncated() ? page.nextContinuationToken() : null;
@@ -91,8 +149,8 @@ public class ImageStorage {
 			.url();
 	}
 
-	private void put(String key, byte[] png) {
-		s3.putObject(b -> b.bucket(bucket).key(key).contentType("image/png"), RequestBody.fromBytes(png));
+	private void upload(String key, byte[] bytes, String contentType) {
+		s3.putObject(b -> b.bucket(bucket).key(key).contentType(contentType), RequestBody.fromBytes(bytes));
 	}
 
 }

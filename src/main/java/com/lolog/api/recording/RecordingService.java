@@ -123,7 +123,8 @@ public class RecordingService {
 	private Saved save(long userId, UploadRequest request) {
 		Recording recording = recordings.findByUserIdAndClientRecordingId(userId, request.clientRecordingId())
 			.orElseGet(() -> recordings.saveAndFlush(
-					new Recording(userId, request.clientRecordingId(), request.startedAt())));
+					new Recording(userId, request.clientRecordingId(), request.startedAt(),
+							Boolean.TRUE.equals(request.audioSaved()))));
 		List<RecordingPart> existing = parts.findByRecordingIdOrderByPartNo(recording.getId());
 
 		// 재시도면 저장하지 않고 처음 결과를 돌려준다.
@@ -139,6 +140,9 @@ public class RecordingService {
 		}
 		parts.saveAndFlush(new RecordingPart(recording, request.partNo(), request.isLast(), request.durationSec(),
 				objectMapper.writeValueAsString(request.sentences())));
+		// 끝 묶음이 오지 않아도 7일을 셀 수 있게 묶음마다 고쳐 적는다.
+		long receivedSec = existing.stream().mapToLong(RecordingPart::getDurationSec).sum() + request.durationSec();
+		recording.setEndedAt(recording.getStartedAt().plusSeconds(receivedSec));
 		List<Long> jobIds = dispatch(recording);
 		return new Saved(response(recording), jobIds);
 	}
