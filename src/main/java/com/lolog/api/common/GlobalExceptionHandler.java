@@ -4,11 +4,14 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -76,12 +79,45 @@ public class GlobalExceptionHandler {
 		return result.isEmpty() ? null : result.toString();
 	}
 
+	// Spring이 상태를 정하는 예외(없는 주소, 틀린 메서드, 틀린 Content-Type 등). 상태와 헤더(405의 Allow 등)는 그대로 두고
+	// 본문만 ErrorResponse로 바꾼다(api-dto.md 오류 코드, LOLog-docs PR #60).
+	private static ResponseEntity<ErrorResponse> framework(Exception e, org.springframework.web.ErrorResponse error) {
+		HttpStatusCode status = error.getStatusCode();
+		if (status.is5xxServerError()) {
+			log.error("처리하지 못한 예외", SafeLog.withoutMessages(e));
+			return ResponseEntity.status(status)
+				.headers(error.getHeaders())
+				.body(new ErrorResponse("INTERNAL_ERROR", "서버 오류가 발생했습니다."));
+		}
+		ErrorResponse body = switch (status.value()) {
+			case 404 -> new ErrorResponse("NOT_FOUND", "없는 주소입니다.");
+			case 405 -> new ErrorResponse("METHOD_NOT_ALLOWED", "이 주소에서 쓸 수 없는 메서드입니다.");
+			case 406 -> new ErrorResponse("NOT_ACCEPTABLE", "JSON으로만 답할 수 있습니다.");
+			case 415 -> new ErrorResponse("UNSUPPORTED_MEDIA_TYPE", "이 주소가 받지 않는 Content-Type입니다.");
+			default -> new ErrorResponse("INVALID_REQUEST", "요청 형식이 올바르지 않습니다.", field(e));
+		};
+		return ResponseEntity.status(status).headers(error.getHeaders()).body(body);
+	}
+
+	// 빠진 쿼리·헤더면 그 이름을 field에 넣는다.
+	private static String field(Exception e) {
+		if (e instanceof MissingServletRequestParameterException missing) {
+			return missing.getParameterName();
+		}
+		if (e instanceof MissingRequestHeaderException missing) {
+			return missing.getHeaderName();
+		}
+		return null;
+	}
+
 	@ExceptionHandler(Exception.class)
 	public ResponseEntity<ErrorResponse> handleUnexpected(Exception e) throws Exception {
-		// 프레임워크가 상태를 정하는 예외(없는 주소의 404, 405 등)와 보안 예외는 500으로 바꾸지 않고 원래 처리로 넘긴다.
-		if (e instanceof org.springframework.web.ErrorResponse || e instanceof AuthenticationException
-				|| e instanceof AccessDeniedException) {
+		// 보안 예외는 500으로 바꾸지 않고 Spring Security 처리(401 UNAUTHORIZED 등)로 넘긴다.
+		if (e instanceof AuthenticationException || e instanceof AccessDeniedException) {
 			throw e;
+		}
+		if (e instanceof org.springframework.web.ErrorResponse error) {
+			return framework(e, error);
 		}
 		log.error("처리하지 못한 예외", SafeLog.withoutMessages(e));
 		return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
