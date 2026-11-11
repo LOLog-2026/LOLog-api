@@ -122,6 +122,10 @@ class AdminApiTests {
 		call(get("/api/admin/feedback"), me).andExpect(status().isForbidden());
 		call(get("/api/admin/users/" + me), me).andExpect(status().isForbidden());
 		mvc.perform(get("/api/admin/feedback")).andExpect(status().isUnauthorized());
+		// 관리자 확인이 요청 값 검사보다 먼저다
+		json(post("/api/admin/notices"), "{깨진 JSON", false, me).andExpect(status().isForbidden());
+		call(get("/api/admin/users/abc"), me).andExpect(status().isForbidden());
+		admin(get("/api/admin/users/abc")).andExpect(status().isBadRequest());
 	}
 
 	@Test
@@ -236,6 +240,15 @@ class AdminApiTests {
 			.andExpect(status().isNoContent());
 		call(get("/api/rooms/" + roomId), a).andExpect(jsonPath("$.members[1].suspended").value(false));
 		mvc.perform(delete("/internal/users/" + b + "/suspension")).andExpect(status().isUnauthorized());
+		// 인증 서비스는 204가 올 때까지 다시 부른다. 프로필이 없는 회원, 같은 요청 반복, 정지 안 된 회원의 해제도 204
+		long nobody = USERS.incrementAndGet();
+		for (int i = 0; i < 2; i++) {
+			mvc.perform(put("/internal/users/" + nobody + "/suspension").header("X-Internal-Token", "internal-test-token")
+				.contentType(MediaType.APPLICATION_JSON).content("{\"suspendedUntil\":\"2099-01-01T00:00:00+00:00\"}"))
+				.andExpect(status().isNoContent());
+			mvc.perform(delete("/internal/users/" + nobody + "/suspension").header("X-Internal-Token", "internal-test-token"))
+				.andExpect(status().isNoContent());
+		}
 
 		// 인증 서비스가 남긴 정지 키가 있으면 받은 토큰도 401
 		redisTemplate.opsForValue().set("lolog:auth:suspended:" + b, "1");
