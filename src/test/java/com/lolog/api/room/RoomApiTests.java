@@ -598,7 +598,7 @@ class RoomApiTests {
 		jdbc.update("delete from friendships where requester_id = ? and addressee_id = ?", c, b);
 		call(post("/api/blocks").contentType(MediaType.APPLICATION_JSON).content("{\"userId\":" + b + ",\"hideInRooms\":true}"),
 				c).andExpect(status().isNoContent());
-		call(post("/api/blocks").contentType(MediaType.APPLICATION_JSON).content("{\"userId\":" + outsider + "}"), c)
+		call(post("/api/blocks").contentType(MediaType.APPLICATION_JSON).content("{\"userId\":999999999}"), c)
 			.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("USER_NOT_FOUND"));
 		call(get("/api/rooms/" + roomId), c).andExpect(jsonPath("$.members[1].friendState").value("BLOCKED"))
 			.andExpect(jsonPath("$.lastActivity.text").isEmpty());

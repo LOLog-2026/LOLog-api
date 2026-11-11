@@ -504,18 +504,12 @@ class CharacterApiTests {
 		assertThat(speakerCharacter(aCard, "화자1")).isEmpty();
 		assertThat(speakerCharacter(myCard, "화자2")).isEqualTo("PROFILE:" + me.id());
 
-		// 친구는 바로 차단하지 않고(409 UNFRIEND_FIRST), 끊기를 거친다. 끊을 때 빠진다
+		// 친구를 차단해도 친구 관계가 끊기며 빠진다
 		long bCard = insertCard(b.id());
 		patchSpeakers(b.id(), bCard, "[{\"key\":\"화자1\",\"character\":{\"type\":\"PROFILE\",\"id\":\"%d\"}}]"
 				.formatted(me.id())).andExpect(status().isOk());
 		mvc.perform(post("/api/blocks").header("Authorization", TestTokens.bearer(me.id()))
-			.contentType(MediaType.APPLICATION_JSON).content("{\"userId\":" + b.id() + "}")).andExpect(status().isConflict())
-			.andExpect(jsonPath("$.code").value("UNFRIEND_FIRST"));
-		assertThat(speakerCharacter(bCard, "화자1")).isEqualTo("PROFILE:" + me.id());
-		mvc.perform(delete("/api/friends/" + b.id()).header("Authorization", TestTokens.bearer(me.id())))
-			.andExpect(status().isNoContent());
-		mvc.perform(post("/api/blocks").header("Authorization", TestTokens.bearer(me.id()))
-			.contentType(MediaType.APPLICATION_JSON).content("{\"userId\":" + b.id() + "}")).andExpect(status().isNotFound());
+			.contentType(MediaType.APPLICATION_JSON).content("{\"userId\":" + b.id() + "}")).andExpect(status().isNoContent());
 		assertThat(speakerCharacter(bCard, "화자1")).isEmpty();
 
 		// 내 캐릭터를 지우면 친구 카드에서도 빠지고 파일도 지운다
