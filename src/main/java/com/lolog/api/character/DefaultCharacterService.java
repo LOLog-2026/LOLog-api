@@ -24,9 +24,9 @@ public class DefaultCharacterService {
 		this.storage = storage;
 	}
 
-	// appearance는 그림 모델용이라 앱에 보내지 않는다.
+	// appearance는 그림 모델용이라 앱에 보내지 않는다. voiceUrl은 목소리 파일의 10분 서명 주소이고, 없으면 null(FR-CHAR-03).
 	public record DefaultCharacterItem(String id, String label, String ageGroup, String gender, boolean glasses,
-			String thumbnailUrl) {
+			String thumbnailUrl, String voiceUrl) {
 	}
 
 	public record DefaultCharacterList(List<DefaultCharacterItem> characters) {
@@ -35,17 +35,22 @@ public class DefaultCharacterService {
 	@Transactional(readOnly = true)
 	public DefaultCharacterList list() {
 		return new DefaultCharacterList(jdbc.query("""
-				select id, label, age_group, gender, glasses, thumb_key from default_characters order by sort_order, id
-				""", (rs, n) -> new DefaultCharacterItem(rs.getString("id"), rs.getString("label"),
-				rs.getString("age_group"), rs.getString("gender"), rs.getBoolean("glasses"),
-				storage.presignedUrl(rs.getString("thumb_key")).toString())));
+				select id, label, age_group, gender, glasses, thumb_key, voice_key from default_characters
+				order by sort_order, id
+				""", (rs, n) -> {
+			String voice = rs.getString("voice_key");
+			return new DefaultCharacterItem(rs.getString("id"), rs.getString("label"), rs.getString("age_group"),
+					rs.getString("gender"), rs.getBoolean("glasses"), storage.presignedUrl(rs.getString("thumb_key")).toString(),
+					voice == null ? null : storage.presignedUrl(voice).toString());
+		}));
 	}
 
 	// 기본 화자 하나를 넣거나 바꾼다(PUT /internal/characters/defaults/{id}, 스크립트용).
 	// image·thumbnail을 보내면 저장소에 올리고, 빼면 이미 올라가 있다고 보고 목록만 넣는다.
+	// voice(wav)는 보내면 올리고 목소리를 붙인다. 빼면 지금 붙어 있는 목소리를 그대로 둔다(처음이면 없음).
 	@Transactional
-	public void upsert(String id, byte[] image, byte[] thumbnail, String ageGroup, String gender, Boolean glasses,
-			String label, String appearance, Integer sortOrder) {
+	public void upsert(String id, byte[] image, byte[] thumbnail, byte[] voice, String ageGroup, String gender,
+			Boolean glasses, String label, String appearance, Integer sortOrder) {
 		if (id == null || !id.matches("[a-z0-9-]{1,20}")) {
 			throw ApiException.invalid("id", "id는 영어 소문자·숫자·-로 20자까지예요.");
 		}
@@ -67,6 +72,9 @@ public class DefaultCharacterService {
 		if (sortOrder == null) {
 			throw ApiException.invalid("sortOrder", "sortOrder가 필요해요.");
 		}
+		if (voice != null && !isWav(voice)) {
+			throw ApiException.invalid("voice", "voice는 wav 파일이어야 해요.");
+		}
 		String imageKey = ImageStorage.defaultCharacterKey(id);
 		String thumbKey = ImageStorage.defaultCharacterThumbKey(id);
 		if (image != null) {
@@ -75,14 +83,28 @@ public class DefaultCharacterService {
 		if (thumbnail != null) {
 			storage.put(thumbKey, thumbnail, "image/webp");
 		}
+		String voiceKey = null;
+		if (voice != null) {
+			voiceKey = ImageStorage.defaultCharacterVoiceKey(id);
+			storage.put(voiceKey, voice, "audio/wav");
+		}
 		jdbc.update("""
-				insert into default_characters (id, age_group, gender, glasses, label, appearance, image_key, thumb_key, sort_order)
-				values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+				insert into default_characters (id, age_group, gender, glasses, label, appearance, image_key, thumb_key,
+				    voice_key, sort_order)
+				values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				on conflict (id) do update set age_group = excluded.age_group, gender = excluded.gender,
 				    glasses = excluded.glasses, label = excluded.label, appearance = excluded.appearance,
-				    image_key = excluded.image_key, thumb_key = excluded.thumb_key, sort_order = excluded.sort_order,
+				    image_key = excluded.image_key, thumb_key = excluded.thumb_key,
+				    voice_key = coalesce(excluded.voice_key, default_characters.voice_key), sort_order = excluded.sort_order,
 				    updated_at = current_timestamp
-				""", id, ageGroup, gender, glasses, label.strip(), appearance.strip(), imageKey, thumbKey, sortOrder);
+				""", id, ageGroup, gender, glasses, label.strip(), appearance.strip(), imageKey, thumbKey, voiceKey,
+				sortOrder);
+	}
+
+	// RIFF....WAVE 머리말
+	static boolean isWav(byte[] bytes) {
+		return bytes.length >= 12 && bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F'
+				&& bytes[8] == 'W' && bytes[9] == 'A' && bytes[10] == 'V' && bytes[11] == 'E';
 	}
 
 }

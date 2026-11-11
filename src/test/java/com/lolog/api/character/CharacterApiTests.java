@@ -255,6 +255,74 @@ class CharacterApiTests {
 			.andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").value("ageGroup"));
 	}
 
+	// 24kHz 모노 wav 머리말을 흉내 낸 바이트
+	private static byte[] wav() {
+		byte[] bytes = new byte[64];
+		System.arraycopy("RIFF".getBytes(), 0, bytes, 0, 4);
+		System.arraycopy("WAVEfmt ".getBytes(), 0, bytes, 8, 8);
+		return bytes;
+	}
+
+	private ResultActions putVoice(String id, byte[] voice) throws Exception {
+		return mvc.perform(multipart(HttpMethod.PUT, "/internal/characters/defaults/" + id).file(new MockMultipartFile("voice",
+				id + "_voice.wav", "audio/wav", voice))
+			.header("X-Internal-Token", INTERNAL)
+			.param("ageGroup", "MIDDLE").param("gender", "M").param("glasses", "false").param("label", "설명 " + id)
+			.param("appearance", "a person " + id).param("sortOrder", "90"));
+	}
+
+	@Test
+	void 기본_화자에_목소리를_넣으면_미리_듣기_주소가_오고_빼고_다시_넣어도_남는다() throws Exception {
+		putVoice("middle-m-09", wav()).andExpect(status().isNoContent());
+		assertThat(storage.get(ImageStorage.defaultCharacterVoiceKey("middle-m-09"))).isEqualTo(wav());
+		JsonNode list = json(mvc.perform(get("/api/characters/defaults").header("Authorization", TestTokens.bearer(1))));
+		for (JsonNode c : list.get("characters")) {
+			if (c.get("id").asString().equals("middle-m-09")) {
+				assertThat(c.get("voiceUrl").asString()).contains("defaults/characters/middle-m-09_voice.wav");
+			}
+			if (c.get("id").asString().equals("kid-m-01")) {
+				assertThat(c.get("voiceUrl").isNull()).isTrue();
+			}
+		}
+		// 목소리 없이 다시 넣으면 붙어 있던 목소리는 그대로
+		putDefault("middle-m-09", 90, false).andExpect(status().isNoContent());
+		assertThat(jdbc.queryForObject("select voice_key from default_characters where id = 'middle-m-09'", String.class))
+			.isEqualTo("defaults/characters/middle-m-09_voice.wav");
+		putVoice("middle-m-09", "not a wav file at all".getBytes()).andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.field").value("voice"));
+	}
+
+	@Test
+	void 프로필_캐릭터_목소리를_고르고_지우면_같이_빠진다() throws Exception {
+		putVoice("middle-m-08", wav()).andExpect(status().isNoContent());
+		User me = user("목소리");
+		String path = "/api/me/profile/character/voice";
+		mvc.perform(patch(path).header("Authorization", TestTokens.bearer(me.id())).contentType(MediaType.APPLICATION_JSON)
+			.content("{\"voice\":\"middle-m-08\"}")).andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.code").value("CHARACTER_NOT_FOUND"));
+		makeCharacter(me.id());
+		mvc.perform(patch(path).header("Authorization", TestTokens.bearer(me.id())).contentType(MediaType.APPLICATION_JSON)
+			.content("{\"voice\":\"kid-m-01\"}")).andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("UNKNOWN_CHARACTER"));
+		mvc.perform(patch(path).header("Authorization", TestTokens.bearer(me.id())).contentType(MediaType.APPLICATION_JSON)
+			.content("{\"voice\":\"nope\"}")).andExpect(status().isBadRequest());
+		mvc.perform(patch(path).header("Authorization", TestTokens.bearer(me.id())).contentType(MediaType.APPLICATION_JSON)
+			.content("{\"voice\":\"middle-m-08\"}")).andExpect(status().isNoContent());
+		mvc.perform(get("/api/me/profile").header("Authorization", TestTokens.bearer(me.id())))
+			.andExpect(jsonPath("$.character.voice").value("middle-m-08"));
+		mvc.perform(patch(path).header("Authorization", TestTokens.bearer(me.id())).contentType(MediaType.APPLICATION_JSON)
+			.content("{\"voice\":null}")).andExpect(status().isNoContent());
+		mvc.perform(get("/api/me/profile").header("Authorization", TestTokens.bearer(me.id())))
+			.andExpect(jsonPath("$.character.voice").isEmpty());
+
+		mvc.perform(patch(path).header("Authorization", TestTokens.bearer(me.id())).contentType(MediaType.APPLICATION_JSON)
+			.content("{\"voice\":\"middle-m-08\"}")).andExpect(status().isNoContent());
+		mvc.perform(delete("/api/me/profile/character").header("Authorization", TestTokens.bearer(me.id())))
+			.andExpect(status().isNoContent());
+		assertThat(jdbc.queryForObject("select character_voice from user_profiles where user_id = ?", String.class, me.id()))
+			.isNull();
+	}
+
 	// ---- 프로필 캐릭터 ----
 
 	@Test

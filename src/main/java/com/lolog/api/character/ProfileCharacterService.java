@@ -62,7 +62,8 @@ public class ProfileCharacterService {
 	}
 
 	// PUT의 응답이자 ProfileResponse의 character. 만든 적이 없거나 지웠으면 null.
-	public record ProfileCharacterResponse(String status, String thumbnailUrl, OffsetDateTime updatedAt) {
+	// voice는 고른 목소리(기본 화자 id), 안 골랐으면 null(FR-CHAR-04).
+	public record ProfileCharacterResponse(String status, String thumbnailUrl, OffsetDateTime updatedAt, String voice) {
 	}
 
 	private record State(String status, String thumbKey, OffsetDateTime updatedAt) {
@@ -115,7 +116,8 @@ public class ProfileCharacterService {
 		}
 		jdbc.update("""
 				update user_profiles set character_status = null, character_key = null, character_thumb_key = null,
-				    character_appearance = null, character_updated_at = current_timestamp, updated_at = current_timestamp
+				    character_appearance = null, character_voice = null, character_updated_at = current_timestamp,
+				    updated_at = current_timestamp
 				where user_id = ?
 				""", userId);
 		// 만드는 중이던 작업은 실패로 둔다. 워커가 나중에 사진을 찾으면 404라 그 메시지를 버린다.
@@ -197,6 +199,27 @@ public class ProfileCharacterService {
 				""", userId);
 		afterCommit(() -> deleteQuietly(ImageStorage.profilePhotoKey(userId)));
 		push.notify(userId, PushService.profileCharacterFailed());
+	}
+
+	// 프로필 캐릭터 목소리 고르기(초안). 기본 화자 목소리 중 하나이고 null이면 지운다.
+	// 프로필 캐릭터가 없으면 404 CHARACTER_NOT_FOUND, 없거나 목소리가 없는 기본 화자 id면 400 UNKNOWN_CHARACTER.
+	@Transactional
+	public void chooseVoice(long userId, String voice) {
+		List<String> status = jdbc.queryForList("select character_status from user_profiles where user_id = ? for update",
+				String.class, userId);
+		if (status.isEmpty() || status.getFirst() == null) {
+			throw new ApiException(HttpStatus.NOT_FOUND, "CHARACTER_NOT_FOUND", "프로필 캐릭터가 없어요.");
+		}
+		if (voice != null) {
+			Boolean exists = jdbc.queryForObject(
+					"select exists (select 1 from default_characters where id = ? and voice_key is not null)", Boolean.class,
+					voice);
+			if (!Boolean.TRUE.equals(exists)) {
+				throw new ApiException(HttpStatus.BAD_REQUEST, "UNKNOWN_CHARACTER", "고를 수 없는 목소리예요.", "voice");
+			}
+		}
+		jdbc.update("update user_profiles set character_voice = ?, updated_at = current_timestamp where user_id = ?", voice,
+				userId);
 	}
 
 	// ProfileResponse.character와 같은 값

@@ -7,7 +7,9 @@ import java.io.IOException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -37,6 +39,16 @@ public class CharacterController {
 	@ResponseStatus(HttpStatus.ACCEPTED)
 	public ProfileCharacterResponse upload(@RequestPart("photo") MultipartFile photo) throws IOException {
 		return profileCharacters.upload(currentUser.currentUserId(), photo.getBytes());
+	}
+
+	// 프로필 캐릭터 목소리 고르기(초안). { voice: 기본 화자 id | null }
+	@PatchMapping("/api/me/profile/character/voice")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void chooseVoice(@RequestBody VoiceRequest request) {
+		profileCharacters.chooseVoice(currentUser.currentUserId(), request.voice());
+	}
+
+	public record VoiceRequest(String voice) {
 	}
 
 	@DeleteMapping("/api/me/profile/character")
