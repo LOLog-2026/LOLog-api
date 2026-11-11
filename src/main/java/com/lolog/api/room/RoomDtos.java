@@ -19,16 +19,32 @@ public final class RoomDtos {
 	public record RoomCommentRequest(String text, Long postId) {
 	}
 
-	// thumbnailUrl은 그 사람의 프로필 캐릭터 256 그림(없으면 null)
-	public record RoomMember(Long userId, String nickname, String thumbnailUrl, boolean isMe) {
+	// POST /api/rooms/{id}/invites. 초대할 친구 회원 ID(나를 뺌)
+	public record InviteCreateRequest(List<Long> userIds) {
+	}
+
+	// thumbnailUrl은 그 사람의 프로필 캐릭터 256 그림(없으면 null). isOwner는 방장이면 true(초안).
+	public record RoomMember(Long userId, String nickname, String thumbnailUrl, boolean isMe, boolean isOwner) {
 	}
 
 	// 마지막 소식. 문장은 앱이 만든다. type은 CREATED·POSTED·LIKED·COMMENTED, text는 COMMENTED일 때 댓글 내용.
 	public record RoomActivity(String type, String nickname, boolean isMe, OffsetDateTime at, String text) {
 	}
 
-	public record RoomItem(Long id, String name, List<RoomMember> members, RoomActivity lastActivity, int unread,
+	// ownerId는 방장. invites는 답을 기다리는 초대이고 방장이 아니면 빈 배열이다(초안).
+	public record RoomItem(Long id, String name, Long ownerId, List<RoomMember> members, List<RoomInvite> invites,
+			RoomActivity lastActivity, int unread, OffsetDateTime createdAt) {
+	}
+
+	public record RoomRef(Long id, String name) {
+	}
+
+	// 방장이 보는 초대는 invitedUser, 내가 받은 초대는 invitedBy를 채우고 다른 쪽은 null이다(초안).
+	public record RoomInvite(Long id, RoomRef room, RoomMember invitedUser, RoomMember invitedBy,
 			OffsetDateTime createdAt) {
+	}
+
+	public record InviteList(List<RoomInvite> invites) {
 	}
 
 	public record RoomList(List<RoomItem> rooms) {

@@ -1,6 +1,8 @@
 package com.lolog.api.room;
 
 import com.lolog.api.auth.CurrentUserProvider;
+import com.lolog.api.room.RoomDtos.InviteCreateRequest;
+import com.lolog.api.room.RoomDtos.InviteList;
 import com.lolog.api.room.RoomDtos.MessageList;
 import com.lolog.api.room.RoomDtos.PostCreateRequest;
 import com.lolog.api.room.RoomDtos.PostList;
@@ -54,6 +56,18 @@ public class RoomController {
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void leave(@PathVariable Long id) {
 		rooms.leave(currentUser.currentUserId(), id);
+	}
+
+	@PostMapping("/{id}/invites")
+	@ResponseStatus(HttpStatus.CREATED)
+	public InviteList invite(@PathVariable Long id, @RequestBody InviteCreateRequest request) {
+		return rooms.invite(currentUser.currentUserId(), id, request.userIds());
+	}
+
+	@DeleteMapping("/{id}/invites/{inviteId}")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void cancelInvite(@PathVariable Long id, @PathVariable Long inviteId) {
+		rooms.cancelInvite(currentUser.currentUserId(), id, inviteId);
 	}
 
 	@GetMapping("/{id}/posts")

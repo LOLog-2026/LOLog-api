@@ -12,7 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-// 카드·만화 결과와 친구 요청을 사용자의 모든 폰에 알린다(FR-NOTI, API DTO 명세 3장).
+// 카드·만화 결과, 친구 요청, 방 소식을 사용자의 모든 폰에 알린다(FR-NOTI, API DTO 명세 3장).
 // 값은 모두 문자열이고 대사는 넣지 않는다(FR-NOTI-03). 알림 문구는 앱이 만든다.
 // 저장이 확정된 뒤(커밋 뒤)에 따로 보내고, 실패하면 다시 보내지 않고 로그만 남긴다. 앱은 푸시가 없어도 조회로 상태를 안다.
 @Service
@@ -60,6 +60,12 @@ public class PushService implements DisposableBean {
 	// 친구 요청을 받음(friends.md 3장). 문구는 앱이 만들고, 문구에 넣을 보낸 사람 닉네임을 같이 보낸다.
 	public static Map<String, String> friendRequest(long requestId, String nickname) {
 		return Map.of("type", "FRIEND_REQUEST", "requestId", String.valueOf(requestId), "nickname", nickname);
+	}
+
+	// 방에 초대받음(rooms.md 3장 푸시, 초안). 방을 만들 때 보낸 초대도 같다.
+	public static Map<String, String> roomInvite(long inviteId, long roomId, String roomName) {
+		return Map.of("type", "ROOM_INVITE", "inviteId", String.valueOf(inviteId), "roomId", String.valueOf(roomId),
+				"roomName", roomName);
 	}
 
 	// 카드를 지웠으면 cardId는 빈 문자열이다.

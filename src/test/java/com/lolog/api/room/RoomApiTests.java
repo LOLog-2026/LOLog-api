@@ -109,8 +109,28 @@ class RoomApiTests {
 			.content("{\"name\":\"" + name + "\",\"memberIds\":[" + ids + "]}"), me);
 	}
 
+	// 방을 만들고 초대받은 사람이 모두 수락한다.
 	private long roomId(long me, List<Long> members) throws Exception {
-		return json(createRoom(me, "과팀플", members).andExpect(status().isCreated())).get("id").asLong();
+		long roomId = json(createRoom(me, "과팀플", members).andExpect(status().isCreated())).get("id").asLong();
+		for (long member : members) {
+			call(post("/api/room-invites/" + inviteId(member, roomId) + "/accept"), member).andExpect(status().isOk());
+		}
+		return roomId;
+	}
+
+	private long inviteId(long userId, long roomId) throws Exception {
+		for (JsonNode invite : json(call(get("/api/room-invites"), userId)).get("invites")) {
+			if (invite.get("room").get("id").asLong() == roomId) {
+				return invite.get("id").asLong();
+			}
+		}
+		throw new AssertionError("초대가 없어요");
+	}
+
+	private ResultActions invite(long me, long roomId, List<Long> userIds) throws Exception {
+		String ids = userIds.stream().map(String::valueOf).collect(Collectors.joining(","));
+		return call(post("/api/rooms/" + roomId + "/invites").contentType(MediaType.APPLICATION_JSON)
+			.content("{\"userIds\":[" + ids + "]}"), me);
 	}
 
 	private ResultActions postComic(long me, long roomId, long comicId) throws Exception {
@@ -129,31 +149,121 @@ class RoomApiTests {
 	// ---- 테스트 ----
 
 	@Test
-	void 친구를_골라_방을_만들면_나와_친구가_들어간다() throws Exception {
+	void 방을_만들면_고른_친구에게_초대가_가고_수락한_사람만_들어온다() throws Exception {
 		long me = user("나");
 		long a = user("준");
 		long b = user("서연");
 		friends(me, a);
 		friends(b, me);
 
-		createRoom(me, "  과팀플  ", List.of(a, b)).andExpect(status().isCreated())
+		JsonNode room = json(createRoom(me, "  과팀플  ", List.of(a, b)).andExpect(status().isCreated())
 			.andExpect(jsonPath("$.name").value("과팀플"))
-			.andExpect(jsonPath("$.members.length()").value(3))
+			.andExpect(jsonPath("$.ownerId").value(me))
+			.andExpect(jsonPath("$.members.length()").value(1))
 			.andExpect(jsonPath("$.members[0].userId").value(me))
 			.andExpect(jsonPath("$.members[0].isMe").value(true))
-			.andExpect(jsonPath("$.members[1].nickname").value("준"))
-			.andExpect(jsonPath("$.members[2].userId").value(b))
+			.andExpect(jsonPath("$.members[0].isOwner").value(true))
+			.andExpect(jsonPath("$.invites.length()").value(2))
+			.andExpect(jsonPath("$.invites[0].invitedUser.nickname").value("준"))
+			.andExpect(jsonPath("$.invites[1].invitedUser.userId").value(b))
 			.andExpect(jsonPath("$.lastActivity.type").value("CREATED"))
-			.andExpect(jsonPath("$.lastActivity.isMe").value(true))
+			.andExpect(jsonPath("$.unread").value(0)));
+		long id = room.get("id").asLong();
+
+		// 초대받은 사람은 아직 멤버가 아니다
+		call(get("/api/rooms"), a).andExpect(jsonPath("$.rooms").isEmpty());
+		call(get("/api/rooms/" + id), a).andExpect(status().isNotFound());
+		call(get("/api/room-invites"), a).andExpect(jsonPath("$.invites.length()").value(1))
+			.andExpect(jsonPath("$.invites[0].room.name").value("과팀플"))
+			.andExpect(jsonPath("$.invites[0].invitedBy.userId").value(me))
+			.andExpect(jsonPath("$.invites[0].invitedBy.nickname").value("나"))
+			.andExpect(jsonPath("$.invites[0].invitedUser").isEmpty());
+
+		// 수락하면 들어오고, 들어온 직후 받지 않은 글은 0이다. 방장이 아니면 invites는 비어 있다
+		call(post("/api/room-invites/" + inviteId(a, id) + "/accept"), a).andExpect(status().isOk())
+			.andExpect(jsonPath("$.members.length()").value(2))
+			.andExpect(jsonPath("$.members[1].isMe").value(true))
+			.andExpect(jsonPath("$.members[1].isOwner").value(false))
+			.andExpect(jsonPath("$.members[0].isOwner").value(true))
+			.andExpect(jsonPath("$.invites").isEmpty())
 			.andExpect(jsonPath("$.unread").value(0));
-		// 초대받은 사람에게는 "방을 만들었어요"가 받지 않은 글 1이다
-		call(get("/api/rooms"), a).andExpect(jsonPath("$.rooms[0].unread").value(1))
-			.andExpect(jsonPath("$.rooms[0].lastActivity.nickname").value("나"));
-		call(get("/api/rooms"), a).andExpect(jsonPath("$.rooms[0].members[1].isMe").value(true));
+		call(get("/api/room-invites"), a).andExpect(jsonPath("$.invites").isEmpty());
+
+		// 거절하면 초대가 없어진다(방장에게 알리지 않음)
+		long bInvite = inviteId(b, id);
+		call(delete("/api/room-invites/" + bInvite), b).andExpect(status().isNoContent());
+		call(delete("/api/room-invites/" + bInvite), b).andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.code").value("ROOM_INVITE_NOT_FOUND"));
+		call(post("/api/room-invites/" + bInvite + "/accept"), b).andExpect(status().isNotFound());
+		call(get("/api/rooms/" + id), me).andExpect(jsonPath("$.invites").isEmpty())
+			.andExpect(jsonPath("$.members.length()").value(2));
+
 		long outsider = user("남");
-		long id = json(call(get("/api/rooms"), me)).get("rooms").get(0).get("id").asLong();
 		call(get("/api/rooms/" + id), outsider).andExpect(status().isNotFound())
 			.andExpect(jsonPath("$.code").value("ROOM_NOT_FOUND"));
+	}
+
+	@Test
+	void 방장만_초대하고_취소하며_인원은_초대까지_합쳐_센다() throws Exception {
+		long me = user("나");
+		long a = user("준");
+		long b = user("서연");
+		long stranger = user("남");
+		friends(me, a);
+		friends(me, b);
+		friends(a, b);
+		long id = roomId(me, List.of(a));
+
+		invite(a, id, List.of(b)).andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("ROOM_OWNER_ONLY"));
+		invite(me, id, List.of()).andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").value("userIds"));
+		invite(me, id, List.of(a)).andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").value("userIds[0]"));
+		invite(me, id, List.of(stranger)).andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.code").value("USER_NOT_FOUND"));
+		invite(stranger, id, List.of(b)).andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("ROOM_NOT_FOUND"));
+
+		JsonNode invites = json(invite(me, id, List.of(b)).andExpect(status().isCreated())
+			.andExpect(jsonPath("$.invites.length()").value(1))
+			.andExpect(jsonPath("$.invites[0].invitedUser.userId").value(b)));
+		long inviteId = invites.get("invites").get(0).get("id").asLong();
+		// 다시 초대해도 같은 초대를 돌려준다
+		invite(me, id, List.of(b)).andExpect(status().isCreated()).andExpect(jsonPath("$.invites[0].id").value(inviteId));
+
+		call(delete("/api/rooms/" + id + "/invites/" + inviteId), a).andExpect(status().isForbidden());
+		call(delete("/api/rooms/" + id + "/invites/" + inviteId), me).andExpect(status().isNoContent());
+		call(delete("/api/rooms/" + id + "/invites/" + inviteId), me).andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.code").value("ROOM_INVITE_NOT_FOUND"));
+		call(get("/api/room-invites"), b).andExpect(jsonPath("$.invites").isEmpty());
+
+		// 멤버 2 + 초대 4 = 6명까지. 하나 더는 409
+		List<Long> more = new java.util.ArrayList<>();
+		for (int i = 0; i < 5; i++) {
+			long f = user("친구" + i);
+			friends(me, f);
+			more.add(f);
+		}
+		invite(me, id, more).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ROOM_MEMBER_LIMIT"));
+		invite(me, id, more.subList(0, 4)).andExpect(status().isCreated());
+		invite(me, id, more.subList(4, 5)).andExpect(status().isConflict());
+	}
+
+	@Test
+	void 한_사람은_방_20개까지_들어간다() throws Exception {
+		long me = user("나");
+		long a = user("준");
+		friends(me, a);
+		for (int i = 0; i < 20; i++) {
+			createRoom(a, "방" + i, List.of(me)).andExpect(status().isCreated());
+		}
+		long first = json(call(get("/api/room-invites"), me)).get("invites").get(0).get("id").asLong();
+		for (JsonNode invite : json(call(get("/api/room-invites"), me)).get("invites")) {
+			if (invite.get("id").asLong() != first) {
+				call(post("/api/room-invites/" + invite.get("id").asLong() + "/accept"), me).andExpect(status().isOk());
+			}
+		}
+		createRoom(me, "하나 더", List.of(a)).andExpect(status().isCreated());
+		createRoom(me, "또 하나", List.of(a)).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ROOM_LIMIT"));
+		call(post("/api/room-invites/" + first + "/accept"), me).andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("ROOM_LIMIT"));
 	}
 
 	@Test
@@ -202,7 +312,8 @@ class RoomApiTests {
 			.andExpect(jsonPath("$.code").value("COMIC_NOT_FOUND"));
 		postComic(a, roomId, comic(a, "DRAWING", "그리는 중")).andExpect(status().isNotFound());
 
-		call(get("/api/rooms"), b).andExpect(jsonPath("$.rooms[0].unread").value(2))
+		// 초대를 수락하기 전의 "방을 만들었어요"는 세지 않는다
+		call(get("/api/rooms"), b).andExpect(jsonPath("$.rooms[0].unread").value(1))
 			.andExpect(jsonPath("$.rooms[0].lastActivity.type").value("POSTED"))
 			.andExpect(jsonPath("$.rooms[0].lastActivity.nickname").value("준"))
 			.andExpect(jsonPath("$.rooms[0].lastActivity.isMe").value(false));
@@ -268,7 +379,10 @@ class RoomApiTests {
 		// 나간 사람이 올린 만화는 남는다(초안)
 		call(get("/api/rooms/" + roomId + "/posts"), b).andExpect(jsonPath("$.posts.length()").value(1))
 			.andExpect(jsonPath("$.posts[0].author.nickname").value("준"));
-		call(get("/api/rooms/" + roomId), b).andExpect(jsonPath("$.members.length()").value(1));
+		// 방장이 나가면 남은 멤버가 방장이 된다
+		call(get("/api/rooms/" + roomId), b).andExpect(jsonPath("$.members.length()").value(1))
+			.andExpect(jsonPath("$.ownerId").value(b))
+			.andExpect(jsonPath("$.members[0].isOwner").value(true));
 
 		call(delete("/api/rooms/" + roomId + "/members/me"), b).andExpect(status().isNoContent());
 		assertThat(jdbc.queryForObject("select count(*) from rooms where id = ?", Long.class, roomId)).isZero();
@@ -293,11 +407,22 @@ class RoomApiTests {
 		call(delete("/api/comics/" + gone), a).andExpect(status().isNoContent());
 		call(get("/api/rooms/" + roomId + "/posts"), b).andExpect(jsonPath("$.posts.length()").value(1));
 
+		long d = user("도윤");
+		friends(a, d);
+		invite(a, roomId, List.of(d)).andExpect(status().isCreated());
 		mvc.perform(delete("/internal/users/" + c).header("X-Internal-Token", "internal-test-token"))
 			.andExpect(status().isNoContent());
-		call(get("/api/rooms/" + roomId), a).andExpect(jsonPath("$.members.length()").value(2));
-		call(get("/api/rooms/" + roomId + "/posts"), a).andExpect(jsonPath("$.posts[0].likeCount").value(0));
-		JsonNode messages = json(call(get("/api/rooms/" + roomId + "/messages"), a)).get("messages");
+		// 방장이 탈퇴하면 가장 먼저 들어온 멤버가 방장이 되고, 탈퇴한 사람이 받은 초대는 지워진다
+		mvc.perform(delete("/internal/users/" + a).header("X-Internal-Token", "internal-test-token"))
+			.andExpect(status().isNoContent());
+		call(get("/api/rooms/" + roomId), b).andExpect(jsonPath("$.ownerId").value(b));
+		mvc.perform(delete("/internal/users/" + d).header("X-Internal-Token", "internal-test-token"))
+			.andExpect(status().isNoContent());
+		assertThat(jdbc.queryForObject("select count(*) from room_invites where user_id = ?", Long.class, d)).isZero();
+		long a2 = b;
+		call(get("/api/rooms/" + roomId), a2).andExpect(jsonPath("$.members.length()").value(1));
+		call(get("/api/rooms/" + roomId + "/posts"), a2).andExpect(jsonPath("$.posts[0].likeCount").value(0));
+		JsonNode messages = json(call(get("/api/rooms/" + roomId + "/messages"), a2)).get("messages");
 		for (JsonNode m : messages) {
 			assertThat(m.get("member").get("userId").asLong()).isNotEqualTo(c);
 		}
