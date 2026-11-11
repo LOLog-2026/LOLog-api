@@ -309,19 +309,34 @@ class FriendApiTests {
 	}
 
 	@Test
-	void 차단하면_관계가_지워지고_차단된_사람은_없는_코드로_보인다() throws Exception {
+	void 차단하면_요청이_지워지고_차단된_사람은_없는_코드로_보인다() throws Exception {
 		User a = user("민수");
 		User b = user("지원");
 		makeFriends(a, b);
 
+		// 친구는 바로 차단하지 않는다(초안). 끊기를 거친다
+		block(a.id(), b.id()).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("UNFRIEND_FIRST"));
+		assertThat(friendIds(a.id())).hasSize(1);
+		call(delete("/api/friends/" + b.id()), a.id()).andExpect(status().isNoContent());
+		requestId(b.id(), a);
+
 		block(a.id(), b.id()).andExpect(status().isNoContent());
 		block(a.id(), b.id()).andExpect(status().isNoContent());
-		assertThat(friendIds(a.id())).isEmpty();
-		assertThat(friendIds(b.id())).isEmpty();
+		call(get("/api/friend-requests?direction=sent"), b.id()).andExpect(jsonPath("$.requests").isEmpty());
 		call(get("/api/blocks"), a.id()).andExpect(jsonPath("$.blocks[0].userId").value(b.id()))
 			.andExpect(jsonPath("$.blocks[0].nickname").value("지원"))
 			.andExpect(jsonPath("$.blocks[0].friendCode").value(b.code()))
-			.andExpect(jsonPath("$.blocks[0].blockedAt").isNotEmpty());
+			.andExpect(jsonPath("$.blocks[0].blockedAt").isNotEmpty())
+			.andExpect(jsonPath("$.blocks[0].hideInRooms").value(false));
+
+		// 방 숨기기 설정 바꾸기. 차단한 사람이 아니면 404
+		call(patch("/api/blocks/" + b.id()).contentType(MediaType.APPLICATION_JSON).content("{\"hideInRooms\":true}"), a.id())
+			.andExpect(status().isNoContent());
+		call(get("/api/blocks"), a.id()).andExpect(jsonPath("$.blocks[0].hideInRooms").value(true));
+		call(patch("/api/blocks/" + a.id()).contentType(MediaType.APPLICATION_JSON).content("{\"hideInRooms\":true}"), b.id())
+			.andExpect(status().isNotFound());
+		call(patch("/api/blocks/" + b.id()).contentType(MediaType.APPLICATION_JSON).content("{}"), a.id())
+			.andExpect(status().isBadRequest());
 
 		request(b.id(), a.code()).andExpect(status().isNotFound())
 			.andExpect(jsonPath("$.code").value("FRIEND_CODE_NOT_FOUND"));
@@ -396,7 +411,7 @@ class FriendApiTests {
 		User blocker = user("차단");
 		makeFriends(gone, friend);
 		requestId(gone.id(), asked);
-		makeFriends(blocker, gone);
+		requestId(gone.id(), blocker);
 		block(blocker.id(), gone.id()).andExpect(status().isNoContent());
 
 		mvc.perform(delete("/internal/users/" + gone.id()).header("X-Internal-Token", "internal-test-token"))

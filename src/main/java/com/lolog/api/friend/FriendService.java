@@ -50,22 +50,37 @@ public class FriendService {
 	private record Friendship(long id, long requesterId, long addresseeId, String status, OffsetDateTime createdAt) {
 	}
 
-	// 친구 코드로 요청한다. 상대가 이미 나에게 요청해 뒀으면 새 줄 없이 그 줄을 ACCEPTED로 바꾼다(푸시 없음).
+	// 친구 코드나 같은 방 멤버의 userId(초안)로 요청한다. 상대가 이미 나에게 요청해 뒀으면 새 줄 없이 그 줄을 ACCEPTED로 바꾼다(푸시 없음).
 	@Transactional
-	public FriendRequestResponse sendRequest(long me, String friendCode) {
-		String code = friendCode == null ? "" : friendCode.strip().toUpperCase(Locale.ROOT);
-		if (code.length() != ProfileService.CODE_LENGTH) {
-			throw ApiException.invalid("friendCode", "친구 코드 8자리를 입력해 주세요.");
+	public FriendRequestResponse sendRequest(long me, String friendCode, Long userId) {
+		if ((friendCode == null) == (userId == null)) {
+			throw ApiException.invalid(friendCode == null ? "friendCode" : "userId", "friendCode와 userId 중 하나만 보내 주세요.");
 		}
-		requireNickname(me);
-		limiter.check(me);
-		// 닉네임을 정하지 않은 사람의 코드는 없는 코드와 같다(코드가 앱에 보이지 않는 상태).
-		long target = jdbc
-			.queryForList("select user_id from user_profiles where friend_code = ? and nickname is not null", Long.class,
-					code)
-			.stream()
-			.findFirst()
-			.orElseThrow(FriendService::codeNotFound);
+		long target;
+		if (userId != null) {
+			requireNickname(me);
+			// 지금 같은 방에 있지 않거나 닉네임이 없으면 친구 코드를 모를 때와 같은 404다.
+			target = jdbc.queryForList("""
+					select p.user_id from user_profiles p where p.user_id = ? and p.nickname is not null and exists (
+					  select 1 from room_members a join room_members b on b.room_id = a.room_id
+					  where a.user_id = ? and b.user_id = p.user_id)
+					""", Long.class, userId, me).stream().findFirst().orElseThrow(FriendService::codeNotFound);
+		}
+		else {
+			String code = friendCode.strip().toUpperCase(Locale.ROOT);
+			if (code.length() != ProfileService.CODE_LENGTH) {
+				throw ApiException.invalid("friendCode", "친구 코드 8자리를 입력해 주세요.");
+			}
+			requireNickname(me);
+			limiter.check(me);
+			// 닉네임을 정하지 않은 사람의 코드는 없는 코드와 같다(코드가 앱에 보이지 않는 상태).
+			target = jdbc
+				.queryForList("select user_id from user_profiles where friend_code = ? and nickname is not null",
+						Long.class, code)
+				.stream()
+				.findFirst()
+				.orElseThrow(FriendService::codeNotFound);
+		}
 		if (target == me) {
 			throw new ApiException(HttpStatus.BAD_REQUEST, "CANNOT_FRIEND_SELF", "내 친구 코드는 넣을 수 없어요.");
 		}
@@ -168,10 +183,10 @@ public class FriendService {
 				""", me, userId, userId, me);
 	}
 
-	// 친구이거나 요청이 오간 사람만 차단할 수 있다. 차단하면 두 사람 사이의 친구 관계와 요청을 지운다.
-	// 이미 차단했으면 그대로 204다.
+	// 요청이 오간 사람과 같은 방 멤버를 차단할 수 있다. 친구는 먼저 끊어야 한다(409 UNFRIEND_FIRST, 초안).
+	// 차단하면 두 사람 사이의 친구 요청을 지운다. 이미 차단했으면 그대로 204다(숨기기 설정은 PATCH로 바꾼다).
 	@Transactional
-	public void block(long me, long userId) {
+	public void block(long me, long userId, boolean hideInRooms) {
 		if (userId == me) {
 			throw new ApiException(HttpStatus.BAD_REQUEST, "CANNOT_FRIEND_SELF", "나는 차단할 수 없어요.");
 		}
@@ -179,23 +194,39 @@ public class FriendService {
 		if (blocked(me, userId)) {
 			return;
 		}
-		Friendship pair = findPair(me, userId)
-			.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "차단할 수 있는 사람이 아니에요."));
-		jdbc.update("delete from friendships where id = ?", pair.id());
+		Optional<Friendship> pair = findPair(me, userId);
+		if (pair.isPresent() && ACCEPTED.equals(pair.get().status())) {
+			throw new ApiException(HttpStatus.CONFLICT, "UNFRIEND_FIRST", "친구는 먼저 끊고 차단해 주세요.");
+		}
+		if (pair.isEmpty() && !sameRoom(me, userId)) {
+			throw new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "차단할 수 있는 사람이 아니에요.");
+		}
+		pair.ifPresent(p -> jdbc.update("delete from friendships where id = ?", p.id()));
 		detacher.detachBetween(me, userId);
-		jdbc.update("insert into user_blocks (blocker_id, blocked_id) values (?, ?) on conflict do nothing", me, userId);
+		jdbc.update("insert into user_blocks (blocker_id, blocked_id, hide_in_rooms) values (?, ?, ?) on conflict do nothing",
+				me, userId, hideInRooms);
+	}
+
+	// 방에서 그 사람 글 숨기기 설정을 바꾼다. 차단한 사람이 아니면 404(초안).
+	@Transactional
+	public void updateBlock(long me, long userId, boolean hideInRooms) {
+		if (jdbc.update("update user_blocks set hide_in_rooms = ? where blocker_id = ? and blocked_id = ?", hideInRooms, me,
+				userId) == 0) {
+			throw new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "차단한 사람이 아니에요.");
+		}
 	}
 
 	// 차단한 사람 목록(최신순).
 	@Transactional(readOnly = true)
 	public BlockList blocks(long me) {
 		return new BlockList(jdbc.query("""
-				select b.blocked_id, b.created_at, p.nickname, p.friend_code
+				select b.blocked_id, b.created_at, b.hide_in_rooms, p.nickname, p.friend_code
 				from user_blocks b join user_profiles p on p.user_id = b.blocked_id
 				where b.blocker_id = ?
 				order by b.created_at desc, b.blocked_id desc
 				""", (rs, n) -> new BlockItem(rs.getLong("blocked_id"), rs.getString("nickname"),
-				rs.getString("friend_code"), rs.getObject("created_at", OffsetDateTime.class)), me));
+				rs.getString("friend_code"), rs.getObject("created_at", OffsetDateTime.class),
+				rs.getBoolean("hide_in_rooms")), me));
 	}
 
 	// 차단을 풀어도 친구로 돌아가지 않는다. 차단한 적 없어도 204다.
@@ -217,6 +248,14 @@ public class FriendService {
 	private void lockPair(long a, long b) {
 		jdbc.queryForList("select user_id from user_profiles where user_id in (?, ?) order by user_id for update",
 				Long.class, Math.min(a, b), Math.max(a, b));
+	}
+
+	// 지금 같은 방에 있는지
+	private boolean sameRoom(long a, long b) {
+		return Boolean.TRUE.equals(jdbc.queryForObject("""
+				select exists (select 1 from room_members x join room_members y on y.room_id = x.room_id
+				  where x.user_id = ? and y.user_id = ?)
+				""", Boolean.class, a, b));
 	}
 
 	private boolean blocked(long blocker, long blockedUser) {

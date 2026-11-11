@@ -220,16 +220,20 @@ public class RoomService {
 	// 내가 받은 초대(최신순)
 	@Transactional(readOnly = true)
 	public InviteList receivedInvites(long me) {
-		record I(long id, long roomId, String roomName, long invitedBy, OffsetDateTime at) {
+		record I(long id, long roomId, String roomName, long invitedBy, OffsetDateTime at, boolean hasBlocked) {
 		}
 		List<I> rows = jdbc.query("""
-				select i.id, i.room_id, r.name, i.invited_by, i.created_at from room_invites i join rooms r on r.id = i.room_id
+				select i.id, i.room_id, r.name, i.invited_by, i.created_at,
+				       exists (select 1 from room_members m join user_blocks b on b.blocked_id = m.user_id and b.blocker_id = i.user_id
+				               where m.room_id = i.room_id) as has_blocked
+				from room_invites i join rooms r on r.id = i.room_id
 				where i.user_id = ? order by i.created_at desc, i.id desc
 				""", (rs, n) -> new I(rs.getLong("id"), rs.getLong("room_id"), rs.getString("name"), rs.getLong("invited_by"),
-				rs.getObject("created_at", OffsetDateTime.class)), me);
+				rs.getObject("created_at", OffsetDateTime.class), rs.getBoolean("has_blocked")), me);
 		Map<Long, RoomMember> people = people(rows.stream().map(I::invitedBy).toList(), me, null);
 		return new InviteList(rows.stream()
-			.map(i -> new RoomInvite(i.id(), new RoomRef(i.roomId(), i.roomName()), null, people.get(i.invitedBy()), i.at()))
+			.map(i -> new RoomInvite(i.id(), new RoomRef(i.roomId(), i.roomName()), null, people.get(i.invitedBy()),
+					i.hasBlocked(), i.at()))
 			.toList());
 	}
 
@@ -479,7 +483,8 @@ public class RoomService {
 		Map<Long, RoomMember> people = people(rows.stream().map(I::userId).toList(), me, null);
 		Map<Long, List<RoomInvite>> result = new HashMap<>();
 		rows.forEach(i -> result.computeIfAbsent(i.roomId(), k -> new ArrayList<>())
-			.add(new RoomInvite(i.id(), new RoomRef(i.roomId(), i.roomName()), people.get(i.userId()), null, i.at())));
+			.add(new RoomInvite(i.id(), new RoomRef(i.roomId(), i.roomName()), people.get(i.userId()), null, false,
+					i.at())));
 		return result;
 	}
 
@@ -531,6 +536,7 @@ public class RoomService {
 		if (userIds.isEmpty()) {
 			return result;
 		}
+		Map<Long, String> states = friendStates(userIds, me);
 		named.query("select user_id, nickname, character_thumb_key from user_profiles where user_id in (:ids)",
 				Map.of("ids", userIds), rs -> {
 					long id = rs.getLong("user_id");
@@ -538,12 +544,39 @@ public class RoomService {
 					String nickname = rs.getString("nickname");
 					result.put(id, new RoomMember(id, nickname == null ? "" : nickname,
 							thumb == null ? null : storage.presignedUrl(thumb).toString(), id == me,
-							owner != null && id == owner, false));
+							owner != null && id == owner, false, states.get(id)));
 				});
 		for (Long id : userIds) {
-			result.putIfAbsent(id, new RoomMember(id, "", null, id == me, owner != null && id == owner, false));
+			result.putIfAbsent(id, new RoomMember(id, "", null, id == me, owner != null && id == owner, false,
+					states.get(id)));
 		}
 		return result;
+	}
+
+	// 나와 그 사람의 관계. 내가 차단했으면 BLOCKED가 먼저다.
+	private Map<Long, String> friendStates(Collection<Long> userIds, long me) {
+		Map<Long, String> states = new HashMap<>();
+		userIds.forEach(id -> states.put(id, id == me ? "ME" : "NONE"));
+		MapSqlParameterSource args = new MapSqlParameterSource("ids", userIds).addValue("me", me);
+		named.query("""
+				select requester_id, addressee_id, status from friendships
+				where (requester_id = :me and addressee_id in (:ids)) or (addressee_id = :me and requester_id in (:ids))
+				""", args, rs -> {
+			boolean sent = rs.getLong("requester_id") == me;
+			long other = sent ? rs.getLong("addressee_id") : rs.getLong("requester_id");
+			states.put(other, "ACCEPTED".equals(rs.getString("status")) ? "FRIEND" : sent ? "REQUESTED" : "RECEIVED");
+		});
+		named.query("select blocked_id from user_blocks where blocker_id = :me and blocked_id in (:ids)", args,
+				rs -> {
+					states.put(rs.getLong("blocked_id"), "BLOCKED");
+				});
+		return states;
+	}
+
+	// 내가 차단하고 방 글을 숨기기로 한 사람들
+	private Set<Long> hiddenUsers(long me) {
+		return new HashSet<>(jdbc.queryForList(
+				"select blocked_id from user_blocks where blocker_id = ? and hide_in_rooms", Long.class, me));
 	}
 
 	private List<RoomItem> items(List<Long> roomIds, long me) {
@@ -581,6 +614,7 @@ public class RoomService {
 		Set<String> memberPairs = new HashSet<>();
 		memberIds.forEach((room, users) -> users.forEach(u -> memberPairs.add(room + ":" + u)));
 		Map<Long, List<RoomInvite>> invites = sentInvites(roomIds, me);
+		Set<Long> hidden = hiddenUsers(me);
 		Map<Long, RoomItem> byId = new LinkedHashMap<>();
 		named.query("select id, name, owner_id, created_at from rooms where id in (:ids)", ids, rs -> {
 			long id = rs.getLong("id");
@@ -589,7 +623,7 @@ public class RoomService {
 			RoomActivity activity = l == null ? null
 					: new RoomActivity("COMMENT".equals(l.type()) ? "COMMENTED" : l.type(),
 							memberPairs.contains(id + ":" + l.userId()) ? people.get(l.userId()).nickname() : null,
-							l.userId() == me, l.at(), l.body());
+							l.userId() == me, l.at(), hidden.contains(l.userId()) ? null : l.body());
 			List<RoomMember> members = memberIds.getOrDefault(id, List.of())
 				.stream()
 				.map(people::get)
@@ -602,7 +636,7 @@ public class RoomService {
 	}
 
 	private static RoomMember withOwner(RoomMember m, long owner) {
-		return new RoomMember(m.userId(), m.nickname(), m.thumbnailUrl(), m.isMe(), m.userId() == owner, false);
+		return m.owner(m.userId() == owner);
 	}
 
 	private Long ownerOf(long roomId) {
@@ -626,10 +660,13 @@ public class RoomService {
 				rs.getObject("created_at", OffsetDateTime.class), rs.getString("card_summary"), rs.getString("image_key"),
 				rs.getInt("likes"), rs.getBoolean("liked"), rs.getInt("comments")), me, roomId, onlyPost, onlyPost);
 		Map<Long, RoomMember> people = authors(rows.stream().map(P::userId).toList(), me, roomId);
-		return rows.stream()
-			.map(p -> new RoomPost(p.id(), roomId, p.comicId(), p.title() == null ? "" : p.title(), url(p.imageKey()),
-					people.get(p.userId()), p.at(), p.likes(), p.liked(), p.comments()))
-			.toList();
+		Set<Long> hidden = hiddenUsers(me);
+		return rows.stream().map(p -> {
+			boolean hide = hidden.contains(p.userId());
+			return new RoomPost(p.id(), roomId, p.comicId(), hide ? null : p.title() == null ? "" : p.title(),
+					hide ? null : url(p.imageKey()), people.get(p.userId()), p.at(), p.likes(), p.liked(), p.comments(),
+					hide);
+		}).toList();
 	}
 
 	private List<RoomMessage> messages(long me, long roomId, List<Row> rows) {
@@ -649,10 +686,12 @@ public class RoomService {
 					});
 		}
 		Map<Long, RoomMember> people = authors(rows.stream().map(Row::userId).toList(), me, roomId);
-		return rows.stream()
-			.map(r -> new RoomMessage(r.id(), r.type(), people.get(r.userId()), r.at(), r.postId(),
-					r.postId() == null ? null : summaries.get(r.postId()), r.body()))
-			.toList();
+		Set<Long> hidden = hiddenUsers(me);
+		return rows.stream().map(r -> {
+			boolean hide = hidden.contains(r.userId());
+			return new RoomMessage(r.id(), r.type(), people.get(r.userId()), r.at(), r.postId(),
+					hide || r.postId() == null ? null : summaries.get(r.postId()), hide ? null : r.body(), hide);
+		}).toList();
 	}
 
 	private String url(String key) {

@@ -22,7 +22,8 @@ public final class FriendDtos {
 	}
 
 	// friendCode 길이는 대문자로 바꾸기 전 앞뒤 공백을 뺀 뒤에 보므로 서비스에서 확인한다.
-	public record FriendRequestCreate(String friendCode) {
+	// userId는 같은 방 멤버에게 친구 코드 없이 보낼 때(초안). 둘 중 하나만 보낸다.
+	public record FriendRequestCreate(String friendCode, Long userId) {
 	}
 
 	public record FriendUser(Long userId, String nickname, String friendCode) {
@@ -43,10 +44,15 @@ public final class FriendDtos {
 	public record FriendList(List<FriendItem> friends) {
 	}
 
-	public record BlockCreate(@NotNull Long userId) {
+	// hideInRooms는 같은 방에서 그 사람 글을 숨길지. 없으면 false(초안).
+	public record BlockCreate(@NotNull Long userId, Boolean hideInRooms) {
 	}
 
-	public record BlockItem(Long userId, String nickname, String friendCode, OffsetDateTime blockedAt) {
+	public record BlockUpdate(@NotNull Boolean hideInRooms) {
+	}
+
+	public record BlockItem(Long userId, String nickname, String friendCode, OffsetDateTime blockedAt,
+			boolean hideInRooms) {
 	}
 
 	public record BlockList(List<BlockItem> blocks) {
