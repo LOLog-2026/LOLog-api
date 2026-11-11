@@ -1,6 +1,7 @@
 package com.lolog.api.notification;
 
 import com.lolog.api.common.SafeLog;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -8,13 +9,16 @@ import java.util.concurrent.Executors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.DisposableBean;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import tools.jackson.databind.ObjectMapper;
 
 // 카드·만화 결과, 친구 요청, 방 소식을 사용자의 모든 폰에 알린다(FR-NOTI, API DTO 명세 3장).
 // 값은 모두 문자열이고 대사는 넣지 않는다(FR-NOTI-03). 알림 문구는 앱이 만든다.
 // 저장이 확정된 뒤(커밋 뒤)에 따로 보내고, 실패하면 다시 보내지 않고 로그만 남긴다. 앱은 푸시가 없어도 조회로 상태를 안다.
+// 보낼 때마다 같은 내용을 알림 목록(notifications)에 한 줄 남긴다. 푸시가 꺼져 있거나 가지 않아도 남는다(inbox.md 1장).
 @Service
 public class PushService implements DisposableBean {
 
@@ -22,12 +26,16 @@ public class PushService implements DisposableBean {
 
 	private final DeviceTokenService tokens;
 	private final PushSender sender;
+	private final JdbcTemplate jdbc;
+	private final ObjectMapper objectMapper;
 	// 워커·앱 요청의 응답을 붙잡지 않게 따로 보낸다. 빈으로 두지 않는다(Spring 기본 작업 실행기를 대신하지 않게).
 	private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
-	public PushService(DeviceTokenService tokens, PushSender sender) {
+	public PushService(DeviceTokenService tokens, PushSender sender, JdbcTemplate jdbc, ObjectMapper objectMapper) {
 		this.tokens = tokens;
 		this.sender = sender;
+		this.jdbc = jdbc;
+		this.objectMapper = objectMapper;
 	}
 
 	@Override
@@ -85,8 +93,9 @@ public class PushService implements DisposableBean {
 				cardId == null ? "" : String.valueOf(cardId));
 	}
 
-	// 트랜잭션 안에서 부르면 커밋된 뒤에 보낸다. 되돌려지면 보내지 않는다.
+	// 트랜잭션 안에서 부르면 커밋된 뒤에 보낸다. 되돌려지면 보내지 않는다(알림 목록 줄도 함께 되돌려진다).
 	public void notify(long userId, Map<String, String> data) {
+		record(userId, data);
 		if (!sender.enabled()) {
 			return;
 		}
@@ -101,6 +110,14 @@ public class PushService implements DisposableBean {
 		else {
 			executor.execute(() -> deliver(userId, data));
 		}
+	}
+
+	// 알림 목록에 남긴다. data는 type을 뺀 나머지 값이다.
+	private void record(long userId, Map<String, String> data) {
+		Map<String, String> rest = new LinkedHashMap<>(data);
+		String type = rest.remove("type");
+		jdbc.update("insert into notifications (user_id, type, data, created_at) values (?, ?, ?::jsonb, clock_timestamp())",
+				userId, type, objectMapper.writeValueAsString(rest));
 	}
 
 	// 토큰 값은 로그에 남기지 않는다(TR-12).
