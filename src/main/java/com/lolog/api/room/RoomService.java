@@ -537,6 +537,11 @@ public class RoomService {
 			return result;
 		}
 		Map<Long, String> states = friendStates(userIds, me);
+		// 기한이 지난 정지는 정지 아님으로 본다(인증 서비스가 따로 알리지 않음).
+		Set<Long> suspended = new HashSet<>(named.queryForList("""
+				select user_id from user_suspensions where user_id in (:ids)
+				and (suspended_until is null or suspended_until > current_timestamp)
+				""", Map.of("ids", userIds), Long.class));
 		named.query("select user_id, nickname, character_thumb_key from user_profiles where user_id in (:ids)",
 				Map.of("ids", userIds), rs -> {
 					long id = rs.getLong("user_id");
@@ -544,11 +549,11 @@ public class RoomService {
 					String nickname = rs.getString("nickname");
 					result.put(id, new RoomMember(id, nickname == null ? "" : nickname,
 							thumb == null ? null : storage.presignedUrl(thumb).toString(), id == me,
-							owner != null && id == owner, false, states.get(id)));
+							owner != null && id == owner, false, states.get(id), suspended.contains(id)));
 				});
 		for (Long id : userIds) {
 			result.putIfAbsent(id, new RoomMember(id, "", null, id == me, owner != null && id == owner, false,
-					states.get(id)));
+					states.get(id), suspended.contains(id)));
 		}
 		return result;
 	}
