@@ -68,6 +68,17 @@ public class PushService implements DisposableBean {
 				"roomName", roomName);
 	}
 
+	// 내가 올린 만화에 다른 사람이 댓글을 담(rooms.md 3장 푸시, 초안). 문구에 댓글 내용은 넣지 않는다.
+	public static Map<String, String> roomComment(long roomId, long postId, String nickname) {
+		return Map.of("type", "ROOM_COMMENT", "roomId", String.valueOf(roomId), "postId", String.valueOf(postId),
+				"nickname", nickname);
+	}
+
+	// 방장이 방을 해산함(rooms.md 3장 푸시, 초안). 방장 말고 멤버에게 보낸다.
+	public static Map<String, String> roomDisbanded(String roomName) {
+		return Map.of("type", "ROOM_DISBANDED", "roomName", roomName);
+	}
+
 	// 카드를 지웠으면 cardId는 빈 문자열이다.
 	private static Map<String, String> comic(String type, long comicId, Long cardId) {
 		return Map.of("type", type, "comicId", String.valueOf(comicId), "cardId",

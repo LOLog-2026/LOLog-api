@@ -23,8 +23,19 @@ public final class RoomDtos {
 	public record InviteCreateRequest(List<Long> userIds) {
 	}
 
+	// PATCH /api/rooms/{id}. 방 이름 바꾸기(방장)
+	public record RoomUpdateRequest(String name) {
+	}
+
 	// thumbnailUrl은 그 사람의 프로필 캐릭터 256 그림(없으면 null). isOwner는 방장이면 true(초안).
-	public record RoomMember(Long userId, String nickname, String thumbnailUrl, boolean isMe, boolean isOwner) {
+	// 방에서 나간 사람이면 userId·nickname·thumbnailUrl이 null이고 left가 true다. 앱은 "나간 멤버"로 보여 준다(초안).
+	public record RoomMember(Long userId, String nickname, String thumbnailUrl, boolean isMe, boolean isOwner,
+			boolean left) {
+
+		static RoomMember leftMember() {
+			return new RoomMember(null, null, null, false, false, true);
+		}
+
 	}
 
 	// 마지막 소식. 문장은 앱이 만든다. type은 CREATED·POSTED·LIKED·COMMENTED, text는 COMMENTED일 때 댓글 내용.
@@ -65,7 +76,8 @@ public final class RoomDtos {
 			RoomPostSummary post, String text) {
 	}
 
-	public record MessageList(List<RoomMessage> messages) {
+	// nextCursor는 더 오래된 줄이 남았을 때 다음 요청의 cursor, 없으면 null
+	public record MessageList(List<RoomMessage> messages, String nextCursor) {
 	}
 
 }

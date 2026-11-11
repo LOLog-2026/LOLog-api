@@ -1,6 +1,13 @@
 package com.lolog.api.room;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.after;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -10,9 +17,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.lolog.api.auth.TestTokens;
+import com.lolog.api.notification.PushSender;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -25,6 +36,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.images.builder.Transferable;
@@ -80,7 +92,23 @@ class RoomApiTests {
 	@Autowired
 	ObjectMapper objectMapper;
 
+	// FCM에는 보내지 않고 무엇을 보냈는지 본다. 푸시는 따로 보내므로 timeout으로 기다린다.
+	@MockitoBean
+	PushSender sender;
+
+	@BeforeEach
+	void pushOn() {
+		when(sender.enabled()).thenReturn(true);
+	}
+
 	// ---- 준비 ----
+
+	private String phone(long userId) throws Exception {
+		String token = "fcm-" + UUID.randomUUID();
+		call(put("/api/devices/fcm-token").contentType(MediaType.APPLICATION_JSON)
+			.content("{\"token\":\"" + token + "\"}"), userId).andExpect(status().isNoContent());
+		return token;
+	}
 
 	private long user(String nickname) throws Exception {
 		long id = USERS.incrementAndGet();
@@ -374,12 +402,23 @@ class RoomApiTests {
 		long roomId = roomId(a, List.of(b));
 		postComic(a, roomId, comic(a, "DONE", "만화")).andExpect(status().isCreated());
 
-		call(delete("/api/rooms/" + roomId + "/members/me"), a).andExpect(status().isNoContent());
+		// 방장은 새 방장을 골라야 나갈 수 있다
+		call(delete("/api/rooms/" + roomId + "/members/me"), a).andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("NEW_OWNER_REQUIRED"));
+		call(delete("/api/rooms/" + roomId + "/members/me").param("newOwnerId", String.valueOf(a)), a)
+			.andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").value("newOwnerId"));
+		call(delete("/api/rooms/" + roomId + "/members/me").param("newOwnerId", String.valueOf(b)), a)
+			.andExpect(status().isNoContent());
 		call(get("/api/rooms/" + roomId), a).andExpect(status().isNotFound());
-		// 나간 사람이 올린 만화는 남는다(초안)
+		// 나간 사람이 올린 만화와 글은 "나간 멤버"로 남는다(초안)
 		call(get("/api/rooms/" + roomId + "/posts"), b).andExpect(jsonPath("$.posts.length()").value(1))
-			.andExpect(jsonPath("$.posts[0].author.nickname").value("준"));
-		// 방장이 나가면 남은 멤버가 방장이 된다
+			.andExpect(jsonPath("$.posts[0].author.userId").isEmpty())
+			.andExpect(jsonPath("$.posts[0].author.nickname").isEmpty())
+			.andExpect(jsonPath("$.posts[0].author.left").value(true));
+		call(get("/api/rooms/" + roomId + "/messages"), b).andExpect(jsonPath("$.messages[0].member.left").value(true))
+			.andExpect(jsonPath("$.nextCursor").isEmpty());
+		call(get("/api/rooms"), b).andExpect(jsonPath("$.rooms[0].lastActivity.nickname").isEmpty());
+		// 새 방장
 		call(get("/api/rooms/" + roomId), b).andExpect(jsonPath("$.members.length()").value(1))
 			.andExpect(jsonPath("$.ownerId").value(b))
 			.andExpect(jsonPath("$.members[0].isOwner").value(true));
@@ -426,6 +465,103 @@ class RoomApiTests {
 		for (JsonNode m : messages) {
 			assertThat(m.get("member").get("userId").asLong()).isNotEqualTo(c);
 		}
+	}
+
+	@Test
+	void 방장은_이름을_바꾸고_멤버를_내보내고_방을_해산한다() throws Exception {
+		long a = user("준");
+		long b = user("서연");
+		long c = user("민지");
+		friends(a, b);
+		friends(a, c);
+		long roomId = roomId(a, List.of(b, c));
+		String cPhone = phone(c);
+		String aPhone = phone(a);
+		comment(b, roomId, "{\"text\":\"안녕\"}").andExpect(status().isCreated());
+
+		String path = "/api/rooms/" + roomId;
+		call(patch(path).contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"새 이름\"}"), b)
+			.andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("ROOM_OWNER_ONLY"));
+		call(patch(path).contentType(MediaType.APPLICATION_JSON).content("{\"name\":\" \"}"), a)
+			.andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").value("name"));
+		call(patch(path).contentType(MediaType.APPLICATION_JSON).content("{\"name\":\" 새 이름 \"}"), a)
+			.andExpect(status().isOk()).andExpect(jsonPath("$.name").value("새 이름"));
+
+		// 내보낸 사람의 글은 나간 멤버로 남고, 다시 초대할 수 있다
+		call(delete(path + "/members/" + b), c).andExpect(status().isForbidden());
+		call(delete(path + "/members/" + a), a).andExpect(status().isBadRequest());
+		call(delete(path + "/members/" + b), a).andExpect(status().isNoContent());
+		call(delete(path + "/members/" + b), a).andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("USER_NOT_FOUND"));
+		call(get(path), b).andExpect(status().isNotFound());
+		call(get(path + "/messages"), c).andExpect(jsonPath("$.messages[1].member.left").value(true))
+			.andExpect(jsonPath("$.messages[1].text").value("안녕"));
+		invite(a, roomId, List.of(b)).andExpect(status().isCreated());
+		call(post("/api/room-invites/" + inviteId(b, roomId) + "/accept"), b).andExpect(status().isOk());
+		// 다시 들어오면 그 사람 이름으로 다시 보인다
+		call(get(path + "/messages"), c).andExpect(jsonPath("$.messages[1].member.nickname").value("서연"));
+
+		call(delete(path), c).andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("ROOM_OWNER_ONLY"));
+		long mint = comic(a, "DONE", "만화");
+		postComic(a, roomId, mint).andExpect(status().isCreated());
+		call(delete(path), a).andExpect(status().isNoContent());
+		call(get(path), c).andExpect(status().isNotFound());
+		assertThat(jdbc.queryForObject("select count(*) from room_messages where room_id = ?", Long.class, roomId)).isZero();
+		assertThat(jdbc.queryForObject("select count(*) from comics where id = ?", Long.class, mint)).isOne();
+		verify(sender, timeout(5000)).send(List.of(cPhone), Map.of("type", "ROOM_DISBANDED", "roomName", "새 이름"));
+		verify(sender, after(500).never()).send(List.of(aPhone), Map.of("type", "ROOM_DISBANDED", "roomName", "새 이름"));
+	}
+
+	@Test
+	void 초대받으면_ROOM_INVITE_내_만화에_댓글이_달리면_ROOM_COMMENT를_보낸다() throws Exception {
+		long a = user("준");
+		long b = user("서연");
+		friends(a, b);
+		String bPhone = phone(b);
+		String aPhone = phone(a);
+		long roomId = json(createRoom(a, "과팀플", List.of(b))).get("id").asLong();
+		long inviteId = inviteId(b, roomId);
+		verify(sender, timeout(5000)).send(List.of(bPhone), Map.of("type", "ROOM_INVITE", "inviteId",
+				String.valueOf(inviteId), "roomId", String.valueOf(roomId), "roomName", "과팀플"));
+		call(post("/api/room-invites/" + inviteId + "/accept"), b).andExpect(status().isOk());
+
+		long postId = json(postComic(a, roomId, comic(a, "DONE", "만화"))).get("id").asLong();
+		comment(a, roomId, "{\"text\":\"내 댓글\",\"postId\":" + postId + "}").andExpect(status().isCreated());
+		comment(b, roomId, "{\"text\":\"방 전체\"}").andExpect(status().isCreated());
+		comment(b, roomId, "{\"text\":\"재밌다\",\"postId\":" + postId + "}").andExpect(status().isCreated());
+		verify(sender, timeout(5000)).send(List.of(aPhone),
+				Map.of("type", "ROOM_COMMENT", "roomId", String.valueOf(roomId), "postId", String.valueOf(postId), "nickname",
+						"서연"));
+		verify(sender, after(500).times(1)).send(eqList(aPhone), any());
+	}
+
+	private static List<String> eqList(String token) {
+		return org.mockito.ArgumentMatchers.eq(List.of(token));
+	}
+
+	@Test
+	void 대화는_최근_50줄부터_주고_커서로_앞을_더_준다() throws Exception {
+		long a = user("준");
+		long b = user("서연");
+		friends(a, b);
+		long roomId = roomId(a, List.of(b));
+		for (int i = 1; i <= 60; i++) {
+			jdbc.update("""
+					insert into room_messages (room_id, user_id, message_type, body, created_at)
+					values (?, ?, 'COMMENT', ?, clock_timestamp())
+					""", roomId, b, "댓글" + i);
+		}
+		JsonNode first = json(call(get("/api/rooms/" + roomId + "/messages"), a).andExpect(status().isOk())
+			.andExpect(jsonPath("$.messages.length()").value(50))
+			.andExpect(jsonPath("$.messages[0].text").value("댓글11"))
+			.andExpect(jsonPath("$.messages[49].text").value("댓글60")));
+		String cursor = first.get("nextCursor").asString();
+		call(get("/api/rooms/" + roomId + "/messages").param("cursor", cursor), a)
+			.andExpect(jsonPath("$.messages.length()").value(11))
+			.andExpect(jsonPath("$.messages[0].type").value("CREATED"))
+			.andExpect(jsonPath("$.messages[10].text").value("댓글10"))
+			.andExpect(jsonPath("$.nextCursor").isEmpty());
+		call(get("/api/rooms/" + roomId + "/messages").param("cursor", "x"), a).andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.field").value("cursor"));
 	}
 
 }
