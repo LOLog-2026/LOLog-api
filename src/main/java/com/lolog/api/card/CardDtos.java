@@ -1,5 +1,7 @@
 package com.lolog.api.card;
 
+import com.lolog.api.video.VideoDtos.VideoRef;
+
 import com.fasterxml.jackson.annotation.JsonSetter;
 import com.lolog.api.audio.CardAudioViews.CardAudio;
 import com.lolog.api.character.CharacterViews.SpeakerCharacter;
@@ -24,7 +26,7 @@ public final class CardDtos {
 
 	public record CardDetail(Long id, Long recordingId, String kind, String summary, String place,
 			OffsetDateTime recordedAt, Long startMs, Long endMs, List<Speaker> speakers, List<Line> lines,
-			List<ComicRef> comics, int comicRemaining, CardAudio audio, OffsetDateTime createdAt) {
+			List<ComicRef> comics, int comicRemaining, List<VideoRef> videos, CardAudio audio, OffsetDateTime createdAt) {
 	}
 
 	// character는 붙인 그림 { type, id, label, thumbnailUrl } 또는 null(characters.md 4장)

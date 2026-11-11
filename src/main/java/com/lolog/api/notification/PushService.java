@@ -56,6 +56,20 @@ public class PushService implements DisposableBean {
 		return comic("COMIC_FAILED", comicId, cardId);
 	}
 
+	// 카드 영상이 완성됨·실패함(video.md 2장). 카드를 지웠으면 cardId는 빈 문자열이다.
+	public static Map<String, String> videoDone(long videoId, Long cardId) {
+		return video("VIDEO_DONE", videoId, cardId);
+	}
+
+	public static Map<String, String> videoFailed(long videoId, Long cardId) {
+		return video("VIDEO_FAILED", videoId, cardId);
+	}
+
+	private static Map<String, String> video(String type, long videoId, Long cardId) {
+		return Map.of("type", type, "videoId", String.valueOf(videoId), "cardId",
+				cardId == null ? "" : String.valueOf(cardId));
+	}
+
 	// 내 프로필 캐릭터 그림을 받음·만들지 못함(characters.md 푸시). 나머지 키는 없다.
 	public static Map<String, String> profileCharacterReady() {
 		return Map.of("type", "PROFILE_CHARACTER_READY");

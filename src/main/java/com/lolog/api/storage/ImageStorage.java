@@ -36,6 +36,23 @@ public class ImageStorage {
 		return "users/" + userId + "/comics/" + comicId + ".png";
 	}
 
+	// 카드 영상(video.md 7장). 탈퇴하면 users/{userId}/ 아래와 같이 지워진다.
+	public static String videoPrefix(long userId, long videoId) {
+		return "users/" + userId + "/videos/" + videoId + "/";
+	}
+
+	public static String videoKey(long userId, long videoId) {
+		return videoPrefix(userId, videoId) + "video.mp4";
+	}
+
+	public static String videoThumbKey(long userId, long videoId) {
+		return videoPrefix(userId, videoId) + "thumb.jpg";
+	}
+
+	public static String videoAudioKey(long userId, long videoId) {
+		return videoPrefix(userId, videoId) + "audio.wav";
+	}
+
 	// 녹음 전체 음성 파일(10분 단위, seq는 1부터)
 	public static String recordingAudioKey(long userId, long recordingId, int seq) {
 		return recordingAudioPrefix(userId, recordingId) + seq + ".aac";

@@ -13,9 +13,10 @@ spring:
       connect-timeout: 2s
   servlet:
     multipart:
-      # 워커가 올리는 완성 4컷 PNG는 20MB까지(API DTO 명세 5장). 넘으면 413 PAYLOAD_TOO_LARGE
+      # 워커가 올리는 완성 4컷 PNG·영상 mp4는 파일 하나 20MB까지(API DTO 명세 5장, video.md 3장). 넘으면 413 PAYLOAD_TOO_LARGE
+      # 영상은 mp4와 썸네일을 한 요청에 올리므로 요청 전체는 25MB까지
       max-file-size: 20MB
-      max-request-size: 21MB
+      max-request-size: 25MB
 
 lolog:
   auth:

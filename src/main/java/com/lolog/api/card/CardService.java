@@ -24,6 +24,7 @@ import com.lolog.api.common.PageRequestParams;
 import com.lolog.api.common.PageSort;
 import com.lolog.api.common.SafeLog;
 import com.lolog.api.storage.ImageStorage;
+import com.lolog.api.video.VideoService;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -59,9 +60,11 @@ public class CardService {
 	private final CharacterViews characters;
 	private final CardAudioViews audio;
 	private final EntityManager entityManager;
+	private final VideoService videos;
 
 	public CardService(CardRepository cards, ComicRepository comics, JdbcTemplate jdbc, ImageStorage storage,
-			CharacterViews characters, CardAudioViews audio, EntityManager entityManager) {
+			CharacterViews characters, CardAudioViews audio, EntityManager entityManager, VideoService videos) {
+		this.videos = videos;
 		this.entityManager = entityManager;
 		this.audio = audio;
 		this.cards = cards;
@@ -312,6 +315,10 @@ public class CardService {
 		if (comics.existsByCardIdAndStatusIn(card.getId(), ComicStatus.IN_PROGRESS)) {
 			throw new ApiException(HttpStatus.CONFLICT, "CARD_LOCKED", "만화를 만드는 중인 카드입니다.");
 		}
+		// 영상은 3호가 카드 내용을 받아 목소리를 만드는 동안(QUEUED·VOICE)만 막는다. 그림 단계는 카드를 보지 않는다.
+		if (videos.hasRunningBeforeDrawing(card.getId())) {
+			throw new ApiException(HttpStatus.CONFLICT, "CARD_LOCKED", "영상을 만드는 중인 카드입니다.");
+		}
 		return card;
 	}
 
@@ -362,7 +369,7 @@ public class CardService {
 			.toList();
 		return new CardDetail(card.getId(), card.getRecordingId(), card.getKind(), card.getSummary(), card.getPlace(),
 				card.getRecordedAt(), card.getStartMs(), card.getEndMs(), speakers, lines, comicRefs,
-				MAX_COMICS - card.getComicCount(), audio.detail(card.getId()), card.getCreatedAt());
+				MAX_COMICS - card.getComicCount(), videos.refs(card.getId()), audio.detail(card.getId()), card.getCreatedAt());
 	}
 
 	// 앞뒤 공백을 뺀 뒤 1~max자. null은 "지움"이라 통과한다(대사 text는 null이면 부르지 않는다).

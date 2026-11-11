@@ -31,6 +31,10 @@ public class Job {
 	@Column(name = "comic_id")
 	private Long comicId;
 
+	// VIDEO_VOICE(3호 목소리)·VIDEO_DRAW(2호 그림·합치기) 작업의 영상(video.md)
+	@Column(name = "video_id")
+	private Long videoId;
+
 	@Column(name = "user_id", nullable = false)
 	private Long userId;
 
@@ -63,6 +67,15 @@ public class Job {
 		Job job = new Job();
 		job.jobType = "COMIC";
 		job.comicId = comicId;
+		job.userId = userId;
+		return job;
+	}
+
+	// type은 VIDEO_VOICE 또는 VIDEO_DRAW
+	public static Job video(String type, Long videoId, Long userId) {
+		Job job = new Job();
+		job.jobType = type;
+		job.videoId = videoId;
 		job.userId = userId;
 		return job;
 	}

@@ -28,6 +28,8 @@ public class UserDataService {
 		tx.executeWithoutResult(status -> {
 			jdbc.update("delete from jobs where user_id = ?", userId);
 			jdbc.update("delete from comics where user_id = ?", userId);
+			// 카드 영상(video.md 7장). 파일은 아래 users/{userId}/ 아래와 함께 지워진다.
+			jdbc.update("delete from videos where user_id = ?", userId);
 			jdbc.update("delete from cards where user_id = ?", userId);
 			jdbc.update("delete from recordings where user_id = ?", userId);
 			jdbc.update("delete from device_tokens where user_id = ?", userId);
