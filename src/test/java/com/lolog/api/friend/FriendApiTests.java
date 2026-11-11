@@ -314,15 +314,11 @@ class FriendApiTests {
 		User b = user("지원");
 		makeFriends(a, b);
 
-		// 친구는 바로 차단하지 않는다(초안). 끊기를 거친다
-		block(a.id(), b.id()).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("UNFRIEND_FIRST"));
-		assertThat(friendIds(a.id())).hasSize(1);
-		call(delete("/api/friends/" + b.id()), a.id()).andExpect(status().isNoContent());
-		requestId(b.id(), a);
-
+		// 친구를 차단하면 친구 관계가 저절로 끊긴다
 		block(a.id(), b.id()).andExpect(status().isNoContent());
 		block(a.id(), b.id()).andExpect(status().isNoContent());
-		call(get("/api/friend-requests?direction=sent"), b.id()).andExpect(jsonPath("$.requests").isEmpty());
+		assertThat(friendIds(a.id())).isEmpty();
+		assertThat(friendIds(b.id())).isEmpty();
 		call(get("/api/blocks"), a.id()).andExpect(jsonPath("$.blocks[0].userId").value(b.id()))
 			.andExpect(jsonPath("$.blocks[0].nickname").value("지원"))
 			.andExpect(jsonPath("$.blocks[0].friendCode").value(b.code()))
@@ -359,7 +355,9 @@ class FriendApiTests {
 
 		block(a.id(), b.id()).andExpect(status().isNoContent());
 		call(get("/api/friend-requests?direction=sent"), b.id()).andExpect(jsonPath("$.requests").isEmpty());
-		block(a.id(), stranger.id()).andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("USER_NOT_FOUND"));
+		// 관계가 없는 회원도 차단할 수 있다. 없는 회원만 404
+		block(a.id(), stranger.id()).andExpect(status().isNoContent());
+		block(a.id(), 999_999_999L).andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("USER_NOT_FOUND"));
 		block(a.id(), a.id()).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("CANNOT_FRIEND_SELF"));
 		mvc.perform(post("/api/blocks").header("Authorization", TestTokens.bearer(a.id()))
 			.contentType(MediaType.APPLICATION_JSON)
