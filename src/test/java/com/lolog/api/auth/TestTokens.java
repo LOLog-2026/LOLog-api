@@ -24,13 +24,25 @@ public final class TestTokens {
 		return "Bearer " + token(String.valueOf(userId), "access", Duration.ofMinutes(30), SECRET);
 	}
 
+	// role 클레임이 ADMIN인 관리자 토큰(admin.md 1장)
+	public static String adminBearer(Object userId) {
+		return "Bearer " + token(String.valueOf(userId), "access", Duration.ofMinutes(30), SECRET, "ADMIN");
+	}
+
 	public static String token(String sub, String typ, Duration validFor, String secret) {
+		return token(sub, typ, validFor, secret, null);
+	}
+
+	public static String token(String sub, String typ, Duration validFor, String secret, String role) {
 		Instant now = Instant.now();
 		JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder().subject(sub)
 			.issueTime(Date.from(now.minus(Duration.ofHours(1))))
 			.expirationTime(Date.from(now.plus(validFor)));
 		if (typ != null) {
 			claims.claim("typ", typ);
+		}
+		if (role != null) {
+			claims.claim("role", role);
 		}
 		try {
 			SignedJWT jwt = new SignedJWT(new JWSHeader(JWSAlgorithm.HS256), claims.build());

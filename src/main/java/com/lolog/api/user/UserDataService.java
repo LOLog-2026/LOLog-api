@@ -35,6 +35,9 @@ public class UserDataService {
 			jdbc.update("delete from notifications where user_id = ?", userId);
 			jdbc.update("delete from notice_reads where user_id = ?", userId);
 			jdbc.update("delete from badge_reads where user_id = ?", userId);
+			// 보낸 오류 신고·의견은 남기고 보낸 사람만 비운다(admin.md 5장, FR-AUTH-05의 예외). 정지 표시는 지운다.
+			jdbc.update("update feedback set user_id = null, updated_at = current_timestamp where user_id = ?", userId);
+			jdbc.update("delete from user_suspensions where user_id = ?", userId);
 			// 다른 사람 카드에 붙은 이 회원의 프로필 캐릭터를 뺀다(characters.md 3장). 이 회원의 카드는 위에서 지워졌다.
 			jdbc.update("update card_speakers set character_type = null, character_id = null, updated_at = current_timestamp "
 					+ "where character_type = 'PROFILE' and character_id = ?", String.valueOf(userId));

@@ -36,7 +36,8 @@ import org.springframework.security.web.SecurityFilterChain;
 // 인증 서비스(lolog-auth)가 발급한 액세스 토큰(JWT)으로 /api 사용자를 확인한다(TR-04, API 명세 "토큰").
 // 서명 HS256, 비밀값 JWT_SECRET(32바이트 이상)은 lolog-auth와 같다. sub = 사용자 ID 문자열, typ = "access".
 // 만료면 401 TOKEN_EXPIRED, 없거나 틀리면 401 UNAUTHORIZED. /internal은 InternalSecurityConfig(@Order(1))가 먼저 본다.
-// 탈퇴한 회원의 토큰은 만료 전이어도 401 UNAUTHORIZED다(API 명세 "탈퇴한 회원의 토큰").
+// 탈퇴한 회원과 정지된 회원의 토큰은 만료 전이어도 401 UNAUTHORIZED다(API 명세 "탈퇴한 회원의 토큰", admin.md 2장).
+// 관리자 여부는 토큰의 role 클레임(ADMIN)으로 본다(admin.md 1장, 초안).
 @Configuration
 public class JwtAuthConfig {
 
@@ -49,6 +50,8 @@ public class JwtAuthConfig {
 
 	// lolog-auth가 탈퇴 때 31분 동안 남기는 키. 값은 탈퇴 시각이고, 여기서는 키가 있는지만 본다.
 	static final String WITHDRAWN_KEY = "lolog:auth:withdrawn:";
+	// lolog-auth가 정지할 때 남기는 키(admin.md 2장, 초안). 탈퇴 키와 같이 있는지만 본다.
+	static final String SUSPENDED_KEY = "lolog:auth:suspended:";
 	private static final Duration CLOCK_SKEW = Duration.ofSeconds(30);
 
 	@Bean
@@ -93,12 +96,24 @@ public class JwtAuthConfig {
 	// 토큰의 sub를 회원 ID로 쓴다. 필터 체인이 인증을 요구하므로 여기까지 오면 Jwt가 있다.
 	@Bean
 	CurrentUserProvider jwtCurrentUserProvider() {
-		return () -> {
-			Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-			if (auth == null || !(auth.getPrincipal() instanceof Jwt jwt)) {
-				throw new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "인증이 필요합니다.");
+		return new CurrentUserProvider() {
+			@Override
+			public long currentUserId() {
+				return Long.parseLong(jwt().getSubject());
 			}
-			return Long.parseLong(jwt.getSubject());
+
+			@Override
+			public boolean isAdmin() {
+				return "ADMIN".equals(jwt().getClaimAsString("role"));
+			}
+
+			private Jwt jwt() {
+				Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+				if (auth == null || !(auth.getPrincipal() instanceof Jwt jwt)) {
+					throw new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "인증이 필요합니다.");
+				}
+				return jwt;
+			}
 		};
 	}
 
@@ -136,8 +151,9 @@ public class JwtAuthConfig {
 			return OAuth2TokenValidatorResult.success();
 		}
 		try {
-			if (Boolean.TRUE.equals(redis.hasKey(WITHDRAWN_KEY + sub))) {
-				return invalid("invalid_token", "탈퇴한 회원입니다.");
+			Long found = redis.countExistingKeys(java.util.List.of(WITHDRAWN_KEY + sub, SUSPENDED_KEY + sub));
+			if (found != null && found > 0) {
+				return invalid("invalid_token", "탈퇴했거나 정지된 회원입니다.");
 			}
 			return OAuth2TokenValidatorResult.success();
 		}

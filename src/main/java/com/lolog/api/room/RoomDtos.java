@@ -30,16 +30,16 @@ public final class RoomDtos {
 	// thumbnailUrl은 그 사람의 프로필 캐릭터 256 그림(없으면 null). isOwner는 방장이면 true(초안).
 	// 방에서 나간 사람이면 userId·nickname·thumbnailUrl이 null이고 left가 true다. 앱은 "나간 멤버"로 보여 준다(초안).
 	// friendState는 친구 추가 버튼에 쓴다: FRIEND, REQUESTED(내가 보냄), RECEIVED(상대가 보냄), NONE, BLOCKED(내가 차단), ME.
-	// 나간 멤버는 null이다(초안).
+	// 나간 멤버는 null이다(초안). suspended는 정지된 계정이면 true(admin.md 2장, 초안).
 	public record RoomMember(Long userId, String nickname, String thumbnailUrl, boolean isMe, boolean isOwner,
-			boolean left, String friendState) {
+			boolean left, String friendState, boolean suspended) {
 
 		static RoomMember leftMember() {
-			return new RoomMember(null, null, null, false, false, true, null);
+			return new RoomMember(null, null, null, false, false, true, null, false);
 		}
 
 		RoomMember owner(boolean isOwner) {
-			return new RoomMember(userId, nickname, thumbnailUrl, isMe, isOwner, left, friendState);
+			return new RoomMember(userId, nickname, thumbnailUrl, isMe, isOwner, left, friendState, suspended);
 		}
 
 	}
