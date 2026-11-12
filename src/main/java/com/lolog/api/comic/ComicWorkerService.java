@@ -1,5 +1,8 @@
 package com.lolog.api.comic;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.lolog.api.character.CharacterViews;
 import com.lolog.api.character.CharacterViews.Ref;
 import com.lolog.api.character.CharacterViews.SourceCharacter;
@@ -24,6 +27,8 @@ import tools.jackson.databind.ObjectMapper;
 // 이미 끝난(DONE·FAILED) 만화에는 source만 404이고, 콘티·이미지는 받기만 하고 아무것도 바꾸지 않는다(LOLog-docs PR #26).
 @Service
 public class ComicWorkerService {
+
+	private static final Logger log = LoggerFactory.getLogger(ComicWorkerService.class);
 
 	static final int WIDTH = 800;
 	static final int HEIGHT = 3152;
@@ -99,7 +104,17 @@ public class ComicWorkerService {
 		String key = ImageStorage.comicKey(found.getUserId(), found.getId());
 		storage.putPng(key, png);
 		tx.executeWithoutResult(status -> {
-			Comic comic = comics.findByIdForUpdate(comicId).orElseThrow(ComicWorkerService::notFound);
+			Comic comic = comics.findByIdForUpdate(comicId).orElse(null);
+			if (comic == null) {
+				// 올리는 사이에 만화가 지워졌으면 방금 올린 그림도 지운다. 지우지 못해도 404는 그대로 준다.
+				try {
+					storage.delete(key);
+				}
+				catch (RuntimeException e) {
+					log.warn("지운 만화 {}의 그림을 지우지 못했습니다.", comicId, e);
+				}
+				throw notFound();
+			}
 			if (comic.isFinished()) {
 				return;
 			}

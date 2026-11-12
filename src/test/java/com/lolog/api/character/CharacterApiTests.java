@@ -138,8 +138,8 @@ class CharacterApiTests {
 			.param("appearance", "a person " + id)
 			.param("sortOrder", String.valueOf(sortOrder));
 		if (withImages) {
-			request.file(new MockMultipartFile("image", id + ".png", "image/png", png(8)))
-				.file(new MockMultipartFile("thumbnail", id + "_thumb.webp", "image/webp", "webp".getBytes()));
+			request.file(new MockMultipartFile("image", id + ".png", "image/png", png(768)))
+				.file(new MockMultipartFile("thumbnail", id + "_thumb.webp", "image/webp", webp()));
 		}
 		return mvc.perform(request);
 	}
@@ -235,13 +235,13 @@ class CharacterApiTests {
 		assertThat(first.get("glasses").asBoolean()).isTrue();
 		assertThat(first.get("thumbnailUrl").asString()).contains("defaults/characters/kid-m-01_thumb.webp");
 		assertThat(first.has("appearance")).isFalse();
-		assertThat(storage.get(ImageStorage.defaultCharacterKey("young-f-02"))).isEqualTo(png(8));
+		assertThat(storage.get(ImageStorage.defaultCharacterKey("young-f-02"))).isEqualTo(png(768));
 
 		// 그림 없이 다시 넣으면 목록만 바뀌고 그림은 그대로
 		putDefault("young-f-02", 0, false).andExpect(status().isNoContent());
 		mvc.perform(get("/api/characters/defaults").header("Authorization", TestTokens.bearer(1)))
 			.andExpect(jsonPath("$.characters[0].id").value("young-f-02"));
-		assertThat(storage.get(ImageStorage.defaultCharacterKey("young-f-02"))).isEqualTo(png(8));
+		assertThat(storage.get(ImageStorage.defaultCharacterKey("young-f-02"))).isEqualTo(png(768));
 	}
 
 	@Test
@@ -253,6 +253,51 @@ class CharacterApiTests {
 			.param("ageGroup", "OLD").param("gender", "F").param("glasses", "false").param("label", "x")
 			.param("appearance", "x").param("sortOrder", "1"))
 			.andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").value("ageGroup"));
+	}
+
+	// WebP 머리말(RIFF····WEBP)을 흉내 낸 바이트
+	private static byte[] webp() {
+		byte[] bytes = new byte[32];
+		System.arraycopy("RIFF".getBytes(), 0, bytes, 0, 4);
+		System.arraycopy("WEBPVP8 ".getBytes(), 0, bytes, 8, 8);
+		return bytes;
+	}
+
+	@Test
+	void 기본_화자_그림은_768_PNG와_WebP만_받는다() throws Exception {
+		mvc.perform(multipart(HttpMethod.PUT, "/internal/characters/defaults/young-f-08")
+			.file(new MockMultipartFile("image", "a.png", "image/png", png(32)))
+			.header("X-Internal-Token", INTERNAL)
+			.param("ageGroup", "YOUNG").param("gender", "F").param("glasses", "false").param("label", "x")
+			.param("appearance", "x").param("sortOrder", "1"))
+			.andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").value("image"));
+		mvc.perform(multipart(HttpMethod.PUT, "/internal/characters/defaults/young-f-08")
+			.file(new MockMultipartFile("thumbnail", "a.webp", "image/webp", png(256)))
+			.header("X-Internal-Token", INTERNAL)
+			.param("ageGroup", "YOUNG").param("gender", "F").param("glasses", "false").param("label", "x")
+			.param("appearance", "x").param("sortOrder", "1"))
+			.andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").value("thumbnail"));
+	}
+
+	@Test
+	void 처음_만드는_중에는_목소리를_고를_수_없다() throws Exception {
+		User me = user("목소리");
+		uploadPhoto(me.id(), png(32)).andExpect(status().isAccepted());
+		mvc.perform(patch("/api/me/profile/character/voice").header("Authorization", TestTokens.bearer(me.id()))
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{\"voice\":\"middle-m-08\"}")).andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.code").value("CHARACTER_NOT_FOUND"));
+	}
+
+	@Test
+	void 만드는_중에_지운_것도_하루_3번에_센다() throws Exception {
+		User me = user("횟수");
+		for (int i = 0; i < 3; i++) {
+			uploadPhoto(me.id(), png(32)).andExpect(status().isAccepted());
+			mvc.perform(delete("/api/me/profile/character").header("Authorization", TestTokens.bearer(me.id())))
+				.andExpect(status().isNoContent());
+		}
+		uploadPhoto(me.id(), png(32)).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CHARACTER_LIMIT"));
 	}
 
 	// 24kHz 모노 wav 머리말을 흉내 낸 바이트

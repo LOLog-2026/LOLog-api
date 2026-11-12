@@ -72,6 +72,13 @@ public class DefaultCharacterService {
 		if (sortOrder == null) {
 			throw ApiException.invalid("sortOrder", "sortOrder가 필요해요.");
 		}
+		// 그림은 PNG 768×768, 줄인 그림은 WebP다(characters.md /internal 표). 크기가 틀린 그림이 목록에 오르지 않게 본다.
+		if (image != null && !isPng(image, 768, 768)) {
+			throw ApiException.invalid("image", "image는 768×768 PNG여야 해요.");
+		}
+		if (thumbnail != null && !isWebp(thumbnail)) {
+			throw ApiException.invalid("thumbnail", "thumbnail은 WebP 파일이어야 해요.");
+		}
 		if (voice != null && !isWav(voice)) {
 			throw ApiException.invalid("voice", "voice는 wav 파일이어야 해요.");
 		}
@@ -102,6 +109,26 @@ public class DefaultCharacterService {
 	}
 
 	// RIFF....WAVE 머리말
+	// PNG 머리말과 IHDR의 가로·세로
+	static boolean isPng(byte[] b, int width, int height) {
+		byte[] signature = { (byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n' };
+		if (b.length < 24 || !java.util.Arrays.equals(b, 0, 8, signature, 0, 8) || b[12] != 'I' || b[13] != 'H'
+				|| b[14] != 'D' || b[15] != 'R') {
+			return false;
+		}
+		return readInt(b, 16) == width && readInt(b, 20) == height;
+	}
+
+	// RIFF 머리말과 WEBP 표시. 크기는 VP8·VP8L·VP8X마다 적는 곳이 달라 보지 않는다.
+	static boolean isWebp(byte[] b) {
+		return b.length >= 12 && b[0] == 'R' && b[1] == 'I' && b[2] == 'F' && b[3] == 'F' && b[8] == 'W' && b[9] == 'E'
+				&& b[10] == 'B' && b[11] == 'P';
+	}
+
+	private static int readInt(byte[] b, int at) {
+		return ((b[at] & 0xFF) << 24) | ((b[at + 1] & 0xFF) << 16) | ((b[at + 2] & 0xFF) << 8) | (b[at + 3] & 0xFF);
+	}
+
 	static boolean isWav(byte[] bytes) {
 		return bytes.length >= 12 && bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F'
 				&& bytes[8] == 'W' && bytes[9] == 'A' && bytes[10] == 'V' && bytes[11] == 'E';

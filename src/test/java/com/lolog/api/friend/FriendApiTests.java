@@ -268,6 +268,12 @@ class FriendApiTests {
 			.andExpect(jsonPath("$.code").value("PROFILE_REQUIRED"));
 		request(a.id(), a.code()).andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.code").value("CANNOT_FRIEND_SELF"));
+		// 방에 없어도 내 userId면 같은 400이다.
+		mvc.perform(post("/api/friend-requests").header("Authorization", TestTokens.bearer(a.id()))
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{\"userId\":" + a.id() + "}"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("CANNOT_FRIEND_SELF"));
 		request(a.id(), "ZZZZZZZZ").andExpect(status().isNotFound())
 			.andExpect(jsonPath("$.code").value("FRIEND_CODE_NOT_FOUND"));
 		request(a.id(), "ABC").andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").value("friendCode"));

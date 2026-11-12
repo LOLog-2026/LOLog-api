@@ -87,9 +87,11 @@ public class ProfileCharacterService {
 		if ("PROCESSING".equals(state.status())) {
 			throw new ApiException(HttpStatus.CONFLICT, "CHARACTER_IN_PROGRESS", "캐릭터를 만드는 중이에요.");
 		}
-		// 한국 시간 오늘 0시부터 받은 것(202). 실패한 작업은 세지 않는다.
+		// 한국 시간 오늘 0시부터 받은 것(202). 실패한 작업은 세지 않는다. 만드는 중에 사용자가 지워서 멈춘 작업은
+		// 실패가 아니라 받은 것이라 센다(characters.md "202를 받은 것을 세고").
 		Long today = jdbc.queryForObject("""
-				select count(*) from jobs where user_id = ? and job_type = 'AVATAR' and status <> 'FAILED'
+				select count(*) from jobs where user_id = ? and job_type = 'AVATAR'
+				  and (status <> 'FAILED' or fail_reason = '캐릭터를 지움')
 				  and created_at >= (date_trunc('day', now() at time zone 'Asia/Seoul') at time zone 'Asia/Seoul')
 				""", Long.class, userId);
 		if (today != null && today >= DAILY_LIMIT) {
@@ -205,9 +207,10 @@ public class ProfileCharacterService {
 	// 프로필 캐릭터가 없으면 404 CHARACTER_NOT_FOUND, 없거나 목소리가 없는 기본 화자 id면 400 UNKNOWN_CHARACTER.
 	@Transactional
 	public void chooseVoice(long userId, String voice) {
-		List<String> status = jdbc.queryForList("select character_status from user_profiles where user_id = ? for update",
+		// "프로필 캐릭터가 있을 때"는 쓸 수 있는 그림이 있을 때다. 다시 만드는 중·실패여도 예전 그림이 있으면 고를 수 있다.
+		List<String> key = jdbc.queryForList("select character_key from user_profiles where user_id = ? for update",
 				String.class, userId);
-		if (status.isEmpty() || status.getFirst() == null) {
+		if (key.isEmpty() || key.getFirst() == null) {
 			throw new ApiException(HttpStatus.NOT_FOUND, "CHARACTER_NOT_FOUND", "프로필 캐릭터가 없어요.");
 		}
 		if (voice != null) {
