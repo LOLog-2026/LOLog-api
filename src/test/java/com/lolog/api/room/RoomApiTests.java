@@ -564,4 +564,66 @@ class RoomApiTests {
 			.andExpect(jsonPath("$.field").value("cursor"));
 	}
 
+	@Test
+	void 같은_방_멤버는_친구가_아니어도_차단하고_글을_숨기고_친구_요청을_보낸다() throws Exception {
+		long a = user("준");
+		long b = user("서연");
+		long c = user("민지");
+		long outsider = user("남");
+		friends(a, b);
+		friends(a, c);
+		long roomId = roomId(a, List.of(b, c));
+		long bPost = json(postComic(b, roomId, comic(b, "DONE", "서연 만화"))).get("id").asLong();
+		comment(b, roomId, "{\"text\":\"비밀\"}").andExpect(status().isCreated());
+
+		// 친구 추가 버튼 상태
+		call(get("/api/rooms/" + roomId), c).andExpect(jsonPath("$.members[0].friendState").value("FRIEND"))
+			.andExpect(jsonPath("$.members[1].friendState").value("NONE"))
+			.andExpect(jsonPath("$.members[2].friendState").value("ME"));
+
+		// 같은 방 멤버에게 userId로 친구 요청. 방 밖의 사람은 404
+		String body = "{\"userId\":" + b + "}";
+		call(post("/api/friend-requests").contentType(MediaType.APPLICATION_JSON).content(body), c)
+			.andExpect(status().isCreated()).andExpect(jsonPath("$.user.userId").value(b));
+		call(get("/api/rooms/" + roomId), c).andExpect(jsonPath("$.members[1].friendState").value("REQUESTED"));
+		call(get("/api/rooms/" + roomId), b).andExpect(jsonPath("$.members[2].friendState").value("RECEIVED"));
+		call(post("/api/friend-requests").contentType(MediaType.APPLICATION_JSON).content("{\"userId\":" + outsider + "}"), c)
+			.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("FRIEND_CODE_NOT_FOUND"));
+		call(post("/api/friend-requests").contentType(MediaType.APPLICATION_JSON)
+			.content("{\"userId\":" + b + ",\"friendCode\":\"ABCDEFGH\"}"), c).andExpect(status().isBadRequest());
+		call(post("/api/friend-requests").contentType(MediaType.APPLICATION_JSON).content("{}"), c)
+			.andExpect(status().isBadRequest());
+
+		// 요청을 지운 뒤에도 같은 방 멤버라 차단할 수 있다. 숨기기로 하면 그 사람 글이 "숨긴 글"이 된다
+		jdbc.update("delete from friendships where requester_id = ? and addressee_id = ?", c, b);
+		call(post("/api/blocks").contentType(MediaType.APPLICATION_JSON).content("{\"userId\":" + b + ",\"hideInRooms\":true}"),
+				c).andExpect(status().isNoContent());
+		call(post("/api/blocks").contentType(MediaType.APPLICATION_JSON).content("{\"userId\":999999999}"), c)
+			.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("USER_NOT_FOUND"));
+		call(get("/api/rooms/" + roomId), c).andExpect(jsonPath("$.members[1].friendState").value("BLOCKED"))
+			.andExpect(jsonPath("$.lastActivity.text").isEmpty());
+		call(get("/api/rooms/" + roomId + "/posts"), c).andExpect(jsonPath("$.posts[0].hidden").value(true))
+			.andExpect(jsonPath("$.posts[0].imageUrl").isEmpty())
+			.andExpect(jsonPath("$.posts[0].title").isEmpty());
+		call(get("/api/rooms/" + roomId + "/messages"), c).andExpect(jsonPath("$.messages[2].hidden").value(true))
+			.andExpect(jsonPath("$.messages[2].text").isEmpty())
+			.andExpect(jsonPath("$.messages[1].post").isEmpty());
+		// 차단당한 사람과 다른 멤버에게는 그대로 보인다
+		call(get("/api/rooms/" + roomId + "/messages"), a).andExpect(jsonPath("$.messages[2].text").value("비밀"))
+			.andExpect(jsonPath("$.messages[2].hidden").value(false));
+		call(get("/api/rooms/" + roomId + "/posts"), b).andExpect(jsonPath("$.posts[0].id").value(bPost))
+			.andExpect(jsonPath("$.posts[0].hidden").value(false));
+
+		// 그대로 보기로 바꾸면 다시 보인다
+		call(patch("/api/blocks/" + b).contentType(MediaType.APPLICATION_JSON).content("{\"hideInRooms\":false}"), c)
+			.andExpect(status().isNoContent());
+		call(get("/api/rooms/" + roomId + "/messages"), c).andExpect(jsonPath("$.messages[2].text").value("비밀"));
+
+		// 차단한 사람이 있는 방에 초대받으면 알려 준다
+		long room2 = json(createRoom(a, "둘째 방", List.of(b))).get("id").asLong();
+		call(post("/api/room-invites/" + inviteId(b, room2) + "/accept"), b).andExpect(status().isOk());
+		invite(a, room2, List.of(c)).andExpect(status().isCreated());
+		call(get("/api/room-invites"), c).andExpect(jsonPath("$.invites[0].hasBlockedMember").value(true));
+	}
+
 }

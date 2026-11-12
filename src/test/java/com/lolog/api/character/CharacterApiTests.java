@@ -436,7 +436,7 @@ class CharacterApiTests {
 		assertThat(speakerCharacter(aCard, "화자1")).isEmpty();
 		assertThat(speakerCharacter(myCard, "화자2")).isEqualTo("PROFILE:" + me.id());
 
-		// 차단해도 빠진다
+		// 친구를 차단해도 친구 관계가 끊기며 빠진다
 		long bCard = insertCard(b.id());
 		patchSpeakers(b.id(), bCard, "[{\"key\":\"화자1\",\"character\":{\"type\":\"PROFILE\",\"id\":\"%d\"}}]"
 				.formatted(me.id())).andExpect(status().isOk());
