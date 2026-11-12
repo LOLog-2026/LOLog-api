@@ -31,6 +31,8 @@ public class UserDataService {
 			// 카드 영상(video.md 7장). 파일은 아래 users/{userId}/ 아래와 함께 지워진다.
 			jdbc.update("delete from videos where user_id = ?", userId);
 			jdbc.update("delete from cards where user_id = ?", userId);
+			// 글로 만든 카드의 글(texts.md 2장). 카드를 지운 뒤 지운다.
+			jdbc.update("delete from texts where user_id = ?", userId);
 			jdbc.update("delete from recordings where user_id = ?", userId);
 			jdbc.update("delete from device_tokens where user_id = ?", userId);
 			// 알림 목록과 읽음·새 소식 기록(inbox.md 6장)
