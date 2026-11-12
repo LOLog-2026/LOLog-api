@@ -246,6 +246,12 @@ class BlogApiTests {
 		long user = USERS.incrementAndGet();
 		json(post("/api/blogs/check"), user, Map.of("url", base() + path + "/index.html")).andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.code").value("INVALID_BLOG"));
+		json(post("/api/blogs/check"), user, Map.of("url", "  ")).andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+			.andExpect(jsonPath("$.field").value("url"));
+		json(post("/api/blogs"), user, Map.of("categories", List.of())).andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+			.andExpect(jsonPath("$.field").value("url"));
 		json(post("/api/blogs/check"), user, Map.of("url", "ftp://example.com")).andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.code").value("INVALID_BLOG"));
 		json(post("/api/blogs"), user, Map.of("url", base() + "/nothing-here", "categories", List.of()))

@@ -261,7 +261,11 @@ public class BlogService {
 		}
 	}
 
+	// 빠지거나 빈 주소는 다른 빠진 칸처럼 400 INVALID_REQUEST(field url)이다(api-dto.md). 주소 모양이 틀리면 INVALID_BLOG.
 	private static String normalize(String url) {
+		if (url == null || url.isBlank()) {
+			throw ApiException.invalid("url", "블로그 주소를 넣어 주세요.");
+		}
 		try {
 			return FeedLocator.normalize(url);
 		}
