@@ -4,9 +4,10 @@ import com.lolog.api.character.ProfileCharacterService;
 import com.lolog.api.comic.ComicService;
 import com.lolog.api.common.ApiException;
 import com.lolog.api.recording.DetectResultService;
+import com.lolog.api.video.VideoService;
 import org.springframework.stereotype.Service;
 
-// POST /internal/jobs/{id}/fail을 작업 종류에 따라 감지(#3)나 만화(#5)로 나눈다.
+// POST /internal/jobs/{id}/fail을 작업 종류에 따라 감지(#3), 만화(#5), 프로필 캐릭터, 영상(video.md)으로 나눈다.
 @Service
 public class JobFailService {
 
@@ -14,9 +15,11 @@ public class JobFailService {
 	private final DetectResultService detectResults;
 	private final ComicService comics;
 	private final ProfileCharacterService profileCharacters;
+	private final VideoService videos;
 
 	public JobFailService(JobRepository jobs, DetectResultService detectResults, ComicService comics,
-			ProfileCharacterService profileCharacters) {
+			ProfileCharacterService profileCharacters, VideoService videos) {
+		this.videos = videos;
 		this.jobs = jobs;
 		this.detectResults = detectResults;
 		this.comics = comics;
@@ -30,6 +33,9 @@ public class JobFailService {
 		}
 		else if ("AVATAR".equals(type)) {
 			profileCharacters.fail(jobId, reason);
+		}
+		else if ("VIDEO_VOICE".equals(type) || "VIDEO_DRAW".equals(type)) {
+			videos.fail(jobId, reason);
 		}
 		else {
 			detectResults.fail(jobId, reason);

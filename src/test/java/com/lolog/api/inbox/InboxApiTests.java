@@ -216,6 +216,12 @@ class InboxApiTests {
 			.andExpect(jsonPath("$.friends").value(true));
 		call(post("/api/inbox/read"), me).andExpect(status().isNoContent());
 		call(get("/api/me/badges"), me).andExpect(jsonPath("$.inbox").value(false));
+
+		// 카드 영상 푸시는 컨텐츠(comics) 점에 들어간다
+		call(post("/api/me/badges/comics/read"), me).andExpect(status().isNoContent());
+		call(get("/api/me/badges"), me).andExpect(jsonPath("$.comics").value(false));
+		notification(me, "VIDEO_DONE", OffsetDateTime.now().plusSeconds(1).toString());
+		call(get("/api/me/badges"), me).andExpect(jsonPath("$.comics").value(true));
 	}
 
 }
