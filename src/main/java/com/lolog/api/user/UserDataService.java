@@ -31,6 +31,10 @@ public class UserDataService {
 			jdbc.update("delete from cards where user_id = ?", userId);
 			jdbc.update("delete from recordings where user_id = ?", userId);
 			jdbc.update("delete from device_tokens where user_id = ?", userId);
+			// 알림 목록과 읽음·새 소식 기록(inbox.md 6장)
+			jdbc.update("delete from notifications where user_id = ?", userId);
+			jdbc.update("delete from notice_reads where user_id = ?", userId);
+			jdbc.update("delete from badge_reads where user_id = ?", userId);
 			// 다른 사람 카드에 붙은 이 회원의 프로필 캐릭터를 뺀다(characters.md 3장). 이 회원의 카드는 위에서 지워졌다.
 			jdbc.update("update card_speakers set character_type = null, character_id = null, updated_at = current_timestamp "
 					+ "where character_type = 'PROFILE' and character_id = ?", String.valueOf(userId));
