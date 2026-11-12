@@ -41,18 +41,19 @@ public class CharacterWorkerController {
 		profileCharacters.avatar(userId, file.getBytes(), appearance);
 	}
 
-	// 기본 화자 넣기·바꾸기. image·thumbnail은 이미 저장소에 있으면 빼도 된다.
+	// 기본 화자 넣기·바꾸기. image·thumbnail은 이미 저장소에 있으면 빼도 된다. voice(wav)는 선택이다.
 	@PutMapping("/internal/characters/defaults/{id}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void upsertDefault(@PathVariable String id,
 			@RequestPart(name = "image", required = false) MultipartFile image,
 			@RequestPart(name = "thumbnail", required = false) MultipartFile thumbnail,
+			@RequestPart(name = "voice", required = false) MultipartFile voice,
 			@RequestParam(required = false) String ageGroup, @RequestParam(required = false) String gender,
 			@RequestParam(required = false) Boolean glasses, @RequestParam(required = false) String label,
 			@RequestParam(required = false) String appearance, @RequestParam(required = false) Integer sortOrder)
 			throws IOException {
 		defaults.upsert(id, image == null ? null : image.getBytes(), thumbnail == null ? null : thumbnail.getBytes(),
-				ageGroup, gender, glasses, label, appearance, sortOrder);
+				voice == null ? null : voice.getBytes(), ageGroup, gender, glasses, label, appearance, sortOrder);
 	}
 
 }

@@ -1,6 +1,8 @@
 package com.lolog.api.room;
 
 import com.lolog.api.auth.CurrentUserProvider;
+import com.lolog.api.room.RoomDtos.InviteCreateRequest;
+import com.lolog.api.room.RoomDtos.InviteList;
 import com.lolog.api.room.RoomDtos.MessageList;
 import com.lolog.api.room.RoomDtos.PostCreateRequest;
 import com.lolog.api.room.RoomDtos.PostList;
@@ -10,14 +12,17 @@ import com.lolog.api.room.RoomDtos.RoomItem;
 import com.lolog.api.room.RoomDtos.RoomList;
 import com.lolog.api.room.RoomDtos.RoomMessage;
 import com.lolog.api.room.RoomDtos.RoomPost;
+import com.lolog.api.room.RoomDtos.RoomUpdateRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -50,10 +55,40 @@ public class RoomController {
 		return rooms.room(currentUser.currentUserId(), id);
 	}
 
+	@PatchMapping("/{id}")
+	public RoomItem rename(@PathVariable Long id, @RequestBody RoomUpdateRequest request) {
+		return rooms.rename(currentUser.currentUserId(), id, request.name());
+	}
+
+	@DeleteMapping("/{id}")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void disband(@PathVariable Long id) {
+		rooms.disband(currentUser.currentUserId(), id);
+	}
+
+	// 방장은 다른 멤버가 있으면 newOwnerId를 꼭 보낸다(초안).
 	@DeleteMapping("/{id}/members/me")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
-	public void leave(@PathVariable Long id) {
-		rooms.leave(currentUser.currentUserId(), id);
+	public void leave(@PathVariable Long id, @RequestParam(required = false) Long newOwnerId) {
+		rooms.leave(currentUser.currentUserId(), id, newOwnerId);
+	}
+
+	@DeleteMapping("/{id}/members/{userId}")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void kick(@PathVariable Long id, @PathVariable Long userId) {
+		rooms.kick(currentUser.currentUserId(), id, userId);
+	}
+
+	@PostMapping("/{id}/invites")
+	@ResponseStatus(HttpStatus.CREATED)
+	public InviteList invite(@PathVariable Long id, @RequestBody InviteCreateRequest request) {
+		return rooms.invite(currentUser.currentUserId(), id, request.userIds());
+	}
+
+	@DeleteMapping("/{id}/invites/{inviteId}")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void cancelInvite(@PathVariable Long id, @PathVariable Long inviteId) {
+		rooms.cancelInvite(currentUser.currentUserId(), id, inviteId);
 	}
 
 	@GetMapping("/{id}/posts")
@@ -84,8 +119,8 @@ public class RoomController {
 	}
 
 	@GetMapping("/{id}/messages")
-	public MessageList messages(@PathVariable Long id) {
-		return rooms.messages(currentUser.currentUserId(), id);
+	public MessageList messages(@PathVariable Long id, @RequestParam(required = false) String cursor) {
+		return rooms.messages(currentUser.currentUserId(), id, cursor);
 	}
 
 	@PostMapping("/{id}/messages")

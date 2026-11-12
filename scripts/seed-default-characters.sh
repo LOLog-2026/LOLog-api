@@ -6,6 +6,8 @@
 # 쓰는 법:
 #   API_URL=http://localhost:8080 INTERNAL_TOKEN=... scripts/seed-default-characters.sh [assets 폴더]
 #   그림이 이미 저장소에 올라가 있으면 SKIP_IMAGES=1을 붙여 목록만 넣는다(배포 MinIO는 11/11에 올려 둠).
+#   목소리(characters.md 기본 화자 목소리)는 VOICES_DIR에 {id}.wav가 있으면 같이 올린다(예: VOICES_DIR=../tts/default-voices).
+#   VOICES_DIR이 없거나 그 화자의 파일이 없으면 목소리는 지금 붙어 있는 그대로 둔다.
 # 토큰 값은 화면에 찍지 않는다.
 set -euo pipefail
 
@@ -35,6 +37,9 @@ while IFS=$'\t' read -r id age gender glasses label appearance image thumbnail o
 		--form-string "label=${label}" --form-string "appearance=${appearance}")
 	if [ "${SKIP_IMAGES:-0}" != "1" ]; then
 		args+=(-F "image=@${assets}/${image};type=image/png" -F "thumbnail=@${assets}/${thumbnail};type=image/webp")
+	fi
+	if [ -n "${VOICES_DIR:-}" ] && [ -f "${VOICES_DIR}/${id}.wav" ]; then
+		args+=(-F "voice=@${VOICES_DIR}/${id}.wav;type=audio/wav")
 	fi
 	code=$(curl "${args[@]}" "${API_URL}/internal/characters/defaults/${id}")
 	if [ "$code" = "204" ]; then

@@ -3,6 +3,7 @@ package com.lolog.api.friend;
 import com.lolog.api.auth.CurrentUserProvider;
 import com.lolog.api.friend.FriendDtos.BlockCreate;
 import com.lolog.api.friend.FriendDtos.BlockList;
+import com.lolog.api.friend.FriendDtos.BlockUpdate;
 import com.lolog.api.friend.FriendDtos.FriendItem;
 import com.lolog.api.friend.FriendDtos.FriendList;
 import com.lolog.api.friend.FriendDtos.FriendRequestCreate;
@@ -49,7 +50,7 @@ public class FriendController {
 	@PostMapping("/api/friend-requests")
 	@ResponseStatus(HttpStatus.CREATED)
 	public FriendRequestResponse sendRequest(@RequestBody FriendRequestCreate request) {
-		return friends.sendRequest(currentUser.currentUserId(), request.friendCode());
+		return friends.sendRequest(currentUser.currentUserId(), request.friendCode(), request.userId());
 	}
 
 	// direction은 필수지만 빠졌을 때도 INVALID_REQUEST(field: direction)로 답하려고 서비스에서 확인한다.
@@ -83,7 +84,13 @@ public class FriendController {
 	@PostMapping("/api/blocks")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void block(@Valid @RequestBody BlockCreate request) {
-		friends.block(currentUser.currentUserId(), request.userId());
+		friends.block(currentUser.currentUserId(), request.userId(), Boolean.TRUE.equals(request.hideInRooms()));
+	}
+
+	@PatchMapping("/api/blocks/{userId}")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void updateBlock(@PathVariable Long userId, @Valid @RequestBody BlockUpdate request) {
+		friends.updateBlock(currentUser.currentUserId(), userId, request.hideInRooms());
 	}
 
 	@GetMapping("/api/blocks")

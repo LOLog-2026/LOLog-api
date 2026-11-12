@@ -1,6 +1,8 @@
 package com.lolog.api.user;
 
+import com.lolog.api.room.RoomService;
 import com.lolog.api.storage.ImageStorage;
+import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -26,9 +28,18 @@ public class UserDataService {
 		tx.executeWithoutResult(status -> {
 			jdbc.update("delete from jobs where user_id = ?", userId);
 			jdbc.update("delete from comics where user_id = ?", userId);
+			// 카드 영상(video.md 7장). 파일은 아래 users/{userId}/ 아래와 함께 지워진다.
+			jdbc.update("delete from videos where user_id = ?", userId);
 			jdbc.update("delete from cards where user_id = ?", userId);
 			jdbc.update("delete from recordings where user_id = ?", userId);
 			jdbc.update("delete from device_tokens where user_id = ?", userId);
+			// 알림 목록과 읽음·새 소식 기록(inbox.md 6장)
+			jdbc.update("delete from notifications where user_id = ?", userId);
+			jdbc.update("delete from notice_reads where user_id = ?", userId);
+			jdbc.update("delete from badge_reads where user_id = ?", userId);
+			// 보낸 오류 신고·의견은 남기고 보낸 사람만 비운다(admin.md 5장, FR-AUTH-05의 예외). 정지 표시는 지운다.
+			jdbc.update("update feedback set user_id = null, updated_at = current_timestamp where user_id = ?", userId);
+			jdbc.update("delete from user_suspensions where user_id = ?", userId);
 			// 다른 사람 카드에 붙은 이 회원의 프로필 캐릭터를 뺀다(characters.md 3장). 이 회원의 카드는 위에서 지워졌다.
 			jdbc.update("update card_speakers set character_type = null, character_id = null, updated_at = current_timestamp "
 					+ "where character_type = 'PROFILE' and character_id = ?", String.valueOf(userId));
@@ -36,8 +47,12 @@ public class UserDataService {
 			// 남긴 좋아요·댓글과 멤버 줄을 지우고, 멤버가 남지 않은 방을 지운다.
 			jdbc.update("delete from room_post_likes where user_id = ?", userId);
 			jdbc.update("delete from room_messages where user_id = ?", userId);
+			// 받은 초대를 지우고, 방장이던 방은 가장 먼저 들어온 멤버에게 넘긴다(db.md V9 초안).
+			jdbc.update("delete from room_invites where user_id = ?", userId);
+			List<Long> owned = jdbc.queryForList("select id from rooms where owner_id = ?", Long.class, userId);
 			jdbc.update("delete from room_members where user_id = ?", userId);
 			jdbc.update("delete from rooms r where not exists (select 1 from room_members m where m.room_id = r.id)");
+			owned.forEach(roomId -> RoomService.removeEmptyOrHandOver(jdbc, roomId));
 			// 친구 관계·요청·차단은 이 회원이 어느 쪽이든 지운다. 친구들 목록에서는 이 회원이 빠지기만 한다(friends.md).
 			jdbc.update("delete from friendships where requester_id = ? or addressee_id = ?", userId, userId);
 			jdbc.update("delete from user_blocks where blocker_id = ? or blocked_id = ?", userId, userId);
