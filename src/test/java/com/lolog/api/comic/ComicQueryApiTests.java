@@ -116,6 +116,16 @@ class ComicQueryApiTests {
 	}
 
 	@Test
+	void 요약이_없는_옛_만화는_cardSummary가_빈_글자다() throws Exception {
+		long me = USERS.incrementAndGet();
+		long comicId = request(me, card(me, "옛 카드"));
+		jdbc.update("update comics set card_summary = null where id = ?", comicId);
+		mvc.perform(get("/api/comics/" + comicId).header("Authorization", TestTokens.bearer(String.valueOf(me))))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.cardSummary").value(""));
+	}
+
+	@Test
 	void 목록은_내_만화만_최신순이고_DONE만_imageUrl이_있다() throws Exception {
 		long me = USERS.incrementAndGet();
 		long first = request(me, card(me, "첫 카드"));

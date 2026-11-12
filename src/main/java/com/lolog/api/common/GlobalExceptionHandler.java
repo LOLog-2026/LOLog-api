@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import tools.jackson.core.JacksonException;
 
@@ -53,6 +54,14 @@ public class GlobalExceptionHandler {
 	public ResponseEntity<ErrorResponse> handleTooLarge(MaxUploadSizeExceededException e) {
 		return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
 			.body(new ErrorResponse("PAYLOAD_TOO_LARGE", "파일이 너무 큽니다."));
+	}
+
+	// 파일 주소에 multipart가 아닌 본문(api-dto.md 오류 코드). consumes가 없는 주소는 Spring이 이 예외를 던진다.
+	// 크기 초과(MaxUploadSizeExceededException)는 위의 더 좁은 처리가 먼저다.
+	@ExceptionHandler(MultipartException.class)
+	public ResponseEntity<ErrorResponse> handleNotMultipart(MultipartException e) {
+		return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+			.body(new ErrorResponse("UNSUPPORTED_MEDIA_TYPE", "이 주소가 받지 않는 Content-Type입니다."));
 	}
 
 	@ExceptionHandler(MethodArgumentTypeMismatchException.class)
