@@ -59,6 +59,11 @@ public class ImageStorage {
 		return "defaults/characters/" + id + "_thumb.webp";
 	}
 
+	// 기본 화자 목소리(characters.md 기본 화자 목소리). 받은 wav 그대로다.
+	public static String defaultCharacterVoiceKey(String id) {
+		return "defaults/characters/" + id + "_voice.wav";
+	}
+
 	// 프로필 캐릭터 그림(768 PNG), 썸네일(256 PNG), 원본 사진(그림을 받거나 실패하면 바로 지움). characters.md 3장
 	public static String profileCharacterKey(long userId) {
 		return "users/" + userId + "/character/avatar.png";

@@ -50,7 +50,8 @@ public class CharacterViews {
 
 	public ProfileCharacterService.ProfileCharacterResponse profileResponse(long userId) {
 		List<ProfileCharacterService.ProfileCharacterResponse> found = jdbc.query("""
-				select character_status, character_thumb_key, character_updated_at from user_profiles where user_id = :id
+				select character_status, character_thumb_key, character_updated_at, character_voice from user_profiles
+				where user_id = :id
 				""", Map.of("id", userId), (rs, n) -> {
 			String status = rs.getString("character_status");
 			if (status == null) {
@@ -59,7 +60,7 @@ public class CharacterViews {
 			String thumb = rs.getString("character_thumb_key");
 			return new ProfileCharacterService.ProfileCharacterResponse(status,
 					thumb == null ? null : storage.presignedUrl(thumb).toString(),
-					rs.getObject("character_updated_at", OffsetDateTime.class));
+					rs.getObject("character_updated_at", OffsetDateTime.class), rs.getString("character_voice"));
 		});
 		return found.isEmpty() ? null : found.getFirst();
 	}
