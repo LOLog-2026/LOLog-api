@@ -36,7 +36,7 @@ public class TextService {
 	static final String BLOG = "BLOG";
 
 	// 글 상태: 그 글로 만든 카드가 있으면 DONE, TEXT 작업이 실패면 FAILED, 그 밖에는 QUEUED
-	static final String STATUS_SQL = """
+	public static final String STATUS_SQL = """
 			case when exists (select 1 from cards c where c.text_id = t.id) then 'DONE'
 			     when exists (select 1 from jobs j where j.text_id = t.id and j.status = 'FAILED') then 'FAILED'
 			     else 'QUEUED' end""";
@@ -110,13 +110,13 @@ public class TextService {
 		return rows.getFirst();
 	}
 
-	// 블로그 표가 생기기 전(V15)에는 블로그 칸이 없다. 블로그 기능(#72)에서 blog_posts를 붙인다.
-	String blogColumns() {
-		return "null as link, null as blog_title";
+	// 블로그 글이면 원문 링크와 가져올 때 복사해 둔 블로그 이름(연결을 끊어도 남음)
+	private static String blogColumns() {
+		return "p.link as link, p.blog_title as blog_title";
 	}
 
-	String blogJoin() {
-		return "";
+	private static String blogJoin() {
+		return "left join blog_posts p on p.id = t.blog_post_id";
 	}
 
 	// 워커가 보낸 카드 한 장을 저장한다. 같은 jobId가 다시 오면(워커 재시도) 저장하지 않는다.
@@ -159,9 +159,15 @@ public class TextService {
 		}
 	}
 
-	// 글 카드의 날짜: 직접 쓴 글은 올린 시각이다. 블로그 글은 #72에서 쓴 시각(없으면 가져온 시각)으로 채운다.
-	OffsetDateTime recordedAt(TextRow text) {
-		return text.createdAt();
+	// 글 카드의 날짜: 직접 쓴 글은 올린 시각, 블로그 글은 쓴 시각(pubDate, 없으면 가져온 시각)이다(texts.md 2장).
+	private OffsetDateTime recordedAt(TextRow text) {
+		if (!BLOG.equals(text.source())) {
+			return text.createdAt();
+		}
+		return jdbc.queryForObject("""
+				select coalesce(p.published_at, p.created_at) from texts t join blog_posts p on p.id = t.blog_post_id
+				where t.id = ?
+				""", OffsetDateTime.class, text.id());
 	}
 
 	@Transactional

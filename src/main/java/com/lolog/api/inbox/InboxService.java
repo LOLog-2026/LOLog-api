@@ -157,7 +157,7 @@ public class InboxService {
 				  and x.user_id <> m.user_id and x.created_at > m.last_read_at where m.user_id = ?)
 				  or exists (select 1 from room_invites i where i.user_id = ?)
 				""", Boolean.class, me, me));
-		return new Badges(newSince(me, "cards"), newSince(me, "comics"), newSince(me, "profileCharacter"), friends,
+		return new Badges(newSince(me, "cards") || newBlogCards(me), newSince(me, "comics"), newSince(me, "profileCharacter"), friends,
 				roomUnread || newSince(me, "rooms"), hasUnread(me));
 	}
 
@@ -181,6 +181,15 @@ public class InboxService {
 				  and x.created_at > coalesce((select seen_at from badge_reads where user_id = :me and kind = :kind), '-infinity'))
 				""", new MapSqlParameterSource("me", me).addValue("types", SEEN_KINDS.get(kind)).addValue("kind", kind),
 				Boolean.class));
+	}
+
+	// 블로그 글 카드는 푸시·알림 목록 없이 보관함 점만 켠다(texts.md 2장). 마지막으로 본 뒤 생긴 블로그 글 카드가 있는지.
+	private boolean newBlogCards(long me) {
+		return Boolean.TRUE.equals(jdbc.queryForObject("""
+				select exists (select 1 from cards c join texts t on t.id = c.text_id
+				  where c.user_id = ? and t.source = 'BLOG'
+				  and c.created_at > coalesce((select seen_at from badge_reads where user_id = ? and kind = 'cards'), '-infinity'))
+				""", Boolean.class, me, me));
 	}
 
 	private boolean hasUnread(long me) {
