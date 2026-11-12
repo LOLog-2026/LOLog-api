@@ -28,7 +28,8 @@ public final class CardDtos {
 
 	public record CardDetail(Long id, Long recordingId, String kind, String summary, String place,
 			OffsetDateTime recordedAt, Long startMs, Long endMs, List<Speaker> speakers, List<Line> lines,
-			List<ComicRef> comics, int comicRemaining, List<VideoRef> videos, CardAudio audio, String source, Long textId,
+			List<ComicRef> comics, int comicRemaining, List<VideoRef> videos, int videoRemaining, CardAudio audio,
+			String source, Long textId,
 			boolean truncated, OffsetDateTime createdAt) {
 	}
 

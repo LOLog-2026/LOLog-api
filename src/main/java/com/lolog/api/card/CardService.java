@@ -378,7 +378,8 @@ public class CardService {
 		TextOrigin origin = card.getTextId() == null ? null : origins.get(card.getTextId());
 		return new CardDetail(card.getId(), card.getRecordingId(), card.getKind(), card.getSummary(), card.getPlace(),
 				card.getRecordedAt(), card.getStartMs(), card.getEndMs(), speakers, lines, comicRefs,
-				MAX_COMICS - card.getComicCount(), videos.refs(card.getId()), audio.detail(card.getId()),
+				MAX_COMICS - card.getComicCount(), videos.refs(card.getId()), videos.remaining(card.getId()),
+				audio.detail(card.getId()),
 				source(card, origins), card.getTextId(), origin != null && origin.truncated(), card.getCreatedAt());
 	}
 
