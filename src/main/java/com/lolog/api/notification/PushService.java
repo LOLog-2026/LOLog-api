@@ -48,6 +48,11 @@ public class PushService implements DisposableBean {
 				String.valueOf(cardCount));
 	}
 
+	// 직접 쓴 글의 카드가 생김(texts.md 6장 푸시). 녹음과 같은 type이고 recordingId 대신 textId가 온다.
+	public static Map<String, String> textCardsCreated(long textId) {
+		return Map.of("type", "CARDS_CREATED", "textId", String.valueOf(textId), "cardCount", "1");
+	}
+
 	public static Map<String, String> comicDone(long comicId, Long cardId) {
 		return comic("COMIC_DONE", comicId, cardId);
 	}
