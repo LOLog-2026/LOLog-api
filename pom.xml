@@ -76,6 +76,12 @@
 			<artifactId>firebase-admin</artifactId>
 			<version>9.11.0</version>
 		</dependency>
+		<!-- 블로그 글(RSS)의 HTML 본문을 글로 바꾸고, 블로그 페이지에서 RSS 주소(link rel="alternate")를 찾는다(texts.md 4장). -->
+		<dependency>
+			<groupId>org.jsoup</groupId>
+			<artifactId>jsoup</artifactId>
+			<version>1.18.3</version>
+		</dependency>
 		<dependency>
 			<groupId>org.flywaydb</groupId>
 			<artifactId>flyway-database-postgresql</artifactId>
