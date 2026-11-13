@@ -66,7 +66,9 @@ public class ComicQueryService {
 	private ComicResponse toResponse(Comic comic) {
 		String url = comic.getStatus() == ComicStatus.DONE && comic.getImageKey() != null
 				? storage.presignedUrl(comic.getImageKey()).toString() : null;
-		return new ComicResponse(comic.getId(), comic.getCardId(), comic.getCardSummary(), comic.getStatus(), url,
+		// V2 전에 만든 만화는 card_summary가 NULL이라 빈 글자로 준다(명세상 필수, 영상·방과 같음).
+		String summary = comic.getCardSummary() == null ? "" : comic.getCardSummary();
+		return new ComicResponse(comic.getId(), comic.getCardId(), summary, comic.getStatus(), url,
 				comic.getCreatedAt());
 	}
 

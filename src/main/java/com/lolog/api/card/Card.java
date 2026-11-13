@@ -46,13 +46,18 @@ public class Card {
 	@Column(length = 200)
 	private String place;
 
-	@Column(name = "start_ms", nullable = false)
+	// 글 카드(text_id)는 시간 값이 없어 null이다(texts.md 7장).
+	@Column(name = "start_ms")
 	private Long startMs;
 
-	@Column(name = "end_ms", nullable = false)
+	@Column(name = "end_ms")
 	private Long endMs;
 
-	// 이야기를 녹음한 시각 = 녹음 시작 시각 + startMs
+	// 글 카드의 글. 녹음 카드는 null이고, 글이 지워지면 null이 된다(texts.md 7장).
+	@Column(name = "text_id")
+	private Long textId;
+
+	// 녹음 카드는 녹음 시작 시각 + startMs, 글 카드는 직접 쓴 글이면 올린 시각, 블로그 글이면 쓴 시각(texts.md 2장)
 	@Column(name = "recorded_at", nullable = false)
 	private OffsetDateTime recordedAt;
 
@@ -85,6 +90,19 @@ public class Card {
 		this.startMs = startMs;
 		this.endMs = endMs;
 		this.recordedAt = recordedAt;
+	}
+
+	// 글 하나로 만든 카드(texts.md). 시간 값은 없고, 장소는 글에 적은 장소다.
+	public static Card fromText(Long textId, Long userId, String kind, String summary, String place,
+			OffsetDateTime recordedAt) {
+		Card card = new Card();
+		card.textId = textId;
+		card.userId = userId;
+		card.kind = kind;
+		card.summary = summary;
+		card.place = place;
+		card.recordedAt = recordedAt;
+		return card;
 	}
 
 	// 화자 이름은 비어 있는 채로 시작한다. 앱은 이름 대신 key("화자1")를 보여 준다.

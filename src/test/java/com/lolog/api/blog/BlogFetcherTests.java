@@ -1,0 +1,78 @@
+package com.lolog.api.blog;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.lolog.api.blog.BlogFetcher.FetchException;
+import com.lolog.api.blog.FeedParser.Feed;
+import java.net.InetAddress;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import org.junit.jupiter.api.Test;
+
+// 내부 주소 막기(SSRF), 플랫폼 RSS 규칙, 피드 읽기를 서버 없이 확인한다.
+class BlogFetcherTests {
+
+	@Test
+	void 내부_주소는_막는다() throws Exception {
+		for (String ip : new String[] { "127.0.0.1", "10.0.0.5", "172.16.3.4", "192.168.0.1", "169.254.169.254", "0.0.0.0",
+				"100.64.0.1", "::1", "fc00::1", "fe80::1", "224.0.0.1" }) {
+			assertThat(BlogFetcher.isInternal(InetAddress.getByName(ip))).as(ip).isTrue();
+		}
+		for (String ip : new String[] { "8.8.8.8", "125.209.222.141", "2001:4860:4860::8888" }) {
+			assertThat(BlogFetcher.isInternal(InetAddress.getByName(ip))).as(ip).isFalse();
+		}
+	}
+
+	@Test
+	void 막기를_켜면_localhost와_내부_IP를_부르지_않는다() {
+		BlogFetcher fetcher = new BlogFetcher(false);
+		for (String url : new String[] { "http://localhost:6379/", "http://127.0.0.1/", "http://[::1]/", "http://10.1.2.3/" }) {
+			assertThatThrownBy(() -> fetcher.get(url)).as(url)
+				.isInstanceOfSatisfying(FetchException.class, e -> assertThat(e.isInternal()).isTrue());
+		}
+		assertThatThrownBy(() -> fetcher.get("file:///etc/passwd")).isInstanceOf(FetchException.class);
+	}
+
+	@Test
+	void 네이버와_티스토리는_RSS_주소_규칙을_쓴다() {
+		assertThat(FeedLocator.platformFeed(URI.create("https://blog.naver.com/minsu123")))
+			.isEqualTo("https://rss.blog.naver.com/minsu123.xml");
+		assertThat(FeedLocator.platformFeed(URI.create("https://m.blog.naver.com/minsu123/223000000000")))
+			.isEqualTo("https://rss.blog.naver.com/minsu123.xml");
+		assertThat(FeedLocator.platformFeed(URI.create("https://blog.naver.com/PostList.naver?blogId=minsu123&from=x")))
+			.isEqualTo("https://rss.blog.naver.com/minsu123.xml");
+		assertThat(FeedLocator.platformFeed(URI.create("https://hello.tistory.com/12"))).isEqualTo("https://hello.tistory.com/rss");
+		assertThat(FeedLocator.platformFeed(URI.create("https://example.com/blog"))).isNull();
+		assertThat(FeedLocator.normalize("  blog.naver.com/minsu123 ")).isEqualTo("https://blog.naver.com/minsu123");
+	}
+
+	@Test
+	void DOCTYPE이_있는_피드는_읽지_않는다() {
+		String xxe = """
+				<?xml version="1.0"?>
+				<!DOCTYPE rss [<!ENTITY x SYSTEM "file:///etc/passwd">]>
+				<rss><channel><title>&x;</title></channel></rss>
+				""";
+		assertThat(FeedParser.parse(xxe.getBytes(StandardCharsets.UTF_8))).isNull();
+		assertThat(FeedParser.parse("<html><body>x</body></html>".getBytes(StandardCharsets.UTF_8))).isNull();
+	}
+
+	@Test
+	void RSS의_guid가_없으면_link를_쓰고_날짜가_틀리면_비운다() {
+		Feed feed = FeedParser.parse("""
+				<rss><channel><title>t</title><item><title>a</title><link>https://x/1</link>
+				<pubDate>어제</pubDate><category>일상</category><category> 일상 </category></item></channel></rss>
+				""".getBytes(StandardCharsets.UTF_8));
+		assertThat(feed.items().getFirst().guid()).isEqualTo("https://x/1");
+		assertThat(feed.items().getFirst().publishedAt()).isNull();
+		assertThat(feed.items().getFirst().categories()).containsExactly("일상");
+	}
+
+	@Test
+	void HTML을_글로_바꾼다() {
+		assertThat(FeedParser.toText("<div>안녕&nbsp;하세요</div><p>둘째<br/>셋째</p><style>p{}</style>"))
+			.isEqualTo("안녕 하세요\n\n둘째\n셋째");
+	}
+
+}

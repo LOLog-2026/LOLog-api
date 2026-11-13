@@ -134,6 +134,12 @@ public class VideoService {
 				(rs, n) -> new VideoRef(rs.getLong("id"), rs.getString("status")), cardId);
 	}
 
+	// 이 카드로 더 만들 수 있는 영상 수(0~2). 만화의 comicRemaining처럼 지운 영상도 세고 실패한 영상은 세지 않는다(정함 11-13).
+	public int remaining(long cardId) {
+		Integer used = jdbc.queryForObject("select video_count from cards where id = ?", Integer.class, cardId);
+		return Math.max(0, MAX_VIDEOS - (used == null ? 0 : used));
+	}
+
 	public boolean hasRunningBeforeDrawing(long cardId) {
 		return Boolean.TRUE.equals(jdbc.queryForObject(
 				"select exists (select 1 from videos where card_id = ? and status in ('QUEUED', 'VOICE'))", Boolean.class,

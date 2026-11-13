@@ -20,13 +20,17 @@ public final class CardDtos {
 	public record CardPage(List<CardSummary> cards, String nextCursor) {
 	}
 
+	// source는 RECORDING·WRITTEN·BLOG, textId는 글 카드만 있다. 글 카드는 startMs·endMs가 null이다(texts.md 6장).
 	public record CardSummary(Long id, String kind, String summary, OffsetDateTime recordedAt, Long startMs, Long endMs,
-			String place, int lineCount, int comicCount, boolean hasAudio, OffsetDateTime createdAt) {
+			String place, int lineCount, int comicCount, boolean hasAudio, String source, Long textId,
+			OffsetDateTime createdAt) {
 	}
 
 	public record CardDetail(Long id, Long recordingId, String kind, String summary, String place,
 			OffsetDateTime recordedAt, Long startMs, Long endMs, List<Speaker> speakers, List<Line> lines,
-			List<ComicRef> comics, int comicRemaining, List<VideoRef> videos, CardAudio audio, OffsetDateTime createdAt) {
+			List<ComicRef> comics, int comicRemaining, List<VideoRef> videos, int videoRemaining, CardAudio audio,
+			String source, Long textId,
+			boolean truncated, OffsetDateTime createdAt) {
 	}
 
 	// character는 붙인 그림 { type, id, label, thumbnailUrl } 또는 null(characters.md 4장)

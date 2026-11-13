@@ -146,6 +146,13 @@ class RecordingApiTests {
 	}
 
 	@Test
+	void 빈_묶음만_받아도_다음_묶음을_기다리는_동안은_DETECTING이다() throws Exception {
+		String id = UUID.randomUUID().toString();
+		upload("51", body(id, 1, false, "[]")).andExpect(status().isAccepted())
+			.andExpect(jsonPath("$.status").value("DETECTING"));
+	}
+
+	@Test
 	void 앞_묶음이_끝나야_다음_묶음을_넘겨받은_글과_함께_넣는다() throws Exception {
 		String id = UUID.randomUUID().toString();
 		String first = "[{\"startMs\":1000,\"endMs\":2000,\"text\":\"앞\"},{\"startMs\":3000,\"endMs\":4000,\"text\":\"넘길 글\"}]";

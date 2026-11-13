@@ -294,8 +294,10 @@ class VideoApiTests {
 		verify(sender, timeout(5000)).send(List.of(token),
 				Map.of("type", "VIDEO_FAILED", "videoId", String.valueOf(first), "cardId", String.valueOf(cardId)));
 		assertThat(jdbc.queryForObject("select video_count from cards where id = ?", Integer.class, cardId)).isZero();
+		call(get("/api/cards/" + cardId), me).andExpect(jsonPath("$.videoRemaining").value(2));
 
 		long second = request(me, cardId);
+		call(get("/api/cards/" + cardId), me).andExpect(jsonPath("$.videoRemaining").value(1));
 		jdbc.update("update videos set status = 'DONE' where id = ?", second);
 		long third = request(me, cardId);
 		jdbc.update("update videos set status = 'DONE' where id = ?", third);
@@ -304,6 +306,9 @@ class VideoApiTests {
 		// 지워도 횟수는 돌아오지 않는다
 		call(delete("/api/videos/" + third), me).andExpect(status().isNoContent());
 		call(delete("/api/videos/" + third), me).andExpect(status().isNotFound());
+		// 카드 자세히의 남은 횟수도 지운 쇼츠를 센다. videos[]에는 지운 쇼츠가 없어서(실패 1 + 완성 1) 앱이 세면 1이 남아 보인다
+		call(get("/api/cards/" + cardId), me).andExpect(jsonPath("$.videoRemaining").value(0))
+			.andExpect(jsonPath("$.videos.length()").value(2));
 		call(post("/api/cards/" + cardId + "/videos"), me).andExpect(status().isConflict());
 		call(post("/api/cards/999999999/videos"), me).andExpect(status().isNotFound())
 			.andExpect(jsonPath("$.code").value("CARD_NOT_FOUND"));

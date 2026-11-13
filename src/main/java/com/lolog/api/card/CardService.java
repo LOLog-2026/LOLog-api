@@ -89,11 +89,12 @@ public class CardService {
 		Map<Long, Long> comicCounts = ids.isEmpty() ? Map.of() : toMap(comics.countNotFailedByCardIds(ids));
 		// 들을 수 있는 카드 구간 음성이 있으면 true(replay.md 4장)
 		Map<Long, Boolean> hasAudio = audio.ready(ids);
+		Map<Long, TextOrigin> origins = origins(shown.stream().map(Card::getTextId).filter(t -> t != null).toList());
 		List<CardSummary> items = shown.stream()
 			.map(c -> new CardSummary(c.getId(), c.getKind(), c.getSummary(), c.getRecordedAt(), c.getStartMs(),
 					c.getEndMs(), c.getPlace(), Math.toIntExact(lineCounts.getOrDefault(c.getId(), 0L)),
 					Math.toIntExact(comicCounts.getOrDefault(c.getId(), 0L)), hasAudio.getOrDefault(c.getId(), false),
-					c.getCreatedAt()))
+					source(c, origins), c.getTextId(), c.getCreatedAt()))
 			.toList();
 		return new CardPage(items, more ? String.valueOf(shown.getLast().getId()) : null);
 	}
@@ -289,7 +290,13 @@ public class CardService {
 		Card card = findLocked(userId, id);
 		// 카드 구간 음성도 같이 지운다(audio.md 5장). 행을 잠근 뒤 읽어서, 자르는 중인 쪽과 엇갈리지 않는다.
 		String audioKey = jdbc.queryForObject("select audio_key from cards where id = ?", String.class, card.getId());
+		Long textId = card.getTextId();
 		cards.delete(card);
+		// 글 카드면 그 글도 지운다(texts.md 2장). 블로그 글 줄(blog_posts)은 같은 글을 다시 가져오지 않게 남는다.
+		if (textId != null) {
+			entityManager.flush();
+			jdbc.update("delete from texts where id = ?", textId);
+		}
 		if (audioKey != null) {
 			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
 				@Override
@@ -367,9 +374,34 @@ public class CardService {
 		List<ComicRef> comicRefs = comics.findByCardIdOrderByIdDesc(card.getId()).stream()
 			.map(m -> new ComicRef(m.getId(), m.getStatus()))
 			.toList();
+		Map<Long, TextOrigin> origins = card.getTextId() == null ? Map.of() : origins(List.of(card.getTextId()));
+		TextOrigin origin = card.getTextId() == null ? null : origins.get(card.getTextId());
 		return new CardDetail(card.getId(), card.getRecordingId(), card.getKind(), card.getSummary(), card.getPlace(),
 				card.getRecordedAt(), card.getStartMs(), card.getEndMs(), speakers, lines, comicRefs,
-				MAX_COMICS - card.getComicCount(), videos.refs(card.getId()), audio.detail(card.getId()), card.getCreatedAt());
+				MAX_COMICS - card.getComicCount(), videos.refs(card.getId()), videos.remaining(card.getId()),
+				audio.detail(card.getId()),
+				source(card, origins), card.getTextId(), origin != null && origin.truncated(), card.getCreatedAt());
+	}
+
+	// 글 카드의 출처와 잘림. 녹음 카드인지 글 카드인지는 text_id로, 직접 쓴 글인지 블로그 글인지는 texts.source로 안다(texts.md 7장).
+	private record TextOrigin(String source, boolean truncated) {
+	}
+
+	private Map<Long, TextOrigin> origins(List<Long> textIds) {
+		if (textIds.isEmpty()) {
+			return Map.of();
+		}
+		Map<Long, TextOrigin> result = new HashMap<>();
+		jdbc.query("select id, source, truncated from texts where id = any(?)", rs -> {
+			result.put(rs.getLong("id"), new TextOrigin(rs.getString("source"), rs.getBoolean("truncated")));
+		}, (Object) textIds.toArray(Long[]::new));
+		return result;
+	}
+
+	// 녹음 카드는 녹음을 지워 recording_id가 비어도 RECORDING이다(글 카드는 늘 text_id가 있다).
+	private static String source(Card card, Map<Long, TextOrigin> origins) {
+		TextOrigin origin = card.getTextId() == null ? null : origins.get(card.getTextId());
+		return origin == null ? "RECORDING" : origin.source();
 	}
 
 	// 앞뒤 공백을 뺀 뒤 1~max자. null은 "지움"이라 통과한다(대사 text는 null이면 부르지 않는다).

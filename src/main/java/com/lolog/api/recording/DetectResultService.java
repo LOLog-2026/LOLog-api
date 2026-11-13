@@ -134,6 +134,11 @@ public class DetectResultService {
 				if (!waiting) {
 					return List.<Long>of();
 				}
+				// 넘겨 둔 시각 뒤에 남은 글이 없으면 넣을 것이 없다(sentences 1개 이상). 넘김 표시만 지운다.
+				if (publisher.carriedFrom(last, all).isEmpty()) {
+					last.setCarryFromMs(null);
+					return List.<Long>of();
+				}
 				last.setStatus(RecordingStatus.DETECTING);
 				recording.setStatus(RecordingStatus.DETECTING);
 				return List.of(jobs.save(new Job(last.getId(), recording.getUserId())).getId());

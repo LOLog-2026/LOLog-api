@@ -13,7 +13,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 // jobs 테이블의 작업. DETECT는 묶음 하나(recording_part_id), COMIC은 만화 하나(comic_id),
-// AVATAR는 회원(user_id)의 프로필 캐릭터를 처리한다(characters.md).
+// AVATAR는 회원(user_id)의 프로필 캐릭터, TEXT는 글 하나(text_id)를 처리한다(characters.md, texts.md).
 // attempts는 큐에 넣은 횟수이고, 0이면 아직 넣지 못한 작업이다. 결과나 fail을 받으면 DONE·FAILED가 되고 그 뒤로는 바뀌지 않는다.
 @Entity
 @Table(name = "jobs")
@@ -34,6 +34,10 @@ public class Job {
 	// VIDEO_VOICE(3호 목소리)·VIDEO_DRAW(2호 그림·합치기) 작업의 영상(video.md)
 	@Column(name = "video_id")
 	private Long videoId;
+
+	// TEXT 작업(글 하나를 카드로, texts.md)의 글
+	@Column(name = "text_id")
+	private Long textId;
 
 	@Column(name = "user_id", nullable = false)
 	private Long userId;
@@ -76,6 +80,14 @@ public class Job {
 		Job job = new Job();
 		job.jobType = type;
 		job.videoId = videoId;
+		job.userId = userId;
+		return job;
+	}
+
+	public static Job text(Long textId, Long userId) {
+		Job job = new Job();
+		job.jobType = "TEXT";
+		job.textId = textId;
 		job.userId = userId;
 		return job;
 	}
