@@ -174,7 +174,12 @@ public class RecordingService {
 
 	// 마지막 묶음까지 끝났으면 DONE. 감지한 묶음이 모두 실패했을 때만 FAILED다(하나라도 성공했으면 DONE).
 	private void finishIfLastDone(Recording recording, List<RecordingPart> all) {
-		if (all.isEmpty() || !all.getLast().isLast()) {
+		if (all.isEmpty()) {
+			return;
+		}
+		// 마지막 묶음 전에는 다음 묶음을 기다리는 동안에도 DETECTING이다(api-dto.md). 받은 묶음이 모두 빈 묶음이어도 같다.
+		if (!all.getLast().isLast()) {
+			recording.setStatus(RecordingStatus.DETECTING);
 			return;
 		}
 		boolean allFinished = all.stream()

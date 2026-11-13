@@ -58,6 +58,10 @@ public class FriendService {
 		}
 		long target;
 		if (userId != null) {
+			// 나에게 보내면 친구 코드와 같게 400이다(friends.md CANNOT_FRIEND_SELF). 방 조회보다 먼저 본다.
+			if (userId == me) {
+				throw new ApiException(HttpStatus.BAD_REQUEST, "CANNOT_FRIEND_SELF", "나에게는 친구 요청을 보낼 수 없어요.");
+			}
 			requireNickname(me);
 			// 지금 같은 방에 있지 않거나 닉네임이 없으면 친구 코드를 모를 때와 같은 404다.
 			target = jdbc.queryForList("""
