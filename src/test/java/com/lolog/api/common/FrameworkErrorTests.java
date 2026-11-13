@@ -55,6 +55,20 @@ class FrameworkErrorTests {
 	}
 
 	@Test
+	void 파일_주소에_multipart가_아닌_본문은_415_UNSUPPORTED_MEDIA_TYPE이다() throws Exception {
+		mvc.perform(put("/api/me/profile/character").header("Authorization", TestTokens.bearer(1))
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{}"))
+			.andExpect(status().isUnsupportedMediaType())
+			.andExpect(jsonPath("$.code").value("UNSUPPORTED_MEDIA_TYPE"));
+		mvc.perform(put("/api/recordings/1/audio/1").header("Authorization", TestTokens.bearer(1))
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{}"))
+			.andExpect(status().isUnsupportedMediaType())
+			.andExpect(jsonPath("$.code").value("UNSUPPORTED_MEDIA_TYPE"));
+	}
+
+	@Test
 	void JSON_주소에_JSON이_아닌_본문은_415_UNSUPPORTED_MEDIA_TYPE이다() throws Exception {
 		mvc.perform(post("/api/recordings").header("Authorization", TestTokens.bearer(1))
 			.contentType(MediaType.TEXT_PLAIN)

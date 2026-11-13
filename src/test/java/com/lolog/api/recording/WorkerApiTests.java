@@ -271,6 +271,19 @@ class WorkerApiTests {
 	}
 
 	@Test
+	void 넘겨_둔_시각_뒤에_글이_없으면_늦어도_큐에_넣지_않는다() throws Exception {
+		String id = UUID.randomUUID().toString();
+		long recordingId = upload("108", id, 1, false, TWO);
+		// 마지막 글(3000~4000ms)보다 뒤를 넘겨 달라고 함
+		result(recordingId, jobId(recordingId, 0), 1, "9000", CARD).andExpect(status().isNoContent());
+
+		detectResults.dispatchLateCarries(OffsetDateTime.now().plusMinutes(1));
+		assertThat(messagesFor(recordingId)).hasSize(1);
+		assertThat(part(recordingId, 1).getCarryFromMs()).isNull();
+		assertThat(part(recordingId, 1).getStatus()).isEqualTo(RecordingStatus.DONE);
+	}
+
+	@Test
 	void 넘겨_둔_부분만_처리하던_작업이_실패해도_묶음은_FAILED가_아니다() throws Exception {
 		String id = UUID.randomUUID().toString();
 		long recordingId = upload("106", id, 1, false, TWO);
