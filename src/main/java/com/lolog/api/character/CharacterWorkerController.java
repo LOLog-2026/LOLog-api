@@ -21,8 +21,11 @@ public class CharacterWorkerController {
 
 	private final ProfileCharacterService profileCharacters;
 	private final DefaultCharacterService defaults;
+	private final VoiceCloneService voiceClones;
 
-	public CharacterWorkerController(ProfileCharacterService profileCharacters, DefaultCharacterService defaults) {
+	public CharacterWorkerController(ProfileCharacterService profileCharacters, DefaultCharacterService defaults,
+			VoiceCloneService voiceClones) {
+		this.voiceClones = voiceClones;
 		this.profileCharacters = profileCharacters;
 		this.defaults = defaults;
 	}
@@ -39,6 +42,20 @@ public class CharacterWorkerController {
 	public void avatar(@PathVariable Long userId, @RequestPart("file") MultipartFile file,
 			@RequestParam(required = false) String appearance) throws IOException {
 		profileCharacters.avatar(userId, file.getBytes(), appearance);
+	}
+
+	// 내 목소리 원본 녹음(초안). 내 목소리를 만들 때와 쇼츠에서 "self"를 읽을 때 쓴다. Content-Type은 wav(audio/wav) 또는 m4a(audio/mp4)
+	@GetMapping("/internal/users/{userId}/voice-clone/sample")
+	public ResponseEntity<byte[]> voiceCloneSample(@PathVariable Long userId) {
+		StoredObject sample = voiceClones.sample(userId);
+		return ResponseEntity.ok().contentType(MediaType.parseMediaType(sample.contentType())).body(sample.bytes());
+	}
+
+	// 워커가 만든 미리 듣기 wav(초안). 받으면 READY, 푸시
+	@PutMapping("/internal/users/{userId}/voice-clone/preview")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void voiceClonePreview(@PathVariable Long userId, @RequestPart("file") MultipartFile file) throws IOException {
+		voiceClones.preview(userId, file.getBytes());
 	}
 
 	// 기본 화자 넣기·바꾸기. image·thumbnail은 이미 저장소에 있으면 빼도 된다. voice(wav)는 선택이다.

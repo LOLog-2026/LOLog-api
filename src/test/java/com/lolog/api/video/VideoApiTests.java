@@ -314,6 +314,51 @@ class VideoApiTests {
 			.andExpect(jsonPath("$.code").value("CARD_NOT_FOUND"));
 	}
 
+	// 내 목소리(#83): "self"는 다 만들었을 때만, 친구가 만드는 쇼츠면 친구 쇼츠 동의를 했을 때만 보낸다. 아니면 null(워커가 기본 화자 목소리)
+	@Test
+	void 내_목소리는_READY이고_친구면_동의했을_때만_self로_준다() throws Exception {
+		long me = USERS.incrementAndGet();
+		long friend = USERS.incrementAndGet();
+		for (long id : new long[] { me, friend }) {
+			call(patch("/api/me/profile").contentType(MediaType.APPLICATION_JSON).content("{\"nickname\":\"목소리\"}"), id)
+				.andExpect(status().isOk());
+			jdbc.update("""
+					update user_profiles set character_status = 'READY', character_key = 'users/%d/character.png',
+					  character_thumb_key = 'users/%d/character_thumb.png', character_appearance = 'me', character_voice = 'self',
+					  voice_clone_status = 'READY', voice_clone_key = 'users/%d/voice/sample.wav', voice_clone_text = '읽은 문장'
+					where user_id = ?
+					""".formatted(id, id, id), id);
+		}
+		jdbc.update("insert into friendships (requester_id, addressee_id, status) values (?, ?, 'ACCEPTED')", me, friend);
+
+		// 내 카드에 내 캐릭터
+		long mine = card(me);
+		jdbc.update("update card_speakers set character_type = 'PROFILE', character_id = ? where card_id = ?",
+				String.valueOf(me), mine);
+		long myVideo = request(me, mine);
+		internal(get("/internal/videos/" + myVideo + "/source"))
+			.andExpect(jsonPath("$.speakers[0].character.voice").value("self"))
+			.andExpect(jsonPath("$.speakers[0].character.voiceText").value("읽은 문장"));
+
+		// 내 카드에 친구 캐릭터: 친구가 동의하지 않았으면 null
+		long withFriend = card(me);
+		jdbc.update("update card_speakers set character_type = 'PROFILE', character_id = ? where card_id = ?",
+				String.valueOf(friend), withFriend);
+		long friendVideo = request(me, withFriend);
+		internal(get("/internal/videos/" + friendVideo + "/source"))
+			.andExpect(jsonPath("$.speakers[0].character.ref").value("profile:" + friend))
+			.andExpect(jsonPath("$.speakers[0].character.voice").isEmpty())
+			.andExpect(jsonPath("$.speakers[0].character.voiceText").isEmpty());
+		jdbc.update("update user_profiles set voice_clone_share_friends = true where user_id = ?", friend);
+		internal(get("/internal/videos/" + friendVideo + "/source"))
+			.andExpect(jsonPath("$.speakers[0].character.voice").value("self"));
+
+		// 다시 만드는 중이면 null
+		jdbc.update("update user_profiles set voice_clone_status = 'PROCESSING' where user_id = ?", me);
+		internal(get("/internal/videos/" + myVideo + "/source"))
+			.andExpect(jsonPath("$.speakers[0].character.voice").isEmpty());
+	}
+
 	@Test
 	void 만드는_중에_지우면_워커의_다음_요청은_404이고_프로필_캐릭터는_고른_목소리를_준다() throws Exception {
 		long me = USERS.incrementAndGet();

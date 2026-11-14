@@ -94,6 +94,15 @@ public class ImageStorage {
 		return "users/" + userId + "/character/photo";
 	}
 
+	// 내 목소리 원본 녹음(보관)과 워커가 만든 미리 듣기(characters.md "내 목소리"). ext는 wav 또는 m4a
+	public static String voiceCloneSampleKey(long userId, String ext) {
+		return "users/" + userId + "/voice/sample." + ext;
+	}
+
+	public static String voiceClonePreviewKey(long userId) {
+		return "users/" + userId + "/voice/preview.wav";
+	}
+
 	// 파일 내용과 올릴 때 적은 Content-Type
 	public record StoredObject(byte[] bytes, String contentType) {
 	}

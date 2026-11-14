@@ -36,9 +36,11 @@ public class InboxService {
 
 	// 새 소식 표시를 "마지막으로 본 시각"으로 정하는 기능과 그 알림 종류.
 	// 카드 영상은 앱의 컨텐츠 화면(예전 "만화")에 함께 있어 comics 점에 넣는다(inbox.md 4장 "새 푸시가 생기면 그 기능 화면에 점").
+	// 내 목소리는 프로필 캐릭터 화면에서 만들어 profileCharacter 점에 넣는다(초안).
 	private static final Map<String, List<String>> SEEN_KINDS = Map.of("cards", List.of("CARDS_CREATED"), "comics",
 			List.of("COMIC_DONE", "COMIC_FAILED", "VIDEO_DONE", "VIDEO_FAILED"), "profileCharacter",
-			List.of("PROFILE_CHARACTER_READY", "PROFILE_CHARACTER_FAILED"), "rooms", List.of("ROOM_DISBANDED"));
+			List.of("PROFILE_CHARACTER_READY", "PROFILE_CHARACTER_FAILED", "VOICE_CLONE_READY", "VOICE_CLONE_FAILED"),
+			"rooms", List.of("ROOM_DISBANDED"));
 	private static final Set<String> BADGE_KINDS = Set.of("cards", "comics", "profileCharacter", "friends", "rooms",
 			"inbox");
 
