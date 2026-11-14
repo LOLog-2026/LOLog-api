@@ -61,6 +61,21 @@ class BlogFetcherTests {
 	}
 
 	@Test
+	void 두_번_감싼_제목의_HTML_글자를_푼다() {
+		// 티스토리 RSS 그대로(11-14 notice.tistory.com): XML을 풀어도 &lsquo;가 남는다
+		Feed feed = FeedParser.parse("""
+				<rss><channel><title>A&amp;amp;B 블로그</title>
+				<item><title>더 깔끔해진 &amp;lsquo;장소&amp;rsquo; 기능</title><link>https://x/1</link></item>
+				<item><title>글감 첨부&amp;nbsp;기능 종료</title><link>https://x/2</link></item>
+				<item><title>그냥 제목 &amp; 보통</title><link>https://x/3</link></item></channel></rss>
+				""".getBytes(StandardCharsets.UTF_8));
+		assertThat(feed.title()).isEqualTo("A&B 블로그");
+		assertThat(feed.items().get(0).title()).isEqualTo("더 깔끔해진 \u2018장소\u2019 기능");
+		assertThat(feed.items().get(1).title()).isEqualTo("글감 첨부 기능 종료");
+		assertThat(feed.items().get(2).title()).isEqualTo("그냥 제목 & 보통");
+	}
+
+	@Test
 	void HTML을_글로_바꾼다() {
 		assertThat(FeedParser.toText("<div>안녕&nbsp;하세요</div><p>둘째<br/>셋째</p><style>p{}</style>"))
 			.isEqualTo("안녕 하세요\n\n둘째\n셋째");
