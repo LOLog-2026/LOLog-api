@@ -107,10 +107,10 @@ for s in data.get("results", []):
 		fi
 		count=$((count + 1))
 	done <<< "$rows"
-	echo "$query: $count개"
+	echo "${query}: ${count}개"
 	added=$((added + count))
 	# Freesound API 요청 한도(분당 60회)에 걸리지 않게 쉰다.
 	sleep 1
 done < <(catalog)
 
-echo "모두 $added개를 넣었습니다."
+echo "모두 ${added}개를 넣었습니다."
