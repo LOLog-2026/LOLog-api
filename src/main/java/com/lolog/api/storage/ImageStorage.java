@@ -81,6 +81,11 @@ public class ImageStorage {
 		return "defaults/characters/" + id + "_voice.wav";
 	}
 
+	// 쇼츠 효과음·배경음(sounds.md 5장 저장). 서비스가 모아 둔 공용 파일이다.
+	public static String soundKey(long id) {
+		return "defaults/sounds/" + id + ".ogg";
+	}
+
 	// 프로필 캐릭터 그림(768 PNG), 썸네일(256 PNG), 원본 사진(그림을 받거나 실패하면 바로 지움). characters.md 3장
 	public static String profileCharacterKey(long userId) {
 		return "users/" + userId + "/character/avatar.png";
