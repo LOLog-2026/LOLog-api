@@ -467,7 +467,7 @@ class BlogApiTests {
 	}
 
 	@Test
-	void 주기적으로_읽으면_새_글과_새로_고른_카테고리_글만_가져온다() throws Exception {
+	void 주기적으로_읽으면_새_글만_가져오고_더한_카테고리는_바로_가져온다() throws Exception {
 		String one = item("p1", "하나", "일상", "Sat, 01 Nov 2026 10:00:00 +0900", "하나");
 		String food = item("p2", "음식", "음식", "Sun, 02 Nov 2026 10:00:00 +0900", "음식");
 		String path = blog(rss("주기 블로그", one, food));
@@ -479,13 +479,85 @@ class BlogApiTests {
 		PAGES.put(path + "/rss.xml", rss("주기 블로그", three, food, one));
 		json(patch("/api/blogs/" + blogId), user, Map.of("categories", List.of("일상", "음식"))).andExpect(status().isOk())
 			.andExpect(jsonPath("$.categories.length()").value(2));
-		assertThat(poller.poll(blogId)).isEqualTo(2);
+		// 더한 카테고리(음식) 글은 PATCH에서 바로 가져온다.
+		assertThat(jdbc.queryForObject("select count(*) from blog_posts where guid = 'p2' and user_id = ? and not skipped",
+				Long.class, user)).isEqualTo(1);
+		assertThat(poller.poll(blogId)).isEqualTo(1);
 		// 다시 읽어도 같은 글은 가져오지 않는다.
 		assertThat(poller.poll(blogId)).isZero();
 		call(get("/api/blogs/" + blogId + "/posts").param("size", "2"), user)
 			.andExpect(jsonPath("$.posts[0].title").value("셋"))
 			.andExpect(jsonPath("$.posts[1].title").value("음식"))
 			.andExpect(jsonPath("$.nextCursor").exists());
+	}
+
+	private static String dated(String guid, String category, int day) {
+		return item(guid, guid, category, "%s, %02d Nov 2026 10:00:00 +0900".formatted(
+				java.time.LocalDate.of(2026, 11, day).getDayOfWeek().getDisplayName(java.time.format.TextStyle.SHORT,
+						java.util.Locale.ENGLISH), day), guid);
+	}
+
+	private List<String> imported(long blogId) {
+		return jdbc.queryForList("select guid from blog_posts where source_id = ? and not skipped order by guid", String.class,
+				blogId);
+	}
+
+	@Test
+	void 연결하면_카테고리마다_최근_글_3개만_가져오고_옛_글은_다시_읽어도_안_가져온다() throws Exception {
+		// 일상 5개(d1~d5), 여행 4개(t1~t4). t4는 일상에도 들어 있다.
+		String path = blog(rss("세 개 블로그", dated("d1", "일상", 1), dated("d2", "일상", 2), dated("t1", "여행", 3),
+				dated("d3", "일상", 4), dated("t2", "여행", 5), dated("d4", "일상", 6), dated("t3", "여행", 7),
+				dated("d5", "일상", 8), item("t4", "t4", "여행</category><category>일상", "Mon, 09 Nov 2026 10:00:00 +0900", "t4")));
+		long user = USERS.incrementAndGet();
+		long blogId = read(json(post("/api/blogs"), user, Map.of("url", feedOf(path), "categories", List.of("일상", "여행")))
+			.andExpect(status().isCreated())).get("id").asLong();
+		// 일상 최근 3개(t4, d5, d4) + 여행 최근 3개(t4, t3, t2). 같이 든 t4는 한 번
+		assertThat(imported(blogId)).containsExactly("d4", "d5", "t2", "t3", "t4");
+		call(get("/api/blogs/" + blogId + "/posts"), user).andExpect(jsonPath("$.posts.length()").value(5));
+		// 옛 글은 guid만 적어 둬서 다음에 읽어도 새 글로 잡히지 않는다.
+		// d1·d2·d3·t1
+		assertThat(jdbc.queryForObject("select count(*) from blog_posts where source_id = ? and skipped", Long.class, blogId))
+			.isEqualTo(4);
+		assertThat(poller.poll(blogId)).isZero();
+		assertThat(jdbc.queryForObject("select count(*) from texts where user_id = ?", Long.class, user)).isEqualTo(5);
+	}
+
+	@Test
+	void 카테고리를_안_고르면_블로그_전체에서_최근_3개이고_4개부터는_고를_수_없다() throws Exception {
+		String path = blog(rss("전체 블로그", dated("a1", "일상", 1), dated("a2", null, 2), dated("a3", "여행", 3),
+				dated("a4", "음식", 4), dated("a5", "일상", 5)));
+		long user = USERS.incrementAndGet();
+		json(post("/api/blogs"), user, Map.of("url", feedOf(path), "categories", List.of("a", "b", "c", "d")))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.field").value("categories"));
+		long blogId = read(json(post("/api/blogs"), user, Map.of("url", feedOf(path), "categories", List.of()))
+			.andExpect(status().isCreated())).get("id").asLong();
+		assertThat(imported(blogId)).containsExactly("a3", "a4", "a5");
+		json(patch("/api/blogs/" + blogId), user, Map.of("categories", List.of("a", "b", "c", "d")))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.field").value("categories"));
+	}
+
+	@Test
+	void 카테고리를_더하면_더한_카테고리마다_최근_3개를_바로_가져온다() throws Exception {
+		String path = blog(rss("더하기 블로그", dated("f1", "음식", 1), dated("f2", "음식", 2), dated("f3", "음식", 3),
+				dated("f4", "음식", 4), dated("g1", "일상", 5)));
+		long user = USERS.incrementAndGet();
+		long blogId = read(json(post("/api/blogs"), user, Map.of("url", feedOf(path), "categories", List.of("일상")))
+			.andExpect(status().isCreated())).get("id").asLong();
+		assertThat(imported(blogId)).containsExactly("g1");
+
+		json(patch("/api/blogs/" + blogId), user, Map.of("categories", List.of("일상", "음식"))).andExpect(status().isOk());
+		assertThat(imported(blogId)).containsExactly("f2", "f3", "f4", "g1");
+		assertThat(poller.poll(blogId)).isZero();
+		// 빼기만 하면 피드를 읽지 않고, 다시 더해도 이미 가져온 글은 두 번 가져오지 않는다.
+		PAGES.remove(path + "/rss.xml");
+		json(patch("/api/blogs/" + blogId), user, Map.of("categories", List.of("일상"))).andExpect(status().isOk());
+		// 더할 때 피드를 받지 못하면 바꾸지 않는다.
+		json(patch("/api/blogs/" + blogId), user, Map.of("categories", List.of("일상", "음식")))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("INVALID_BLOG"));
+		call(get("/api/blogs"), user).andExpect(jsonPath("$.blogs[0].categories.length()").value(1));
 	}
 
 	@Test
