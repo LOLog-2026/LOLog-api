@@ -34,7 +34,8 @@ public class ProfileCharacterService {
 
 	private static final Logger log = LoggerFactory.getLogger(ProfileCharacterService.class);
 
-	static final long MAX_PHOTO_BYTES = 10L * 1024 * 1024;
+	// Nginx 본문 한도(5MB, deployment.md 2장)에 맞춘다. 넘으면 Nginx가 먼저 HTML 413을 줘서 앱이 오류를 읽지 못한다(characters.md 4장, 정함 11-14).
+	static final long MAX_PHOTO_BYTES = 5L * 1024 * 1024;
 	static final int DAILY_LIMIT = 3;
 	static final int AVATAR_SIZE = 768;
 	static final int THUMB_SIZE = 256;
