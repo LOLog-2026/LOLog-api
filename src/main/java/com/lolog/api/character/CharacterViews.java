@@ -50,17 +50,24 @@ public class CharacterViews {
 
 	public ProfileCharacterService.ProfileCharacterResponse profileResponse(long userId) {
 		List<ProfileCharacterService.ProfileCharacterResponse> found = jdbc.query("""
-				select character_status, character_thumb_key, character_updated_at, character_voice from user_profiles
-				where user_id = :id
+				select character_status, character_thumb_key, character_updated_at, character_voice, voice_clone_status,
+				       voice_clone_preview_key, voice_clone_fail_reason, voice_clone_share_friends
+				from user_profiles where user_id = :id
 				""", Map.of("id", userId), (rs, n) -> {
 			String status = rs.getString("character_status");
 			if (status == null) {
 				return null;
 			}
 			String thumb = rs.getString("character_thumb_key");
+			// 내 목소리. 만든 적이 없으면 null(정함 11-14). previewUrl은 미리 듣기 wav의 10분 서명 주소
+			String cloneStatus = rs.getString("voice_clone_status");
+			String preview = rs.getString("voice_clone_preview_key");
+			VoiceCloneService.VoiceCloneView clone = cloneStatus == null ? null
+					: new VoiceCloneService.VoiceCloneView(cloneStatus, preview == null ? null : url(preview),
+							rs.getString("voice_clone_fail_reason"), rs.getBoolean("voice_clone_share_friends"));
 			return new ProfileCharacterService.ProfileCharacterResponse(status,
 					thumb == null ? null : storage.presignedUrl(thumb).toString(),
-					rs.getObject("character_updated_at", OffsetDateTime.class), rs.getString("character_voice"));
+					rs.getObject("character_updated_at", OffsetDateTime.class), rs.getString("character_voice"), clone);
 		});
 		return found.isEmpty() ? null : found.getFirst();
 	}

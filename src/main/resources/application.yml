@@ -40,3 +40,7 @@ lolog:
   # 비어 있으면 푸시만 끄고 서버는 뜬다. 경로가 있는데 파일을 읽지 못하면 서버가 뜨지 않는다.
   fcm:
     credentials-path: ${FCM_CREDENTIALS_PATH:}
+  # 내 목소리 작업을 lolog:video(kind "voice")에 넣을지(characters.md "내 목소리").
+  # ai 워커가 kind로 나누기 전에는 쇼츠로 잘못 처리해서 기본은 끈다. 꺼져 있으면 내 목소리 만들기는 503 VOICE_CLONE_UNAVAILABLE이다.
+  voice-clone:
+    queue-enabled: ${VOICE_CLONE_QUEUE_ENABLED:false}

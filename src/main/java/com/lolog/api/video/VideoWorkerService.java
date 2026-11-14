@@ -233,15 +233,27 @@ public class VideoWorkerService {
 			return result;
 		}
 		characters.sourceCharacters(owner, refs).forEach((ref, c) -> result.put(ref,
-				new SourceCharacter(c.ref(), c.appearance(), c.imageUrl(), voice(ref))));
+				new SourceCharacter(c.ref(), c.appearance(), c.imageUrl(), voice(owner, ref))));
 		return result;
 	}
 
 	// 프로필 캐릭터는 고른 목소리(없으면 null), 기본 화자는 목소리 파일이 있으면 그 id다.
-	private String voice(Ref ref) {
+	// 내 목소리("self")는 다 만든(READY) 때만 보낸다. 친구가 만드는 쇼츠면 친구 쇼츠 동의(③)를 했을 때만이고,
+	// 아니면 null이라 워커가 기본 화자 목소리로 읽는다(characters.md "내 목소리", video.md 6장).
+	private String voice(long owner, Ref ref) {
 		if (CharacterViews.PROFILE.equals(ref.type())) {
-			return jdbc.queryForList("select character_voice from user_profiles where user_id = ?", String.class,
-					Long.parseLong(ref.id())).stream().findFirst().orElse(null);
+			long userId = Long.parseLong(ref.id());
+			return jdbc.query("""
+					select character_voice, voice_clone_status, voice_clone_share_friends from user_profiles where user_id = ?
+					""", (rs, n) -> {
+				String voice = rs.getString("character_voice");
+				if (!"self".equals(voice)) {
+					return voice;
+				}
+				boolean ready = "READY".equals(rs.getString("voice_clone_status"));
+				boolean allowed = userId == owner || rs.getBoolean("voice_clone_share_friends");
+				return ready && allowed ? voice : null;
+			}, userId).stream().filter(java.util.Objects::nonNull).findFirst().orElse(null);
 		}
 		Boolean has = jdbc.queryForObject("select exists (select 1 from default_characters where id = ? and voice_key is not null)",
 				Boolean.class, ref.id());

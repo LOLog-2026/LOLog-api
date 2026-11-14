@@ -84,6 +84,15 @@ public class PushService implements DisposableBean {
 		return Map.of("type", "PROFILE_CHARACTER_FAILED");
 	}
 
+	// 내 목소리 미리 듣기를 받음·만들지 못함(characters.md 푸시, 이름은 정함 11-14). 나머지 키는 없다.
+	public static Map<String, String> voiceCloneReady() {
+		return Map.of("type", "VOICE_CLONE_READY");
+	}
+
+	public static Map<String, String> voiceCloneFailed() {
+		return Map.of("type", "VOICE_CLONE_FAILED");
+	}
+
 	// 친구 요청을 받음(friends.md 3장). 문구는 앱이 만들고, 문구에 넣을 보낸 사람 닉네임을 같이 보낸다.
 	public static Map<String, String> friendRequest(long requestId, String nickname) {
 		return Map.of("type", "FRIEND_REQUEST", "requestId", String.valueOf(requestId), "nickname", nickname);
