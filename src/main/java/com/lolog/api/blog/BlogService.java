@@ -12,6 +12,7 @@ import com.lolog.api.common.ApiException;
 import com.lolog.api.common.PageRequestParams;
 import com.lolog.api.text.TextService;
 import com.lolog.api.text.TextStatus;
+import java.net.URI;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -53,19 +54,20 @@ public class BlogService {
 		this.objectMapper = objectMapper;
 	}
 
-	// 링크 확인 버튼: RSS를 찾아 피드에 나온 카테고리를 돌려준다. 저장하지 않는다.
+	// 링크 확인 버튼: RSS를 찾아 그 플랫폼 방식으로 읽은 카테고리를 돌려준다. 저장하지 않는다.
+	// Medium·velog는 카테고리를 고를 수 없어 빈 목록, WordPress는 REST로 받은 진짜 카테고리 전체다.
 	public BlogCheck check(String url) {
-		Located located = locate(url);
+		String siteUrl = normalize(url);
+		Located located = locate(siteUrl);
+		Categories rule = located.platform().categories(URI.create(siteUrl), located.feed());
 		List<String> categories = new ArrayList<>();
-		for (Item item : located.feed().items()) {
-			for (String category : item.categories()) {
-				// 고를 수 있는 이름(1~30자)만 보여 준다.
-				if (TextServiceLength.of(category) <= MAX_CATEGORY && !categories.contains(category)) {
-					categories.add(category);
-				}
+		for (String category : rule.options(located.feed())) {
+			// 고를 수 있는 이름(1~30자)만 보여 준다.
+			if (TextServiceLength.of(category) <= MAX_CATEGORY && !categories.contains(category)) {
+				categories.add(category);
 			}
 		}
-		return new BlogCheck(located.feedUrl(), categories);
+		return new BlogCheck(located.feedUrl(), categories, located.platform().platform().optimized());
 	}
 
 	// 블로그 등록. 피드에 이미 있는 글(고른 카테고리)도 바로 카드로 만든다.
@@ -80,35 +82,43 @@ public class BlogService {
 		if (located.feedUrl().length() > MAX_URL) {
 			throw invalidBlog("RSS 주소가 너무 깁니다.");
 		}
+		// WordPress는 여기서 REST로 카테고리 목록을 받아 온다. 트랜잭션 밖에서 받는다.
+		Categories rule = located.platform().categories(URI.create(siteUrl), located.feed());
+		requireSelectable(rule, categories);
 		Boolean exists = jdbc.queryForObject("select exists (select 1 from blog_sources where user_id = ? and feed_url = ?)",
 				Boolean.class, userId, located.feedUrl());
 		if (Boolean.TRUE.equals(exists)) {
 			throw exists();
 		}
 		String title = cut(located.feed().title(), MAX_BLOG_TITLE);
-		return tx.execute(status -> save(userId, siteUrl, title, categories, located));
+		return tx.execute(status -> save(userId, siteUrl, title, categories, located, rule));
 	}
 
-	private Blog save(long userId, String siteUrl, String title, List<String> categories, Located located) {
+	private Blog save(long userId, String siteUrl, String title, List<String> categories, Located located,
+			Categories rule) {
+		Platform platform = located.platform().platform();
 		long id;
 		try {
 			id = jdbc.queryForObject("""
-					insert into blog_sources (user_id, site_url, title, feed_url, categories) values (?, ?, ?, ?, ?::jsonb)
-					returning id
-					""", Long.class, userId, siteUrl, title, located.feedUrl(), objectMapper.writeValueAsString(categories));
+					insert into blog_sources (user_id, site_url, title, feed_url, platform, categories)
+					values (?, ?, ?, ?, ?, ?::jsonb) returning id
+					""", Long.class, userId, siteUrl, title, located.feedUrl(), platform.name(),
+					objectMapper.writeValueAsString(categories));
 		}
 		catch (DuplicateKeyException e) {
 			throw exists();
 		}
-		importPosts(id, userId, title, categories, located.feed());
-		return new Blog(id, siteUrl, title, categories);
+		importPosts(id, userId, title, categories, located.feed(), located.platform(), rule);
+		return new Blog(id, siteUrl, title, categories, platform.optimized());
 	}
 
 	@Transactional(readOnly = true)
 	public List<Blog> list(long userId) {
-		return jdbc.query("select id, site_url, title, categories::text from blog_sources where user_id = ? order by id",
+		return jdbc.query(
+				"select id, site_url, title, platform, categories::text from blog_sources where user_id = ? order by id",
 				(rs, n) -> new Blog(rs.getLong("id"), rs.getString("site_url"), rs.getString("title"),
-						read(rs.getString("categories"))), userId);
+						read(rs.getString("categories")), Platform.valueOf(rs.getString("platform")).optimized()),
+				userId);
 	}
 
 	// 가져올 카테고리를 바꾼다. 새로 고른 카테고리의 피드 글은 다음에 읽을 때 카드로 만든다.
@@ -118,13 +128,21 @@ public class BlogService {
 			throw ApiException.invalid("categories", "categories가 필요해요.");
 		}
 		List<String> categories = categories(requested);
-		int updated = jdbc.update("update blog_sources set categories = ?::jsonb where id = ? and user_id = ?",
-				objectMapper.writeValueAsString(categories), id, userId);
-		if (updated == 0) {
+		List<Platform> found = jdbc.query("select platform from blog_sources where id = ? and user_id = ? for update",
+				(rs, n) -> Platform.valueOf(rs.getString("platform")), id, userId);
+		if (found.isEmpty()) {
 			throw notFound();
 		}
+		Platform platform = found.getFirst();
+		// 카테고리를 고를 수 없는지는 플랫폼만으로 정해진다(Medium·velog). 피드·REST를 부르지 않는다.
+		if (!platform.categorySelectable()) {
+			requireSelectable(Categories.none(), categories);
+		}
+		jdbc.update("update blog_sources set categories = ?::jsonb where id = ?", objectMapper.writeValueAsString(categories),
+				id);
 		return jdbc.queryForObject("select id, site_url, title from blog_sources where id = ?",
-				(rs, n) -> new Blog(rs.getLong("id"), rs.getString("site_url"), rs.getString("title"), categories), id);
+				(rs, n) -> new Blog(rs.getLong("id"), rs.getString("site_url"), rs.getString("title"), categories,
+						platform.optimized()), id);
 	}
 
 	// 연결 끊기: blog_sources 줄만 지운다. 가져온 글(blog_posts)은 source_id만 비워져 남고, 만든 카드도 남는다.
@@ -168,7 +186,8 @@ public class BlogService {
 	// 피드의 글 중 고른 카테고리(비면 전부)의 새 글을 저장하고 카드 작업을 큐에 넣는다. 넣은 글 수를 돌려준다.
 	// 오래된 글부터 넣어서 가져온 글 목록(ID 내림차순)이 최신 글부터 보이게 한다.
 	@Transactional
-	public int importPosts(long sourceId, long userId, String blogTitle, List<String> categories, Feed feed) {
+	public int importPosts(long sourceId, long userId, String blogTitle, List<String> categories, Feed feed,
+			BlogPlatform platform, Categories rule) {
 		int added = 0;
 		List<Item> items = new ArrayList<>(feed.items());
 		// 피드는 보통 최신 글이 위라 먼저 뒤집고, 날짜가 있으면 날짜순으로 맞춘다(날짜 없는 글은 앞, 같은 날짜는 그대로).
@@ -176,7 +195,7 @@ public class BlogService {
 		items.sort(java.util.Comparator.comparing(Item::publishedAt,
 				java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder())));
 		for (Item item : items) {
-			String category = matched(item, categories);
+			String category = rule.matched(item, categories);
 			if (category == null && !categories.isEmpty()) {
 				continue;
 			}
@@ -194,7 +213,7 @@ public class BlogService {
 			if (inserted.isEmpty()) {
 				continue;
 			}
-			String body = FeedParser.toText(item.body());
+			String body = FeedParser.toText(platform.body(item));
 			boolean truncated = TextServiceLength.of(body) > TextService.MAX_BODY;
 			if (truncated) {
 				body = TextServiceLength.head(body, TextService.MAX_BODY);
@@ -215,20 +234,20 @@ public class BlogService {
 
 	// 주기적으로 읽을 때: 피드를 받는 사이 연결을 끊었으면 넣지 않는다. 블로그 줄을 잠가 끊기와 엇갈리지 않게 한다.
 	@Transactional
-	public int importIfConnected(long sourceId, long userId, String blogTitle, List<String> categories, Feed feed) {
+	public int importIfConnected(long sourceId, long userId, String blogTitle, List<String> categories, Feed feed,
+			BlogPlatform platform, Categories rule) {
 		List<Long> locked = jdbc.queryForList("select id from blog_sources where id = ? for update", Long.class, sourceId);
 		if (locked.isEmpty()) {
 			return 0;
 		}
-		return importPosts(sourceId, userId, blogTitle, categories, feed);
+		return importPosts(sourceId, userId, blogTitle, categories, feed, platform, rule);
 	}
 
-	// 글의 카테고리 중 고른 것과 같은 첫 이름. 고른 것이 없으면(전부 받음) 글의 첫 카테고리.
-	private static String matched(Item item, List<String> categories) {
-		if (categories.isEmpty()) {
-			return item.categories().isEmpty() ? null : item.categories().getFirst();
+	// Medium·velog처럼 카테고리가 없는 블로그에 카테고리를 고르면 거절한다(초안, texts.md 4장 "플랫폼별 카테고리").
+	private static void requireSelectable(Categories rule, List<String> categories) {
+		if (!rule.selectable() && !categories.isEmpty()) {
+			throw ApiException.invalid("categories", "이 블로그는 카테고리를 고를 수 없어요.");
 		}
-		return item.categories().stream().filter(categories::contains).findFirst().orElse(null);
 	}
 
 	// 1~30자, 앞뒤 공백을 뺀 값. 같은 이름(대소문자 무시)은 두 번 넣지 못한다.
@@ -252,9 +271,10 @@ public class BlogService {
 		return result;
 	}
 
+	// url은 normalize한 주소
 	private Located locate(String url) {
 		try {
-			return locator.locate(normalize(url));
+			return locator.locate(url);
 		}
 		catch (FetchException e) {
 			throw invalidBlog(e.getMessage());

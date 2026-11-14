@@ -13,7 +13,8 @@ public final class BlogDtos {
 	public record BlogCheckRequest(String url) {
 	}
 
-	public record BlogCheck(String feedUrl, List<String> categories) {
+	// optimized: 따로 맞춘 플랫폼(5개)이면 true, Other면 false(정함 11-14). 플랫폼 이름은 넣지 않는다.
+	public record BlogCheck(String feedUrl, List<String> categories, boolean optimized) {
 	}
 
 	public record BlogCreateRequest(String url, List<String> categories) {
@@ -22,8 +23,8 @@ public final class BlogDtos {
 	public record BlogUpdateRequest(List<String> categories) {
 	}
 
-	// 블로그 응답 모양(정함 11-12). title은 RSS channel의 title이다.
-	public record Blog(Long id, String siteUrl, String title, List<String> categories) {
+	// 블로그 응답 모양(정함 11-12, optimized는 11-14). title은 RSS channel의 title이다.
+	public record Blog(Long id, String siteUrl, String title, List<String> categories, boolean optimized) {
 	}
 
 	public record BlogList(List<Blog> blogs) {

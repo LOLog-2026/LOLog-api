@@ -209,8 +209,120 @@ class BlogApiTests {
 			// 같은 이름은 한 번, 30자가 넘는 이름은 고를 수 없어 빠진다.
 			.andExpect(jsonPath("$.categories.length()").value(2))
 			.andExpect(jsonPath("$.categories[0]").value("일상"))
-			.andExpect(jsonPath("$.categories[1]").value("여행"));
+			.andExpect(jsonPath("$.categories[1]").value("여행"))
+			// 따로 맞추지 않은 블로그(Other)
+			.andExpect(jsonPath("$.optimized").value(false));
 		assertThat(jdbc.queryForObject("select count(*) from blog_sources where user_id = ?", Long.class, user)).isZero();
+	}
+
+	// 플랫폼 피드: 가짜 블로그는 127.0.0.1이라 주소로는 Other이고, 피드 generator로 플랫폼을 알아본다.
+	static String platformRss(String generator, String link, String... items) {
+		return """
+				<?xml version="1.0" encoding="UTF-8"?>
+				<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>플랫폼 블로그</title>
+				<link>%s</link><generator>%s</generator>%s</channel></rss>
+				""".formatted(link, generator, String.join("", items));
+	}
+
+	static String categorized(String guid, String body, String... categories) {
+		StringBuilder cats = new StringBuilder();
+		for (String c : categories) {
+			cats.append("<category><![CDATA[").append(c).append("]]></category>");
+		}
+		return """
+				<item><title>%s</title><link>%s/post/%s</link><guid>%s</guid>%s
+				<description>요약</description><content:encoded><![CDATA[%s]]></content:encoded></item>
+				""".formatted(guid, base(), guid, guid, cats, body);
+	}
+
+	private String category(String guid, long userId) {
+		return jdbc.queryForObject("select category from blog_posts where guid = ? and user_id = ?", String.class, guid,
+				userId);
+	}
+
+	@Test
+	void 티스토리는_상위_카테고리를_고르면_하위_글도_가져온다() throws Exception {
+		String path = blog(platformRss("TISTORY", base() + "/t", categorized("t1", "하위 글", "여행/제주"),
+				categorized("t2", "다른 글", "일상"), categorized("t3", "상위 글", "여행")));
+		long user = USERS.incrementAndGet();
+		json(post("/api/blogs/check"), user, Map.of("url", feedOf(path))).andExpect(status().isOk())
+			.andExpect(jsonPath("$.optimized").value(true))
+			.andExpect(jsonPath("$.categories.length()").value(3))
+			.andExpect(jsonPath("$.categories[0]").value("여행"))
+			.andExpect(jsonPath("$.categories[1]").value("여행/제주"))
+			.andExpect(jsonPath("$.categories[2]").value("일상"));
+
+		json(post("/api/blogs"), user, Map.of("url", feedOf(path), "categories", List.of("여행")))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.optimized").value(true));
+		assertThat(jdbc.queryForObject("select platform from blog_sources where user_id = ?", String.class, user))
+			.isEqualTo("TISTORY");
+		assertThat(category("t1", user)).isEqualTo("여행/제주");
+		assertThat(category("t3", user)).isEqualTo("여행");
+		assertThat(jdbc.queryForObject("select count(*) from blog_posts where guid = 't2' and user_id = ?", Long.class, user))
+			.isZero();
+		// 본문은 content:encoded
+		assertThat(messages(textOf("t1", user)).getFirst().get("body").asString()).isEqualTo("하위 글");
+		call(get("/api/blogs"), user).andExpect(jsonPath("$.blogs[0].optimized").value(true));
+	}
+
+	@Test
+	void Medium은_카테고리를_고를_수_없고_글을_전부_받는다() throws Exception {
+		String path = blog(platformRss("Medium", base() + "/m", categorized("m1", "첫 글", "data-engineering"),
+				categorized("m2", "둘째 글")));
+		long user = USERS.incrementAndGet();
+		json(post("/api/blogs/check"), user, Map.of("url", feedOf(path))).andExpect(status().isOk())
+			.andExpect(jsonPath("$.categories.length()").value(0))
+			.andExpect(jsonPath("$.optimized").value(true));
+		json(post("/api/blogs"), user, Map.of("url", feedOf(path), "categories", List.of("data-engineering")))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+			.andExpect(jsonPath("$.field").value("categories"));
+
+		long blogId = read(json(post("/api/blogs"), user, Map.of("url", feedOf(path), "categories", List.of()))
+			.andExpect(status().isCreated())).get("id").asLong();
+		assertThat(jdbc.queryForObject("select count(*) from blog_posts where source_id = ?", Long.class, blogId)).isEqualTo(2);
+		// 태그를 카테고리로 적지 않는다.
+		assertThat(category("m1", user)).isNull();
+		json(patch("/api/blogs/" + blogId), user, Map.of("categories", List.of("data-engineering")))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.field").value("categories"));
+		json(patch("/api/blogs/" + blogId), user, Map.of("categories", List.of()))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.optimized").value(true));
+	}
+
+	@Test
+	void WordPress는_REST로_받은_진짜_카테고리만_본다() throws Exception {
+		String path = "/wp" + BLOGS.incrementAndGet();
+		PAGES.put(path + "/feed/", platformRss("https://wordpress.org/?v=7.2", base() + path + "/",
+				categorized("w1", "<p>개발 글</p>", "Development", "7.2"), categorized("w2", "태그만", "development")));
+		PAGES.put(path + "/wp-json/wp/v2/categories", """
+				[{"name": "Development"}, {"name": "News &amp; Events"}]
+				""");
+		long user = USERS.incrementAndGet();
+		// 최근 글에 없는 카테고리(News & Events)까지 나오고 태그(7.2, development)는 빠진다.
+		json(post("/api/blogs/check"), user, Map.of("url", base() + path + "/feed/")).andExpect(status().isOk())
+			.andExpect(jsonPath("$.optimized").value(true))
+			.andExpect(jsonPath("$.categories.length()").value(2))
+			.andExpect(jsonPath("$.categories[0]").value("Development"))
+			.andExpect(jsonPath("$.categories[1]").value("News & Events"));
+
+		long blogId = read(json(post("/api/blogs"), user,
+				Map.of("url", base() + path + "/feed/", "categories", List.of("Development")))
+			.andExpect(status().isCreated())).get("id").asLong();
+		assertThat(jdbc.queryForObject("select platform from blog_sources where id = ?", String.class, blogId))
+			.isEqualTo("WORDPRESS");
+		assertThat(category("w1", user)).isEqualTo("Development");
+		assertThat(messages(textOf("w1", user)).getFirst().get("body").asString()).isEqualTo("개발 글");
+		assertThat(jdbc.queryForObject("select count(*) from blog_posts where guid = 'w2' and user_id = ?", Long.class, user))
+			.isZero();
+
+		// REST를 받지 못하면 <category>를 그대로 쓴다.
+		PAGES.remove(path + "/wp-json/wp/v2/categories");
+		json(post("/api/blogs/check"), user, Map.of("url", base() + path + "/feed/")).andExpect(status().isOk())
+			.andExpect(jsonPath("$.categories.length()").value(3))
+			.andExpect(jsonPath("$.categories[1]").value("7.2"));
 	}
 
 	@Test

@@ -22,16 +22,25 @@ import org.w3c.dom.NodeList;
 public final class FeedParser {
 
 	private static final String ATOM = "http://www.w3.org/2005/Atom";
+	private static final String CONTENT = "http://purl.org/rss/1.0/modules/content/";
 
 	private FeedParser() {
 	}
 
-	public record Feed(String title, List<Item> items) {
+	// link는 블로그 첫 화면 주소(RSS channel의 link, Atom feed의 link), generator는 피드를 만든 프로그램(플랫폼 알아보기용)
+	public record Feed(String title, String link, String generator, List<Item> items) {
 	}
 
-	// 본문(body)은 HTML 그대로다. 카드로 만들 때 toText로 벗긴다.
-	public record Item(String guid, String title, String link, String body, OffsetDateTime publishedAt,
-			List<String> categories) {
+	// 본문 칸은 HTML 그대로다. 카드로 만들 때 toText로 벗긴다.
+	// RSS는 description과 content:encoded, Atom은 summary를 description에, content를 contentEncoded에 담는다.
+	public record Item(String guid, String title, String link, String description, String contentEncoded,
+			OffsetDateTime publishedAt, List<String> categories) {
+
+		// content:encoded가 있으면 그것, 없으면 description(texts.md 4장, 정함 11-14)
+		public String body() {
+			return contentEncoded != null ? contentEncoded : description;
+		}
+
 	}
 
 	// RSS·Atom이 아니면 null
@@ -76,9 +85,9 @@ public final class FeedParser {
 			String link = text(item, "link");
 			String guid = text(item, "guid");
 			items.add(new Item(guid != null ? guid : link, text(item, "title"), link, text(item, "description"),
-					rfc1123(text(item, "pubDate")), categories));
+					contentEncoded(item), rfc1123(text(item, "pubDate")), categories));
 		}
-		return new Feed(text(channel, "title"), items);
+		return new Feed(text(channel, "title"), text(channel, "link"), text(channel, "generator"), items);
 	}
 
 	private static Feed atom(org.w3c.dom.Element feed) {
@@ -90,15 +99,23 @@ public final class FeedParser {
 			}
 			String link = atomLink(entry);
 			String id = text(entry, "id");
-			String body = text(entry, "content");
-			if (body == null) {
-				body = text(entry, "summary");
-			}
 			String published = text(entry, "published");
-			items.add(new Item(id != null ? id : link, text(entry, "title"), link, body,
-					iso(published != null ? published : text(entry, "updated")), categories));
+			items.add(new Item(id != null ? id : link, text(entry, "title"), link, text(entry, "summary"),
+					text(entry, "content"), iso(published != null ? published : text(entry, "updated")), categories));
 		}
-		return new Feed(text(feed, "title"), items);
+		return new Feed(text(feed, "title"), atomLink(feed), text(feed, "generator"), items);
+	}
+
+	// RSS 확장 칸 content:encoded(글 전체 HTML). 접두어 이름은 피드마다 달라서 네임스페이스로 찾는다.
+	private static String contentEncoded(org.w3c.dom.Element item) {
+		NodeList nodes = item.getChildNodes();
+		for (int i = 0; i < nodes.getLength(); i++) {
+			if (nodes.item(i) instanceof org.w3c.dom.Element e && CONTENT.equals(e.getNamespaceURI())
+					&& "encoded".equals(e.getLocalName())) {
+				return blankToNull(e.getTextContent());
+			}
+		}
+		return null;
 	}
 
 	// rel이 없거나 alternate인 link의 href

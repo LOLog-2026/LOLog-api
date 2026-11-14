@@ -6,11 +6,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.lolog.api.blog.BlogFetcher.FetchException;
 import com.lolog.api.blog.FeedParser.Feed;
 import java.net.InetAddress;
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 
-// 내부 주소 막기(SSRF), 플랫폼 RSS 규칙, 피드 읽기를 서버 없이 확인한다.
+// 내부 주소 막기(SSRF)와 피드 읽기를 서버 없이 확인한다. 플랫폼별 규칙은 BlogPlatformTests가 본다.
 class BlogFetcherTests {
 
 	@Test
@@ -35,15 +34,7 @@ class BlogFetcherTests {
 	}
 
 	@Test
-	void 네이버와_티스토리는_RSS_주소_규칙을_쓴다() {
-		assertThat(FeedLocator.platformFeed(URI.create("https://blog.naver.com/minsu123")))
-			.isEqualTo("https://rss.blog.naver.com/minsu123.xml");
-		assertThat(FeedLocator.platformFeed(URI.create("https://m.blog.naver.com/minsu123/223000000000")))
-			.isEqualTo("https://rss.blog.naver.com/minsu123.xml");
-		assertThat(FeedLocator.platformFeed(URI.create("https://blog.naver.com/PostList.naver?blogId=minsu123&from=x")))
-			.isEqualTo("https://rss.blog.naver.com/minsu123.xml");
-		assertThat(FeedLocator.platformFeed(URI.create("https://hello.tistory.com/12"))).isEqualTo("https://hello.tistory.com/rss");
-		assertThat(FeedLocator.platformFeed(URI.create("https://example.com/blog"))).isNull();
+	void 주소에_https를_붙인다() {
 		assertThat(FeedLocator.normalize("  blog.naver.com/minsu123 ")).isEqualTo("https://blog.naver.com/minsu123");
 	}
 
