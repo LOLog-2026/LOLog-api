@@ -6,10 +6,12 @@ ALTER TABLE user_profiles ADD COLUMN voice_clone_preview_key VARCHAR(255);
 ALTER TABLE user_profiles ADD COLUMN voice_clone_consented_at TIMESTAMPTZ;
 ALTER TABLE user_profiles ADD COLUMN voice_clone_fail_reason VARCHAR(200);
 ALTER TABLE user_profiles ADD COLUMN voice_clone_share_friends BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE user_profiles ADD COLUMN voice_clone_text VARCHAR(200);
+ALTER TABLE user_profiles ADD COLUMN voice_clone_updated_at TIMESTAMPTZ;
 ALTER TABLE user_profiles ADD CONSTRAINT ck_user_profiles_voice_clone_status
     CHECK (voice_clone_status IN ('PROCESSING', 'READY', 'FAILED'));
 
--- 내 목소리 만들기 작업(lolog:video, kind "voice"). AVATAR처럼 회원(user_id)만 가리킨다.
+-- 내 목소리 만들기 작업(lolog:video, kind "voice_clone"). AVATAR처럼 회원(user_id)만 가리킨다.
 ALTER TABLE jobs DROP CONSTRAINT ck_jobs_type;
 ALTER TABLE jobs ADD CONSTRAINT ck_jobs_type
     CHECK (job_type IN ('DETECT', 'COMIC', 'AVATAR', 'VIDEO_VOICE', 'VIDEO_DRAW', 'TEXT', 'VOICE_CLONE'));
@@ -27,3 +29,5 @@ COMMENT ON COLUMN user_profiles.voice_clone_preview_key IS '내 목소리 미리
 COMMENT ON COLUMN user_profiles.voice_clone_consented_at IS '내 목소리 필수 동의 시각';
 COMMENT ON COLUMN user_profiles.voice_clone_fail_reason IS '내 목소리 실패 이유-----실패가 아니면 NULL';
 COMMENT ON COLUMN user_profiles.voice_clone_share_friends IS '친구 쇼츠 동의-----false면 친구가 만드는 쇼츠에서는 기본 화자 목소리';
+COMMENT ON COLUMN user_profiles.voice_clone_text IS '읽은 문장-----녹음에서 사용자가 읽은 글자. 워커의 ref_text';
+COMMENT ON COLUMN user_profiles.voice_clone_updated_at IS '내 목소리 바뀐 시각-----녹음을 올렸거나 상태가 바뀐 시각';

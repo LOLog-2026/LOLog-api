@@ -17,7 +17,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 // 내 목소리(characters.md "내 목소리 (FR-CHAR-05)"). 상태와 파일 키는 user_profiles.voice_clone_*에 있다.
-// 녹음 → PROCESSING + VOICE_CLONE 작업(lolog:video, kind "voice") → 워커가 미리 듣기를 보내면 READY, 실패하면 FAILED.
+// 녹음 → PROCESSING + VOICE_CLONE 작업(lolog:video, kind "voice_clone") → 워커가 미리 듣기를 보내면 READY, 실패하면 FAILED.
 // 원본 녹음은 READY인 동안 계속 보관하고(필수 동의), 워커만 받아 간다. 쇼츠를 만들 때 참조 음성으로 쓴다.
 // 다시 녹음하면 원본을 바꾸고 미리 듣기는 새로 만든다. 실패하면 쓸 수 있는 목소리가 없으니 녹음·미리 듣기를 지운다(초안).
 @Service
@@ -28,6 +28,8 @@ public class VoiceCloneService {
 	// 문장 하나 5~15초면 wav도 2MB 안팎이다. Nginx 한도(5MB) 안으로 둔다(초안).
 	static final long MAX_AUDIO_BYTES = 4L * 1024 * 1024;
 	static final int MAX_FAIL_REASON = 200;
+	// 읽은 문장 글자(voice_clone_text). 문장 목록이 바뀌어도 남게 id가 아니라 글자를 저장한다(정함 11-14).
+	static final int MAX_TEXT = 200;
 	// 최장 녹음 시간. 이 안에 시작해 마지막 묶음이 안 온 녹음이 있으면 녹음 중으로 본다(초안).
 	static final int MAX_RECORDING_HOURS = 3;
 
@@ -58,9 +60,10 @@ public class VoiceCloneService {
 	private record Audio(String ext, String contentType) {
 	}
 
-	// 녹음 올리기·다시 올리기(PUT .../voice-clone). 앱에서 바로 녹음한 wav·m4a 하나와 필수 동의(consent=true).
+	// 녹음 올리기·다시 올리기(PUT .../voice-clone). 앱에서 바로 녹음한 wav·m4a 하나, 읽은 문장(text), 필수 동의(consent=true).
 	@Transactional
-	public ProfileCharacterService.ProfileCharacterResponse upload(long userId, byte[] audio, Boolean consent) {
+	public ProfileCharacterService.ProfileCharacterResponse upload(long userId, byte[] audio, String text,
+			Boolean consent) {
 		if (!publisher.enabled()) {
 			throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "VOICE_CLONE_UNAVAILABLE", "아직 내 목소리를 만들 수 없어요.");
 		}
@@ -76,6 +79,10 @@ public class VoiceCloneService {
 		Audio type = audioType(audio);
 		if (type == null) {
 			throw ApiException.invalid("audio", "wav나 m4a 녹음만 받아요.");
+		}
+		String sentence = text == null ? "" : text.strip();
+		if (sentence.isEmpty() || sentence.codePointCount(0, sentence.length()) > MAX_TEXT) {
+			throw ApiException.invalid("text", "읽은 문장은 1~" + MAX_TEXT + "자예요.");
 		}
 		if (recording(userId)) {
 			throw new ApiException(HttpStatus.CONFLICT, "RECORDING_IN_PROGRESS", "대화를 녹음하는 중에는 만들 수 없어요.");
@@ -94,9 +101,10 @@ public class VoiceCloneService {
 		storage.put(key, audio, type.contentType());
 		jdbc.update("""
 				update user_profiles set voice_clone_status = 'PROCESSING', voice_clone_key = ?, voice_clone_preview_key = null,
-				    voice_clone_fail_reason = null, voice_clone_consented_at = current_timestamp, updated_at = current_timestamp
+				    voice_clone_text = ?, voice_clone_fail_reason = null, voice_clone_consented_at = current_timestamp,
+				    voice_clone_updated_at = current_timestamp, updated_at = current_timestamp
 				where user_id = ?
-				""", key, userId);
+				""", key, sentence, userId);
 		long jobId = jobs.save(Job.voiceClone(userId)).getId();
 		afterCommit(() -> {
 			// 확장자가 바뀌었으면 예전 원본, 그리고 예전 미리 듣기를 지운다.
@@ -124,6 +132,7 @@ public class VoiceCloneService {
 		jdbc.update("""
 				update user_profiles set voice_clone_status = null, voice_clone_key = null, voice_clone_preview_key = null,
 				    voice_clone_consented_at = null, voice_clone_fail_reason = null, voice_clone_share_friends = false,
+				    voice_clone_text = null, voice_clone_updated_at = current_timestamp,
 				    character_voice = case when character_voice = 'self' then null else character_voice end,
 				    updated_at = current_timestamp
 				where user_id = ?
@@ -190,7 +199,8 @@ public class VoiceCloneService {
 		String key = ImageStorage.voiceClonePreviewKey(userId);
 		storage.put(key, wav, "audio/wav");
 		jdbc.update("""
-				update user_profiles set voice_clone_status = 'READY', voice_clone_preview_key = ?, updated_at = current_timestamp
+				update user_profiles set voice_clone_status = 'READY', voice_clone_preview_key = ?,
+				    voice_clone_updated_at = current_timestamp, updated_at = current_timestamp
 				where user_id = ?
 				""", key, userId);
 		jdbc.update("update jobs set status = 'DONE', updated_at = current_timestamp "
@@ -218,7 +228,7 @@ public class VoiceCloneService {
 		}
 		jdbc.update("""
 				update user_profiles set voice_clone_status = 'FAILED', voice_clone_fail_reason = ?, voice_clone_key = null,
-				    voice_clone_preview_key = null,
+				    voice_clone_preview_key = null, voice_clone_text = null, voice_clone_updated_at = current_timestamp,
 				    character_voice = case when character_voice = 'self' then null else character_voice end,
 				    updated_at = current_timestamp
 				where user_id = ?

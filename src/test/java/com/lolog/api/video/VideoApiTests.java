@@ -325,7 +325,7 @@ class VideoApiTests {
 			jdbc.update("""
 					update user_profiles set character_status = 'READY', character_key = 'users/%d/character.png',
 					  character_thumb_key = 'users/%d/character_thumb.png', character_appearance = 'me', character_voice = 'self',
-					  voice_clone_status = 'READY', voice_clone_key = 'users/%d/voice/sample.wav'
+					  voice_clone_status = 'READY', voice_clone_key = 'users/%d/voice/sample.wav', voice_clone_text = '읽은 문장'
 					where user_id = ?
 					""".formatted(id, id, id), id);
 		}
@@ -337,7 +337,8 @@ class VideoApiTests {
 				String.valueOf(me), mine);
 		long myVideo = request(me, mine);
 		internal(get("/internal/videos/" + myVideo + "/source"))
-			.andExpect(jsonPath("$.speakers[0].character.voice").value("self"));
+			.andExpect(jsonPath("$.speakers[0].character.voice").value("self"))
+			.andExpect(jsonPath("$.speakers[0].character.voiceText").value("읽은 문장"));
 
 		// 내 카드에 친구 캐릭터: 친구가 동의하지 않았으면 null
 		long withFriend = card(me);
@@ -346,7 +347,8 @@ class VideoApiTests {
 		long friendVideo = request(me, withFriend);
 		internal(get("/internal/videos/" + friendVideo + "/source"))
 			.andExpect(jsonPath("$.speakers[0].character.ref").value("profile:" + friend))
-			.andExpect(jsonPath("$.speakers[0].character.voice").isEmpty());
+			.andExpect(jsonPath("$.speakers[0].character.voice").isEmpty())
+			.andExpect(jsonPath("$.speakers[0].character.voiceText").isEmpty());
 		jdbc.update("update user_profiles set voice_clone_share_friends = true where user_id = ?", friend);
 		internal(get("/internal/videos/" + friendVideo + "/source"))
 			.andExpect(jsonPath("$.speakers[0].character.voice").value("self"));

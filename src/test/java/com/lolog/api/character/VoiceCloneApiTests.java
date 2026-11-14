@@ -90,6 +90,7 @@ class VoiceCloneApiTests {
 	private static final String INTERNAL = "internal-test-token";
 	private static final long WAIT_MS = 3000;
 	private static final String CLONE = "/api/me/profile/character/voice-clone";
+	private static final String SENTENCE = "오늘은 날씨가 맑아서 산책하기 좋아요.";
 
 	@MockitoBean
 	PushSender sender;
@@ -160,12 +161,19 @@ class VoiceCloneApiTests {
 	}
 
 	private ResultActions upload(long userId, byte[] audio, String consent) throws Exception {
+		return upload(userId, audio, consent, SENTENCE);
+	}
+
+	private ResultActions upload(long userId, byte[] audio, String consent, String text) throws Exception {
 		MockMultipartHttpServletRequestBuilder request = multipart(HttpMethod.PUT, CLONE);
 		if (audio != null) {
 			request.file(new MockMultipartFile("audio", "me.wav", "audio/wav", audio));
 		}
 		if (consent != null) {
 			request.param("consent", consent);
+		}
+		if (text != null) {
+			request.param("text", text);
 		}
 		return mvc.perform(request.header("Authorization", TestTokens.bearer(userId)));
 	}
@@ -188,7 +196,7 @@ class VoiceCloneApiTests {
 	private JsonNode lastMessage(long userId) {
 		return redisTemplate.opsForStream().range("lolog:video", Range.unbounded()).stream()
 			.map(r -> objectMapper.readTree((String) r.getValue().get("payload")))
-			.filter(n -> n.has("kind") && "voice".equals(n.get("kind").asString()) && n.get("userId").asLong() == userId)
+			.filter(n -> n.has("kind") && "voice_clone".equals(n.get("kind").asString()) && n.get("userId").asLong() == userId)
 			.reduce((first, second) -> second)
 			.orElseThrow();
 	}
@@ -221,7 +229,10 @@ class VoiceCloneApiTests {
 		JsonNode message = lastMessage(me.id());
 		long jobId = message.get("jobId").asLong();
 		assertThat(jdbc.queryForObject("select job_type from jobs where id = ?", String.class, jobId)).isEqualTo("VOICE_CLONE");
-		assertThat(message.size()).isEqualTo(3);
+		assertThat(message.size()).isEqualTo(4);
+		assertThat(message.get("text").asString()).isEqualTo(SENTENCE);
+		assertThat(jdbc.queryForObject("select voice_clone_updated_at is not null from user_profiles where user_id = ?",
+				Boolean.class, me.id())).isTrue();
 		assertThat(jdbc.queryForObject("select voice_clone_consented_at is not null from user_profiles where user_id = ?",
 				Boolean.class, me.id())).isTrue();
 
@@ -263,6 +274,10 @@ class VoiceCloneApiTests {
 		upload(me.id(), wav(64), null).andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").value("consent"));
 		upload(me.id(), wav(64), "false").andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").value("consent"));
 		upload(me.id(), null, "true").andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").value("audio"));
+		upload(me.id(), wav(64), "true", null).andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").value("text"));
+		upload(me.id(), wav(64), "true", "  ").andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").value("text"));
+		upload(me.id(), wav(64), "true", "가".repeat(201)).andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.field").value("text"));
 		upload(me.id(), new byte[] { 'I', 'D', '3', 0, 0, 0, 0, 0, 0, 0, 0, 0 }, "true").andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.field").value("audio"));
 		upload(me.id(), wav((int) VoiceCloneService.MAX_AUDIO_BYTES + 1), "true").andExpect(status().isPayloadTooLarge());
