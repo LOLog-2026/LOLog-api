@@ -81,6 +81,11 @@ public class ImageStorage {
 		return "defaults/characters/" + id + "_voice.wav";
 	}
 
+	// 쇼츠 효과음·배경음(sounds.md 5장 저장). 서비스가 모아 둔 공용 파일이다.
+	public static String soundKey(long id) {
+		return "defaults/sounds/" + id + ".ogg";
+	}
+
 	// 프로필 캐릭터 그림(768 PNG), 썸네일(256 PNG), 원본 사진(그림을 받거나 실패하면 바로 지움). characters.md 3장
 	public static String profileCharacterKey(long userId) {
 		return "users/" + userId + "/character/avatar.png";
@@ -92,6 +97,15 @@ public class ImageStorage {
 
 	public static String profilePhotoKey(long userId) {
 		return "users/" + userId + "/character/photo";
+	}
+
+	// 내 목소리 원본 녹음(보관)과 워커가 만든 미리 듣기(characters.md "내 목소리"). ext는 wav 또는 m4a
+	public static String voiceCloneSampleKey(long userId, String ext) {
+		return "users/" + userId + "/voice/sample." + ext;
+	}
+
+	public static String voiceClonePreviewKey(long userId) {
+		return "users/" + userId + "/voice/preview.wav";
 	}
 
 	// 파일 내용과 올릴 때 적은 Content-Type

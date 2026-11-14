@@ -2,6 +2,7 @@ package com.lolog.api.blog;
 
 import com.lolog.api.blog.BlogFetcher.FetchException;
 import com.lolog.api.blog.FeedParser.Feed;
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -23,8 +24,11 @@ public class BlogPoller {
 	private final BlogFetcher fetcher;
 	private final BlogService blogs;
 	private final ObjectMapper objectMapper;
+	private final BlogPlatforms platforms;
 
-	public BlogPoller(JdbcTemplate jdbc, BlogFetcher fetcher, BlogService blogs, ObjectMapper objectMapper) {
+	public BlogPoller(JdbcTemplate jdbc, BlogFetcher fetcher, BlogService blogs, ObjectMapper objectMapper,
+			BlogPlatforms platforms) {
+		this.platforms = platforms;
 		this.jdbc = jdbc;
 		this.fetcher = fetcher;
 		this.blogs = blogs;
@@ -47,7 +51,8 @@ public class BlogPoller {
 	// 블로그 하나를 읽는다. 그사이 연결을 끊었으면 넘어간다.
 	public int poll(long sourceId) {
 		List<Map<String, Object>> rows = jdbc.queryForList(
-				"select user_id, title, feed_url, categories::text as categories from blog_sources where id = ?", sourceId);
+				"select user_id, title, site_url, feed_url, platform, categories::text as categories from blog_sources where id = ?",
+				sourceId);
 		if (rows.isEmpty()) {
 			return 0;
 		}
@@ -61,8 +66,11 @@ public class BlogPoller {
 			List<String> categories = objectMapper.readValue((String) source.get("categories"),
 					new TypeReference<List<String>>() {
 					});
+			// 연결할 때 고른 플랫폼으로 읽는다. WordPress는 여기서 REST로 카테고리 목록을 받는다(트랜잭션 밖).
+			BlogPlatform platform = platforms.get(Platform.valueOf((String) source.get("platform")));
+			Categories rule = platform.categories(URI.create((String) source.get("site_url")), feed);
 			return blogs.importIfConnected(sourceId, ((Number) source.get("user_id")).longValue(),
-					(String) source.get("title"), categories, feed);
+					(String) source.get("title"), categories, feed, platform, rule);
 		}
 		catch (FetchException e) {
 			log.warn("블로그 {}의 피드를 받지 못했습니다: {}", sourceId, e.getMessage());

@@ -6,11 +6,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.lolog.api.blog.BlogFetcher.FetchException;
 import com.lolog.api.blog.FeedParser.Feed;
 import java.net.InetAddress;
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 
-// 내부 주소 막기(SSRF), 플랫폼 RSS 규칙, 피드 읽기를 서버 없이 확인한다.
+// 내부 주소 막기(SSRF)와 피드 읽기를 서버 없이 확인한다. 플랫폼별 규칙은 BlogPlatformTests가 본다.
 class BlogFetcherTests {
 
 	@Test
@@ -35,15 +34,7 @@ class BlogFetcherTests {
 	}
 
 	@Test
-	void 네이버와_티스토리는_RSS_주소_규칙을_쓴다() {
-		assertThat(FeedLocator.platformFeed(URI.create("https://blog.naver.com/minsu123")))
-			.isEqualTo("https://rss.blog.naver.com/minsu123.xml");
-		assertThat(FeedLocator.platformFeed(URI.create("https://m.blog.naver.com/minsu123/223000000000")))
-			.isEqualTo("https://rss.blog.naver.com/minsu123.xml");
-		assertThat(FeedLocator.platformFeed(URI.create("https://blog.naver.com/PostList.naver?blogId=minsu123&from=x")))
-			.isEqualTo("https://rss.blog.naver.com/minsu123.xml");
-		assertThat(FeedLocator.platformFeed(URI.create("https://hello.tistory.com/12"))).isEqualTo("https://hello.tistory.com/rss");
-		assertThat(FeedLocator.platformFeed(URI.create("https://example.com/blog"))).isNull();
+	void 주소에_https를_붙인다() {
 		assertThat(FeedLocator.normalize("  blog.naver.com/minsu123 ")).isEqualTo("https://blog.naver.com/minsu123");
 	}
 
@@ -67,6 +58,21 @@ class BlogFetcherTests {
 		assertThat(feed.items().getFirst().guid()).isEqualTo("https://x/1");
 		assertThat(feed.items().getFirst().publishedAt()).isNull();
 		assertThat(feed.items().getFirst().categories()).containsExactly("일상");
+	}
+
+	@Test
+	void 두_번_감싼_제목의_HTML_글자를_푼다() {
+		// 티스토리 RSS 그대로(11-14 notice.tistory.com): XML을 풀어도 &lsquo;가 남는다
+		Feed feed = FeedParser.parse("""
+				<rss><channel><title>A&amp;amp;B 블로그</title>
+				<item><title>더 깔끔해진 &amp;lsquo;장소&amp;rsquo; 기능</title><link>https://x/1</link></item>
+				<item><title>글감 첨부&amp;nbsp;기능 종료</title><link>https://x/2</link></item>
+				<item><title>그냥 제목 &amp; 보통</title><link>https://x/3</link></item></channel></rss>
+				""".getBytes(StandardCharsets.UTF_8));
+		assertThat(feed.title()).isEqualTo("A&B 블로그");
+		assertThat(feed.items().get(0).title()).isEqualTo("더 깔끔해진 \u2018장소\u2019 기능");
+		assertThat(feed.items().get(1).title()).isEqualTo("글감 첨부 기능 종료");
+		assertThat(feed.items().get(2).title()).isEqualTo("그냥 제목 & 보통");
 	}
 
 	@Test

@@ -34,7 +34,8 @@ public class ProfileCharacterService {
 
 	private static final Logger log = LoggerFactory.getLogger(ProfileCharacterService.class);
 
-	static final long MAX_PHOTO_BYTES = 10L * 1024 * 1024;
+	// Nginx 본문 한도(5MB, deployment.md 2장)에 맞춘다. 넘으면 Nginx가 먼저 HTML 413을 줘서 앱이 오류를 읽지 못한다(characters.md 4장, 정함 11-14).
+	static final long MAX_PHOTO_BYTES = 5L * 1024 * 1024;
 	static final int DAILY_LIMIT = 3;
 	static final int AVATAR_SIZE = 768;
 	static final int THUMB_SIZE = 256;
@@ -48,9 +49,12 @@ public class ProfileCharacterService {
 	private final PushService push;
 	private final CharacterDetacher detacher;
 	private final CharacterViews views;
+	private final VoiceCloneService voiceClones;
 
 	public ProfileCharacterService(JdbcTemplate jdbc, ImageStorage storage, ProfileService profiles, JobRepository jobs,
-			ComicPublisher publisher, PushService push, CharacterDetacher detacher, CharacterViews views) {
+			ComicPublisher publisher, PushService push, CharacterDetacher detacher, CharacterViews views,
+			VoiceCloneService voiceClones) {
+		this.voiceClones = voiceClones;
 		this.jdbc = jdbc;
 		this.storage = storage;
 		this.profiles = profiles;
@@ -62,8 +66,10 @@ public class ProfileCharacterService {
 	}
 
 	// PUT의 응답이자 ProfileResponse의 character. 만든 적이 없거나 지웠으면 null.
-	// voice는 고른 목소리(기본 화자 id), 안 골랐으면 null(FR-CHAR-04).
-	public record ProfileCharacterResponse(String status, String thumbnailUrl, OffsetDateTime updatedAt, String voice) {
+	// voice는 고른 목소리(기본 화자 id 또는 내 목소리 "self"), 안 골랐으면 null(FR-CHAR-04·05).
+	// voiceClone은 내 목소리 상태이고 만든 적이 없으면 null(FR-CHAR-05).
+	public record ProfileCharacterResponse(String status, String thumbnailUrl, OffsetDateTime updatedAt, String voice,
+			VoiceCloneService.VoiceCloneView voiceClone) {
 	}
 
 	private record State(String status, String thumbKey, OffsetDateTime updatedAt) {
@@ -109,8 +115,10 @@ public class ProfileCharacterService {
 	}
 
 	// 지우기. 없어도 204. 내 카드와 친구들 카드의 화자에서 이 캐릭터를 뺀다(이미 만든 만화는 그대로).
+	// 내 목소리도 함께 지운다(characters.md "내 목소리" 보관과 삭제).
 	@Transactional
 	public void delete(long userId) {
+		voiceClones.delete(userId);
 		List<State> found = jdbc.query("select character_status, character_thumb_key, character_updated_at "
 				+ "from user_profiles where user_id = ? for update", (rs, n) -> state(rs), userId);
 		if (found.isEmpty() || found.getFirst().status() == null) {
@@ -203,8 +211,9 @@ public class ProfileCharacterService {
 		push.notify(userId, PushService.profileCharacterFailed());
 	}
 
-	// 프로필 캐릭터 목소리 고르기(초안). 기본 화자 목소리 중 하나이고 null이면 지운다.
+	// 프로필 캐릭터 목소리 고르기(초안). 기본 화자 목소리 중 하나나 내 목소리("self", 정함 11-14)이고 null이면 지운다.
 	// 프로필 캐릭터가 없으면 404 CHARACTER_NOT_FOUND, 없거나 목소리가 없는 기본 화자 id면 400 UNKNOWN_CHARACTER.
+	// "self"는 내 목소리를 다 만들었을 때(READY)만 고를 수 있고, 아니면 409 VOICE_CLONE_NOT_READY(초안).
 	@Transactional
 	public void chooseVoice(long userId, String voice) {
 		// "프로필 캐릭터가 있을 때"는 쓸 수 있는 그림이 있을 때다. 다시 만드는 중·실패여도 예전 그림이 있으면 고를 수 있다.
@@ -213,7 +222,15 @@ public class ProfileCharacterService {
 		if (key.isEmpty() || key.getFirst() == null) {
 			throw new ApiException(HttpStatus.NOT_FOUND, "CHARACTER_NOT_FOUND", "프로필 캐릭터가 없어요.");
 		}
-		if (voice != null) {
+		if ("self".equals(voice)) {
+			String clone = jdbc.queryForObject("select voice_clone_status from user_profiles where user_id = ?",
+					String.class, userId);
+			if (!"READY".equals(clone)) {
+				throw new ApiException(HttpStatus.CONFLICT, "VOICE_CLONE_NOT_READY", "아직 고를 수 있는 내 목소리가 없어요.",
+						"voice");
+			}
+		}
+		else if (voice != null) {
 			Boolean exists = jdbc.queryForObject(
 					"select exists (select 1 from default_characters where id = ? and voice_key is not null)", Boolean.class,
 					voice);

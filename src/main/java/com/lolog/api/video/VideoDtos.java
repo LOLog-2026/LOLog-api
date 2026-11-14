@@ -37,7 +37,8 @@ public final class VideoDtos {
 
 	// ComicSource의 character에 voice를 더한 것. 프로필 캐릭터면 사용자가 고른 목소리(없으면 null),
 	// 기본 화자면 그 화자 id(목소리 파일이 있을 때)다.
-	public record SourceCharacter(String ref, String appearance, String imageUrl, String voice) {
+	// voiceText는 voice가 "self"일 때 읽은 문장(워커의 ref_text), 아니면 null(정함 11-14)
+	public record SourceCharacter(String ref, String appearance, String imageUrl, String voice, String voiceText) {
 	}
 
 }
