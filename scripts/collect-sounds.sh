@@ -15,8 +15,8 @@ set -euo pipefail
 : "${INTERNAL_TOKEN:?INTERNAL_TOKEN이 필요합니다}"
 per_query="${PER_QUERY:-8}"
 
-# 검색어 값(콘티가 고르는 값, ai 콘티 검사와 같아야 함) → 종류, Freesound 검색 글
-# 목록을 바꿀 때는 ai 콘티 검사 목록도 같이 바꾼다(sounds.md 3장).
+# 검색어 값(콘티가 고르는 값) → 종류, Freesound 검색 글. 효과음 24개·배경음 5개(sounds.md 3장, 정함 11-14)
+# ai 레포 src/lolog_ai/sounds.py의 SFX·BGM과 같아야 한다. 목록을 바꿀 때는 둘 다 같이 바꾼다.
 catalog() {
 	cat <<'EOF'
 door_slam	SFX	door slam
@@ -38,8 +38,11 @@ rimshot	SFX	rimshot
 whoosh	SFX	whoosh
 thud	SFX	thud
 sigh	SFX	sigh
+gasp	SFX	gasp surprise
+ding	SFX	ding idea bell
 cafe	SFX	cafe ambience
 classroom	SFX	classroom ambience
+crowd	SFX	crowd street ambience
 bgm_upbeat	BGM	upbeat music loop
 bgm_calm	BGM	calm music loop
 bgm_tense	BGM	tense music loop
