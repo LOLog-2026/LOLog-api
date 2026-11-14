@@ -54,13 +54,13 @@ public class CharacterController {
 	public record VoiceRequest(String voice) {
 	}
 
-	// 내 목소리 녹음 올리기·다시 올리기(초안). multipart audio(wav·m4a) + text(읽은 문장) + consent=true. 응답은 ProfileCharacterResponse
+	// 내 목소리 녹음 올리기·다시 올리기(초안). multipart audio(wav·m4a) + consent=true. 응답은 ProfileCharacterResponse
+	// 녹음 문장은 하나로 정해져 있어 앱이 보내지 않는다(서버가 VoiceCloneService.RECORD_SENTENCE를 저장)
 	@PutMapping("/api/me/profile/character/voice-clone")
 	@ResponseStatus(HttpStatus.ACCEPTED)
 	public ProfileCharacterResponse uploadVoiceClone(@RequestPart(name = "audio", required = false) MultipartFile audio,
-			@RequestParam(required = false) String text, @RequestParam(required = false) Boolean consent)
-			throws IOException {
-		return voiceClones.upload(currentUser.currentUserId(), audio == null ? null : audio.getBytes(), text, consent);
+			@RequestParam(required = false) Boolean consent) throws IOException {
+		return voiceClones.upload(currentUser.currentUserId(), audio == null ? null : audio.getBytes(), consent);
 	}
 
 	// 내 목소리 지우기(초안). 없어도 204. 골랐던 목소리가 "self"면 null로

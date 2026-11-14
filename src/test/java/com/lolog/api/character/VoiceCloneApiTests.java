@@ -90,7 +90,6 @@ class VoiceCloneApiTests {
 	private static final String INTERNAL = "internal-test-token";
 	private static final long WAIT_MS = 3000;
 	private static final String CLONE = "/api/me/profile/character/voice-clone";
-	private static final String SENTENCE = "오늘은 날씨가 맑아서 산책하기 좋아요.";
 
 	@MockitoBean
 	PushSender sender;
@@ -161,9 +160,10 @@ class VoiceCloneApiTests {
 	}
 
 	private ResultActions upload(long userId, byte[] audio, String consent) throws Exception {
-		return upload(userId, audio, consent, SENTENCE);
+		return upload(userId, audio, consent, null);
 	}
 
+	// text는 예전 앱처럼 문장을 보내 보는 경우에만 쓴다(서버는 받지 않고 정해진 문장을 저장한다).
 	private ResultActions upload(long userId, byte[] audio, String consent, String text) throws Exception {
 		MockMultipartHttpServletRequestBuilder request = multipart(HttpMethod.PUT, CLONE);
 		if (audio != null) {
@@ -230,7 +230,9 @@ class VoiceCloneApiTests {
 		long jobId = message.get("jobId").asLong();
 		assertThat(jdbc.queryForObject("select job_type from jobs where id = ?", String.class, jobId)).isEqualTo("VOICE_CLONE");
 		assertThat(message.size()).isEqualTo(4);
-		assertThat(message.get("text").asString()).isEqualTo(SENTENCE);
+		assertThat(message.get("text").asString()).isEqualTo(VoiceCloneService.RECORD_SENTENCE);
+		assertThat(jdbc.queryForObject("select voice_clone_text from user_profiles where user_id = ?", String.class,
+				me.id())).isEqualTo("오늘 친구랑 카페에 갔는데, 주문을 잘못해서 둘이 한참 웃었어요. 그래도 덕분에 즐거운 하루였어요.");
 		assertThat(jdbc.queryForObject("select voice_clone_updated_at is not null from user_profiles where user_id = ?",
 				Boolean.class, me.id())).isTrue();
 		assertThat(jdbc.queryForObject("select voice_clone_consented_at is not null from user_profiles where user_id = ?",
@@ -274,10 +276,6 @@ class VoiceCloneApiTests {
 		upload(me.id(), wav(64), null).andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").value("consent"));
 		upload(me.id(), wav(64), "false").andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").value("consent"));
 		upload(me.id(), null, "true").andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").value("audio"));
-		upload(me.id(), wav(64), "true", null).andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").value("text"));
-		upload(me.id(), wav(64), "true", "  ").andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").value("text"));
-		upload(me.id(), wav(64), "true", "가".repeat(201)).andExpect(status().isBadRequest())
-			.andExpect(jsonPath("$.field").value("text"));
 		upload(me.id(), new byte[] { 'I', 'D', '3', 0, 0, 0, 0, 0, 0, 0, 0, 0 }, "true").andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.field").value("audio"));
 		upload(me.id(), wav((int) VoiceCloneService.MAX_AUDIO_BYTES + 1), "true").andExpect(status().isPayloadTooLarge());
@@ -288,6 +286,14 @@ class VoiceCloneApiTests {
 		sample(me.id()).andExpect(status().isOk()).andExpect(content().contentType("audio/mp4"));
 		assertThat(jdbc.queryForObject("select voice_clone_key from user_profiles where user_id = ?", String.class, me.id()))
 			.isEqualTo("users/" + me.id() + "/voice/sample.m4a");
+	}
+
+	@Test
+	void 앱이_문장을_보내도_정해진_녹음_문장을_저장한다() throws Exception {
+		User me = user(true);
+		upload(me.id(), wav(64), "true", "다른 문장").andExpect(status().isAccepted());
+		assertThat(jdbc.queryForObject("select voice_clone_text from user_profiles where user_id = ?", String.class,
+				me.id())).isEqualTo(VoiceCloneService.RECORD_SENTENCE);
 	}
 
 	@Test

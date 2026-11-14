@@ -28,8 +28,11 @@ public class VoiceCloneService {
 	// 문장 하나 5~15초면 wav도 2MB 안팎이다. Nginx 한도(5MB) 안으로 둔다(초안).
 	static final long MAX_AUDIO_BYTES = 4L * 1024 * 1024;
 	static final int MAX_FAIL_REASON = 200;
-	// 읽은 문장 글자(voice_clone_text). 문장 목록이 바뀌어도 남게 id가 아니라 글자를 저장한다(정함 11-14).
-	static final int MAX_TEXT = 200;
+	// 녹음 문장(characters.md "내 목소리" 녹음, 정함 11-14). 문장이 하나라 앱은 보내지 않고, 받을 때 이 글자를 띄어쓰기·문장부호까지
+	// 그대로 voice_clone_text에 저장한다. 워커가 큐 text·쇼츠 voiceText로 받아 ref_text로 쓴다.
+	// ai 레포 src/lolog_ai/worker/voice_clone.py의 RECORD_SENTENCE, 앱 VOICE_CLONE_SENTENCE와 같아야 한다. 바꾸면 셋 다 바꾼다.
+	// 문장을 바꿔도 예전 녹음은 그때 저장한 글자로 계속 읽힌다.
+	public static final String RECORD_SENTENCE = "오늘 친구랑 카페에 갔는데, 주문을 잘못해서 둘이 한참 웃었어요. 그래도 덕분에 즐거운 하루였어요.";
 	// 최장 녹음 시간. 이 안에 시작해 마지막 묶음이 안 온 녹음이 있으면 녹음 중으로 본다(초안).
 	static final int MAX_RECORDING_HOURS = 3;
 
@@ -60,10 +63,9 @@ public class VoiceCloneService {
 	private record Audio(String ext, String contentType) {
 	}
 
-	// 녹음 올리기·다시 올리기(PUT .../voice-clone). 앱에서 바로 녹음한 wav·m4a 하나, 읽은 문장(text), 필수 동의(consent=true).
+	// 녹음 올리기·다시 올리기(PUT .../voice-clone). 앱에서 바로 녹음한 wav·m4a 하나와 필수 동의(consent=true).
 	@Transactional
-	public ProfileCharacterService.ProfileCharacterResponse upload(long userId, byte[] audio, String text,
-			Boolean consent) {
+	public ProfileCharacterService.ProfileCharacterResponse upload(long userId, byte[] audio, Boolean consent) {
 		if (!publisher.enabled()) {
 			throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "VOICE_CLONE_UNAVAILABLE", "아직 내 목소리를 만들 수 없어요.");
 		}
@@ -79,10 +81,6 @@ public class VoiceCloneService {
 		Audio type = audioType(audio);
 		if (type == null) {
 			throw ApiException.invalid("audio", "wav나 m4a 녹음만 받아요.");
-		}
-		String sentence = text == null ? "" : text.strip();
-		if (sentence.isEmpty() || sentence.codePointCount(0, sentence.length()) > MAX_TEXT) {
-			throw ApiException.invalid("text", "읽은 문장은 1~" + MAX_TEXT + "자예요.");
 		}
 		if (recording(userId)) {
 			throw new ApiException(HttpStatus.CONFLICT, "RECORDING_IN_PROGRESS", "대화를 녹음하는 중에는 만들 수 없어요.");
@@ -104,7 +102,7 @@ public class VoiceCloneService {
 				    voice_clone_text = ?, voice_clone_fail_reason = null, voice_clone_consented_at = current_timestamp,
 				    voice_clone_updated_at = current_timestamp, updated_at = current_timestamp
 				where user_id = ?
-				""", key, sentence, userId);
+				""", key, RECORD_SENTENCE, userId);
 		long jobId = jobs.save(Job.voiceClone(userId)).getId();
 		afterCommit(() -> {
 			// 확장자가 바뀌었으면 예전 원본, 그리고 예전 미리 듣기를 지운다.
