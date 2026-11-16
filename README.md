@@ -23,8 +23,8 @@ LOLog의 메인 백엔드예요. 앱이 올린 대화 글을 받아 Jetson AI �
 
 ```
 앱 ──HTTPS──▶ 학교 Nginx ──▶ 우리 nginx ─┬─ /auth → lolog-auth
-                                          ├─ /api  → lolog-api (이 레포)
-                                          └─ /lolog-comics → MinIO (서명 주소)
+                                      ├─ /api  → lolog-api (이 레포)
+                                      └─ /lolog-comics → MinIO (서명 주소)
 
 lolog-api ──XADD──▶ Redis Streams ──XREADGROUP──▶ Jetson 워커 1·2·3호
      ▲                                                  │
