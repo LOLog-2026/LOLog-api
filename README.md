@@ -45,26 +45,61 @@ lolog-api ──XADD──▶ Redis Streams ──XREADGROUP──▶ Jetson 워
 
 ## 패키지
 
-기능(도메인) 단위로 나눴어요. 각 패키지 안에 Controller → Service → Repository가 있어요.
+최상위는 세 갈래예요.
+
+```
+com.lolog.api
+├── global/     기능과 상관없는 기반 코드
+├── domain/     /api(앱이 부름)와 업무 로직, 큐에 작업 넣기(Publisher)
+└── internal/   /internal(Jetson 워커, 수집 스크립트, lolog-auth가 부름)
+```
+
+- `domain/<기능>/` 안은 `controller`, `service`, `repository`, `entity`, `dto`로 나눠요. 그 층에 파일이 없으면 폴더를 만들지 않아요.
+- `entity`에는 DB 표와 표에 저장하는 상태 값을 두고, 응답을 만들 때 계산하는 상태 값(`TextStatus`)은 `dto`에 둬요.
+- `internal/<기능>/`은 `domain`과 같은 기능 이름을 써요. `internal`은 `domain`을 부르고, `domain`은 `internal`을 부르지 않아요.
+
+### `global`
 
 | 패키지 | 맡는 일 |
 | --- | --- |
-| `recording` | 녹음·1시간 묶음 받기, 감지 큐에 넣기, 감지 결과로 카드 만들기 |
+| `auth` | JWT 확인, `X-Internal-Token` 확인, 관리자 확인(`AdminGuard`) |
+| `error` | 공통 오류 응답 |
+| `web` | 업로드 크기 제한, 목록 쪽 나누기 |
+| `storage` | MinIO 업로드·삭제·서명 주소 |
+| `push` | FCM으로 보내기 |
+| `util` | 로그에 대화 글을 남기지 않기(`SafeLog`) |
+
+### `domain`
+
+| 패키지 | 맡는 일 |
+| --- | --- |
+| `recording` | 녹음·1시간 묶음 받기, 감지 큐에 넣기 |
 | `audio` | 선택한 음성 저장(10분 단위 파일), 7일 뒤 삭제 |
 | `text` | 직접 쓴 글로 에피소드 만들기 |
-| `blog` | 블로그 연결(플랫폼별 `BlogPlatform` 구현), 30분마다 새 글 가져오기 |
+| `blog` | 블로그 연결(`platform`에 플랫폼별 `BlogPlatform` 구현), 30분마다 새 글 가져오기 |
 | `card` | 에피소드 카드 목록·수정·삭제, 화자·대사 고치기 |
-| `comic` | 4컷 만화 만들기(카드당 3번), 결과 받기 |
-| `video` | 쇼츠 만들기(카드당 2번), 3호 → 2호로 넘기기 |
+| `comic` | 4컷 만화 만들기(카드당 3번) |
+| `video` | 쇼츠 만들기(카드당 2번) |
 | `character` | 기본 화자 24명, 프로필 캐릭터, 내 목소리 클론 |
 | `sound` | 쇼츠 효과음·배경음 목록(Freesound CC0) |
 | `friend`, `room` | 친구 코드·요청·차단, 방·초대·만화 올리기·좋아요·댓글 |
-| `inbox`, `notification` | 알림함(30일 보관), FCM 푸시 |
+| `inbox`, `notification` | 알림함(30일 보관), 기기 토큰, 푸시 내용 |
 | `admin` | 공지사항, 회원 정지, 의견 보기 |
-| `user` | 프로필, 탈퇴 시 데이터 삭제 |
-| `storage` | MinIO 업로드·삭제·서명 주소 |
-| `job` | 작업 상태, 다시 넣기, 실패 기록 |
-| `auth`, `common`, `health` | 토큰 확인, 공통 오류 응답, `GET /api/health` |
+| `user` | 탈퇴 시 데이터 삭제 |
+| `job` | 작업 상태 |
+| `health` | `GET /api/health` |
+
+### `internal`
+
+| 패키지 | 맡는 일 |
+| --- | --- |
+| `recording`, `text` | 감지 결과로 카드 만들기 |
+| `comic` | 만화 원본 주기, 콘티·그림 받기 |
+| `video` | 쇼츠 단계별로 주고받기, 3호 → 2호로 넘기기 |
+| `character` | 프로필 사진·목소리 샘플 주기, 프로필 캐릭터·목소리 미리듣기·기본 화자 그림 받기 |
+| `sound` | 효과음·배경음 넣기·지우기·목록(수집 스크립트, 3호 워커) |
+| `user` | 회원 정지·탈퇴(lolog-auth) |
+| `job` | 작업 실패 받기(`POST /internal/jobs/{id}/fail`) |
 
 ## DB
 
