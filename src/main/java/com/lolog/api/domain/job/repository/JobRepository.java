@@ -22,6 +22,10 @@ public interface JobRepository extends JpaRepository<Job, Long> {
 	@Query("select j.comicId from Job j where j.id = :id")
 	Optional<Long> findComicIdById(@Param("id") Long id);
 
+	// findComicIdById와 같은 이유로 영상 ID만 꺼낸다.
+	@Query("select j.videoId from Job j where j.id = :id")
+	Optional<Long> findVideoIdById(@Param("id") Long id);
+
 	@Query("select j.jobType from Job j where j.id = :id")
 	Optional<String> findTypeById(@Param("id") Long id);
 

@@ -2,13 +2,14 @@ package com.lolog.api.domain.video.service;
 
 import com.lolog.api.domain.job.entity.Job;
 import com.lolog.api.domain.job.repository.JobRepository;
+import com.lolog.api.domain.video.entity.Video;
+import com.lolog.api.domain.video.repository.VideoRepository;
 import java.time.OffsetDateTime;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.connection.stream.StreamRecords;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -25,15 +26,15 @@ public class VideoPublisher {
 	private static final Logger log = LoggerFactory.getLogger(VideoPublisher.class);
 
 	private final JobRepository jobs;
-	private final JdbcTemplate jdbc;
+	private final VideoRepository videos;
 	private final StringRedisTemplate redis;
 	private final ObjectMapper objectMapper;
 	private final TransactionTemplate tx;
 
-	public VideoPublisher(JobRepository jobs, JdbcTemplate jdbc, StringRedisTemplate redis, ObjectMapper objectMapper,
+	public VideoPublisher(JobRepository jobs, VideoRepository videos, StringRedisTemplate redis, ObjectMapper objectMapper,
 			PlatformTransactionManager transactionManager) {
 		this.jobs = jobs;
-		this.jdbc = jdbc;
+		this.videos = videos;
 		this.redis = redis;
 		this.objectMapper = objectMapper;
 		this.tx = new TransactionTemplate(transactionManager);
@@ -67,10 +68,7 @@ public class VideoPublisher {
 			if (job.getAttempts() > 0) {
 				return;
 			}
-			Long cardId = jdbc.queryForList("select card_id from videos where id = ?", Long.class, job.getVideoId())
-				.stream()
-				.findFirst()
-				.orElse(null);
+			Long cardId = videos.findById(job.getVideoId()).map(Video::getCardId).orElse(null);
 			boolean voice = "VIDEO_VOICE".equals(job.getJobType());
 			Object message = voice ? new VoiceMessage(job.getId(), job.getVideoId(), cardId)
 					: new DrawMessage(job.getId(), "video", job.getVideoId(), cardId);
