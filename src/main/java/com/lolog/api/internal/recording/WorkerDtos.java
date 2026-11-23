@@ -40,7 +40,4 @@ public final class WorkerDtos {
 			@PositiveOrZero Long endMs) {
 	}
 
-	public record JobFailRequest(@NotBlank @Size(max = 500) String reason) {
-	}
-
 }
