@@ -67,6 +67,7 @@ com.lolog.api
 | `web` | 업로드 크기 제한, 목록 쪽 나누기 |
 | `storage` | MinIO 업로드·삭제·서명 주소 |
 | `push` | FCM으로 보내기 |
+| `transaction` | 커밋 뒤에 할 일(저장소 파일 지우기 등) |
 | `util` | 로그에 대화 글을 남기지 않기(`SafeLog`) |
 
 ### `domain`
