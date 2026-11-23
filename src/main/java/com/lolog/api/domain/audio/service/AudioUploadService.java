@@ -25,6 +25,7 @@ public class AudioUploadService {
 		this.clipper = clipper;
 	}
 
+	// 음성 파일을 확인해 저장하고 카드 구간 자르기를 맡긴다.
 	@Transactional
 	public void upload(long userId, long recordingId, int seq, byte[] file, Long startMs, Long endMs) {
 		if (seq < 1) {

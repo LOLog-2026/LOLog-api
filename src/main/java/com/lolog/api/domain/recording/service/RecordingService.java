@@ -28,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
+// 녹음 묶음 받기, 녹음 조회, 묶음 감지 작업 넣기.
 @Service
 public class RecordingService {
 
@@ -40,6 +41,7 @@ public class RecordingService {
 	private final ObjectMapper objectMapper;
 	private final TransactionTemplate tx;
 
+	// 녹음 처리에 필요한 저장소와 도구를 받는다.
 	public RecordingService(RecordingRepository recordings, RecordingPartRepository parts, JobRepository jobs,
 			DetectPublisher publisher, ObjectMapper objectMapper, TransactionTemplate tx) {
 		this.recordings = recordings;
@@ -50,6 +52,7 @@ public class RecordingService {
 		this.tx = tx;
 	}
 
+	// 녹음 묶음을 확인해 저장하고 감지 작업을 큐에 넣는다.
 	public UploadResponse upload(long userId, UploadRequest request) {
 		validate(request);
 		Saved saved;
@@ -64,12 +67,14 @@ public class RecordingService {
 		return saved.response();
 	}
 
+	// 내 녹음 하나의 상태와 카드 수를 돌려준다.
 	public StatusResponse status(long userId, long id) {
 		Recording recording = recordings.findByIdAndUserId(id, userId)
 			.orElseThrow(() -> new ApiException(ErrorCode.RECORDING_NOT_FOUND));
 		return new StatusResponse(recording.getId(), recording.getStatus(), Math.toIntExact(recordings.countCards(id)));
 	}
 
+	// 내 녹음 목록을 상태로 걸러 페이지로 돌려준다.
 	@Transactional(readOnly = true)
 	public RecordingPage list(long userId, String cursor, Integer size, String status) {
 		PageRequestParams params = PageRequestParams.of(cursor, size);
@@ -114,6 +119,7 @@ public class RecordingService {
 		jobIds.forEach(publisher::publishQuietly);
 	}
 
+	// 문장 수와 각 문장의 시각을 확인한다.
 	private void validate(UploadRequest request) {
 		if (request.sentences().size() > MAX_SENTENCES) {
 			throw new ApiException(ErrorCode.PAYLOAD_TOO_LARGE);
@@ -125,6 +131,7 @@ public class RecordingService {
 		}
 	}
 
+	// 녹음과 묶음을 저장하고 넣을 감지 작업을 만든다.
 	private Saved save(long userId, UploadRequest request) {
 		Recording recording = recordings.findByUserIdAndClientRecordingId(userId, request.clientRecordingId())
 			.orElseGet(() -> recordings.saveAndFlush(
@@ -198,10 +205,12 @@ public class RecordingService {
 		recording.setStatus(anyFailed && !anyDetected ? RecordingStatus.FAILED : RecordingStatus.DONE);
 	}
 
+	// 녹음을 업로드 응답 모양으로 바꾼다.
 	private UploadResponse response(Recording recording) {
 		return new UploadResponse(recording.getId(), recording.getStatus());
 	}
 
+	// save 결과. 응답과 큐에 넣을 작업 ID.
 	private record Saved(UploadResponse response, List<Long> jobIds) {
 	}
 

@@ -58,6 +58,7 @@ public class ComicWorkerService {
 		this.push = push;
 	}
 
+	// 만화를 만들 카드 내용을 주고 콘티 단계로 바꾼다.
 	public ComicSource source(long comicId) {
 		return tx.execute(status -> {
 			Comic comic = comics.findByIdForUpdate(comicId).filter(c -> !c.isFinished()).orElseThrow(ComicWorkerService::notFound);
@@ -81,6 +82,7 @@ public class ComicWorkerService {
 		});
 	}
 
+	// 콘티를 검사해 저장한다.
 	public void storyboard(long comicId, JsonNode body) {
 		tx.executeWithoutResult(status -> {
 			Comic comic = comics.findByIdForUpdate(comicId).orElseThrow(ComicWorkerService::notFound);
@@ -92,6 +94,7 @@ public class ComicWorkerService {
 		});
 	}
 
+	// 완성 이미지를 올리고 만화를 끝낸 뒤 푸시를 보낸다.
 	public void image(long comicId, byte[] png) {
 		Comic found = comics.findById(comicId).orElseThrow(ComicWorkerService::notFound);
 		if (found.isFinished()) {
@@ -158,10 +161,12 @@ public class ComicWorkerService {
 		}
 	}
 
+	// 4바이트를 정수로 읽는다.
 	private static int readInt(byte[] b, int at) {
 		return ((b[at] & 0xFF) << 24) | ((b[at + 1] & 0xFF) << 16) | ((b[at + 2] & 0xFF) << 8) | (b[at + 3] & 0xFF);
 	}
 
+	// 만화를 찾지 못했을 때의 오류다.
 	private static ApiException notFound() {
 		return new ApiException(ErrorCode.COMIC_NOT_FOUND);
 	}

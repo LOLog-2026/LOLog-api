@@ -40,6 +40,7 @@ public class CharacterWorkerController {
 		return ResponseEntity.ok().contentType(MediaType.parseMediaType(photo.contentType())).body(photo.bytes());
 	}
 
+	// 워커가 만든 프로필 캐릭터 그림을 받는다.
 	@PostMapping("/internal/users/{userId}/character/avatar")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void avatar(@PathVariable Long userId, @RequestPart("file") MultipartFile file,

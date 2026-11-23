@@ -73,12 +73,14 @@ public class Video {
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
 
+	// 카드로 새 영상 요청을 만든다.
 	public Video(Long cardId, Long userId, String cardSummary) {
 		this.cardId = cardId;
 		this.userId = userId;
 		this.cardSummary = cardSummary;
 	}
 
+	// 아직 만드는 중인지 본다.
 	public boolean isInProgress() {
 		return VideoStatus.IN_PROGRESS.contains(status);
 	}
@@ -90,10 +92,12 @@ public class Video {
 		}
 	}
 
+	// 3호가 보낸 콘티를 저장한다.
 	public void saveStoryboard(String json) {
 		storyboard = json;
 	}
 
+	// 콘티를 받았는지 본다.
 	public boolean hasStoryboard() {
 		return storyboard != null;
 	}

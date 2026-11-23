@@ -176,6 +176,7 @@ public class VideoWorkerService {
 		}
 	}
 
+	// 저장한 대사 음성을 꺼낸다. 아직 없으면 404다.
 	public byte[] audio(long videoId) {
 		String key = running(videoId).getAudioKey();
 		if (key == null) {
@@ -223,6 +224,7 @@ public class VideoWorkerService {
 
 	// ---- 안에서 쓰는 것 ----
 
+	// 화자마다 그림과 목소리를 모은다.
 	private Map<Ref, SourceCharacter> sourceCharacters(long owner, List<Ref> refs) {
 		Map<Ref, SourceCharacter> result = new HashMap<>();
 		if (refs.isEmpty()) {
@@ -245,6 +247,7 @@ public class VideoWorkerService {
 
 	}
 
+	// 화자에 붙일 목소리를 찾는다.
 	private Voice voice(long owner, Ref ref) {
 		if (CharacterViews.PROFILE.equals(ref.type())) {
 			long userId = Long.parseLong(ref.id());
@@ -280,23 +283,28 @@ public class VideoWorkerService {
 		return null;
 	}
 
+	// 영상의 그 단계 작업을 DONE으로 바꾼다.
 	private void completeJob(long videoId, String type) {
 		jdbc.update("update jobs set status = 'DONE', updated_at = current_timestamp where video_id = ? and job_type = ? "
 				+ "and status not in ('DONE', 'FAILED')", videoId, type);
 	}
 
+	// 영상을 찾는다. 없으면 404다.
 	private Video find(long videoId) {
 		return videos.findById(videoId).orElseThrow(VideoWorkerService::notFound);
 	}
 
+	// 영상을 잠그고 찾는다.
 	private Video lock(long videoId) {
 		return videos.findByIdForUpdate(videoId).orElseThrow(VideoWorkerService::notFound);
 	}
 
+	// 만드는 중인 영상만 잠그고 찾는다.
 	private Video lockRunning(long videoId) {
 		return videos.findByIdForUpdate(videoId).filter(Video::isInProgress).orElseThrow(VideoWorkerService::notFound);
 	}
 
+	// 만드는 중인 영상만 찾는다.
 	private Video running(long videoId) {
 		return videos.findById(videoId).filter(Video::isInProgress).orElseThrow(VideoWorkerService::notFound);
 	}

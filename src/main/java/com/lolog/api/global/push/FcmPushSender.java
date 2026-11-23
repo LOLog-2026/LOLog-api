@@ -31,11 +31,13 @@ class FcmPushSender implements PushSender, DisposableBean {
 	private final FirebaseApp app;
 	private final FirebaseMessaging messaging;
 
+	// 이 앱으로 FCM 메시징을 준비한다.
 	FcmPushSender(FirebaseApp app) {
 		this.app = app;
 		this.messaging = FirebaseMessaging.getInstance(app);
 	}
 
+	// 토큰을 500개씩 나눠 보내고 무효 토큰을 모은다.
 	@Override
 	public List<String> send(List<String> tokens, Map<String, String> data) throws Exception {
 		List<String> invalid = new ArrayList<>();
@@ -59,6 +61,7 @@ class FcmPushSender implements PushSender, DisposableBean {
 		return invalid;
 	}
 
+	// 서버가 끝날 때 FirebaseApp을 지운다.
 	@Override
 	public void destroy() {
 		app.delete();

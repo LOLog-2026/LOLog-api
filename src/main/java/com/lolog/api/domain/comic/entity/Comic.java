@@ -63,30 +63,36 @@ public class Comic {
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
 
+	// 카드로 새 만화를 만든다. 처음 상태는 QUEUED다.
 	public Comic(Long cardId, Long userId, String cardSummary) {
 		this.cardId = cardId;
 		this.userId = userId;
 		this.cardSummary = cardSummary;
 	}
 
+	// 끝난 만화(DONE·FAILED)인지 본다.
 	public boolean isFinished() {
 		return status == ComicStatus.DONE || status == ComicStatus.FAILED;
 	}
 
+	// 워커가 콘티를 만들기 시작했다고 표시한다.
 	public void startStoryboard() {
 		status = ComicStatus.STORYBOARD;
 	}
 
+	// 콘티를 저장하고 그리기 단계로 넘긴다.
 	public void saveStoryboard(String json) {
 		storyboard = json;
 		status = ComicStatus.DRAWING;
 	}
 
+	// 이미지 키를 저장하고 완료로 바꾼다.
 	public void finish(String key) {
 		imageKey = key;
 		status = ComicStatus.DONE;
 	}
 
+	// 실패로 바꾸고 이유를 남긴다.
 	public void fail(String reason) {
 		status = ComicStatus.FAILED;
 		failReason = reason;

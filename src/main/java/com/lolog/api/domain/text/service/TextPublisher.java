@@ -51,11 +51,13 @@ public class TextPublisher {
 		}
 	}
 
+	// 큐에 넣지 못한 글 작업을 다시 넣는다.
 	@Scheduled(fixedDelayString = "${lolog.detect.republish-delay-ms:60000}")
 	void republishPending() {
 		jobs.findUnpublishedIds("TEXT", OffsetDateTime.now().minusMinutes(1)).forEach(this::publishQuietly);
 	}
 
+	// 작업 하나를 메시지로 만들어 스트림에 넣는다.
 	private void publish(Long jobId) {
 		tx.executeWithoutResult(status -> {
 			Job job = jobs.findById(jobId).orElse(null);

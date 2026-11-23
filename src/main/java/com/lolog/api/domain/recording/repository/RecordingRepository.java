@@ -12,18 +12,22 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+// 녹음을 DB에서 읽고 쓴다.
 public interface RecordingRepository extends JpaRepository<Recording, Long> {
 
 	// 같은 녹음의 묶음을 한 번에 하나씩 처리하려고 행을 잠근다.
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	Optional<Recording> findByUserIdAndClientRecordingId(Long userId, String clientRecordingId);
 
+	// 녹음 행을 잠그고 찾는다.
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select r from Recording r where r.id = :id")
 	Optional<Recording> findByIdForUpdate(@Param("id") Long id);
 
+	// 내 녹음 하나를 찾는다.
 	Optional<Recording> findByIdAndUserId(Long id, Long userId);
 
+	// 이 녹음으로 만든 카드 수를 센다.
 	@Query(value = "select count(*) from cards where recording_id = :id", nativeQuery = true)
 	long countCards(@Param("id") Long id);
 

@@ -76,6 +76,7 @@ public final class FeedParser {
 		return null;
 	}
 
+	// RSS 2.0 channel을 Feed로 읽는다.
 	private static Feed rss(org.w3c.dom.Element channel) {
 		List<Item> items = new ArrayList<>();
 		for (org.w3c.dom.Element item : children(channel, "item")) {
@@ -91,6 +92,7 @@ public final class FeedParser {
 		return new Feed(title(channel), text(channel, "link"), text(channel, "generator"), items);
 	}
 
+	// Atom feed를 Feed로 읽는다.
 	private static Feed atom(org.w3c.dom.Element feed) {
 		List<Item> items = new ArrayList<>();
 		for (org.w3c.dom.Element entry : children(feed, "entry")) {
@@ -152,6 +154,7 @@ public final class FeedParser {
 			.strip();
 	}
 
+	// 노드를 돌며 글자를 모으고 블록 태그 앞뒤에 줄바꿈을 넣는다.
 	private static void append(Node node, StringBuilder out) {
 		for (Node child : node.childNodes()) {
 			if (child instanceof TextNode text) {
@@ -175,6 +178,7 @@ public final class FeedParser {
 		}
 	}
 
+	// 비어 있지 않고 아직 없는 카테고리만 더한다.
 	private static void add(List<String> categories, String value) {
 		String trimmed = value == null ? "" : value.strip();
 		if (!trimmed.isEmpty() && !categories.contains(trimmed)) {
@@ -182,6 +186,7 @@ public final class FeedParser {
 		}
 	}
 
+	// RSS 날짜(RFC 1123)를 읽는다. 안 되면 ISO로 읽어 본다.
 	private static OffsetDateTime rfc1123(String value) {
 		if (value == null) {
 			return null;
@@ -198,6 +203,7 @@ public final class FeedParser {
 		}
 	}
 
+	// ISO 8601 날짜를 읽는다. 틀리면 null.
 	private static OffsetDateTime iso(String value) {
 		if (value == null) {
 			return null;
@@ -220,15 +226,18 @@ public final class FeedParser {
 		return blankToNull(Parser.unescapeEntities(raw, false).replace('\u00a0', ' '));
 	}
 
+	// 자식 칸의 글자를 읽는다. 없거나 비면 null.
 	private static String text(org.w3c.dom.Element parent, String name) {
 		org.w3c.dom.Element child = child(parent, name);
 		return child == null ? null : blankToNull(child.getTextContent());
 	}
 
+	// 빈 글자는 null로, 아니면 앞뒤 공백을 뺀다.
 	private static String blankToNull(String value) {
 		return value == null || value.isBlank() ? null : value.strip();
 	}
 
+	// 이름이 같은 첫 자식 칸. 없으면 null.
 	private static org.w3c.dom.Element child(org.w3c.dom.Element parent, String name) {
 		List<org.w3c.dom.Element> found = children(parent, name);
 		return found.isEmpty() ? null : found.getFirst();

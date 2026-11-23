@@ -20,6 +20,7 @@ public class TextWorkerController {
 		this.texts = texts;
 	}
 
+	// 글 결과 카드를 받는다.
 	@PostMapping("/internal/texts/{id}/cards")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void cards(@PathVariable Long id, @Valid @RequestBody TextResult result) {

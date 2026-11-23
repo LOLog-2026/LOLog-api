@@ -25,12 +25,14 @@ public class TextController {
 		this.currentUser = currentUser;
 	}
 
+	// 글을 받아 카드 만들기 작업을 맡긴다.
 	@PostMapping("/api/texts")
 	@ResponseStatus(HttpStatus.ACCEPTED)
 	public TextAccepted create(@RequestBody TextCreateRequest request) {
 		return texts.create(currentUser.currentUserId(), request);
 	}
 
+	// 내 글 하나를 돌려준다.
 	@GetMapping("/api/texts/{id}")
 	public TextResponse get(@PathVariable Long id) {
 		return texts.get(currentUser.currentUserId(), id);

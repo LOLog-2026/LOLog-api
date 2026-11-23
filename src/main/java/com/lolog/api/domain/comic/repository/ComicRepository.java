@@ -12,8 +12,10 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+// 만화를 DB에서 읽고 쓴다.
 public interface ComicRepository extends JpaRepository<Comic, Long> {
 
+	// 카드로 만든 만화를 최신순으로 찾는다.
 	List<Comic> findByCardIdOrderByIdDesc(Long cardId);
 
 	// 워커의 콘티·이미지·fail이 겹쳐도 한 번에 하나씩 상태를 바꾸게 만화 행을 잠근다.
@@ -21,8 +23,10 @@ public interface ComicRepository extends JpaRepository<Comic, Long> {
 	@Query("select m from Comic m where m.id = :id")
 	Optional<Comic> findByIdForUpdate(@Param("id") Long id);
 
+	// 내 만화 하나를 찾는다.
 	Optional<Comic> findByIdAndUserId(Long id, Long userId);
 
+	// 내 만화 하나를 잠그고 찾는다.
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select m from Comic m where m.id = :id and m.userId = :userId")
 	Optional<Comic> findByIdAndUserIdForUpdate(@Param("id") Long id, @Param("userId") Long userId);
@@ -35,6 +39,7 @@ public interface ComicRepository extends JpaRepository<Comic, Long> {
 	@Query("select m from Comic m where m.userId = :userId and (:after is null or m.id > :after) order by m.id asc")
 	List<Comic> findPageOldest(@Param("userId") Long userId, @Param("after") Long after, Limit limit);
 
+	// 카드에 이 상태들의 만화가 있는지 본다.
 	boolean existsByCardIdAndStatusIn(Long cardId, Collection<ComicStatus> statuses);
 
 	// 카드 목록의 comicCount. 남아 있는 만화 중 실패 아닌 것(지운 만화는 행이 없으므로 빠진다).

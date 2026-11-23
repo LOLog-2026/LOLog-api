@@ -19,6 +19,7 @@ public final class TextDtos {
 	public record TextCreateRequest(String title, String body, String place, String situation) {
 	}
 
+	// 글을 받았을 때 돌려주는 값.
 	public record TextAccepted(Long textId, TextStatus status) {
 	}
 
@@ -31,6 +32,7 @@ public final class TextDtos {
 	public record TextResult(@NotNull Long jobId, @NotNull @Size(min = 1, max = 1) List<@Valid @NotNull TextCard> cards) {
 	}
 
+	// 워커가 만든 카드 한 장.
 	public record TextCard(
 			@NotNull @Pattern(regexp = "^(웃김|황당|추억)$") String kind,
 			@NotBlank @Size(max = 30) String summary,
@@ -40,6 +42,7 @@ public final class TextDtos {
 			@NotNull @Size(min = 1) List<@Valid @NotNull TextLine> lines) {
 	}
 
+	// 카드의 대사 한 줄.
 	public record TextLine(@NotNull @Min(1) Integer lineNo, @NotNull String speaker, @NotBlank String text, Long startMs,
 			Long endMs) {
 	}

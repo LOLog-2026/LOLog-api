@@ -27,19 +27,23 @@ public class HealthController {
 	private final StringRedisTemplate redis;
 	private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
+	// DB와 Redis 확인에 쓸 도구를 받는다.
 	public HealthController(JdbcTemplate jdbc, StringRedisTemplate redis) {
 		this.jdbc = jdbc;
 		this.redis = redis;
 	}
 
+	// 서버가 꺼질 때 확인용 스레드를 정리한다.
 	@PreDestroy
 	void close() {
 		executor.shutdownNow();
 	}
 
+	// 상태 응답 본문. UP 또는 DOWN이다.
 	public record Health(String status) {
 	}
 
+	// DB와 Redis를 차례로 확인해 상태를 돌려준다.
 	@GetMapping("/api/health")
 	public ResponseEntity<Health> health() {
 		boolean up = check(() -> jdbc.queryForObject("select 1", Integer.class))
@@ -48,6 +52,7 @@ public class HealthController {
 				: ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(new Health("DOWN"));
 	}
 
+	// 확인 하나를 제한 시간 안에 실행하고 성공 여부를 돌려준다.
 	private boolean check(Supplier<?> probe) {
 		try {
 			return CompletableFuture.supplyAsync(probe, executor).get(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS) != null;

@@ -18,14 +18,17 @@ public record Categories(boolean selectable, List<String> known, boolean hierarc
 		return new Categories(true, null, false);
 	}
 
+	// 카테고리를 고를 수 없는 규칙(Medium·velog).
 	public static Categories none() {
 		return new Categories(false, null, false);
 	}
 
+	// "상위/하위" 카테고리 규칙(티스토리).
 	public static Categories hierarchy() {
 		return new Categories(true, null, true);
 	}
 
+	// 진짜 카테고리 이름만 보는 규칙(WordPress REST).
 	public static Categories only(List<String> known) {
 		return new Categories(true, List.copyOf(known), false);
 	}
@@ -82,6 +85,7 @@ public record Categories(boolean selectable, List<String> known, boolean hierarc
 		return null;
 	}
 
+	// 비어 있지 않고 아직 없는 값만 더한다.
 	private static void addOnce(List<String> list, String value) {
 		if (!value.isEmpty() && !list.contains(value)) {
 			list.add(value);

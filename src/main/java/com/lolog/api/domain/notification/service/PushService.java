@@ -32,6 +32,7 @@ public class PushService implements DisposableBean {
 	// 워커·앱 요청의 응답을 붙잡지 않게 따로 보낸다. 빈으로 두지 않는다(Spring 기본 작업 실행기를 대신하지 않게).
 	private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
+	// 푸시 보내기와 알림 목록 저장에 필요한 도구를 받는다.
 	public PushService(DeviceTokenService tokens, PushSender sender, JdbcTemplate jdbc, ObjectMapper objectMapper) {
 		this.tokens = tokens;
 		this.sender = sender;
@@ -39,11 +40,13 @@ public class PushService implements DisposableBean {
 		this.objectMapper = objectMapper;
 	}
 
+	// 서버가 꺼질 때 보내기용 스레드를 정리한다.
 	@Override
 	public void destroy() {
 		executor.close();
 	}
 
+	// 녹음에서 카드가 생김.
 	public static Map<String, String> cardsCreated(long recordingId, int cardCount) {
 		return Map.of("type", "CARDS_CREATED", "recordingId", String.valueOf(recordingId), "cardCount",
 				String.valueOf(cardCount));
@@ -54,10 +57,12 @@ public class PushService implements DisposableBean {
 		return Map.of("type", "CARDS_CREATED", "textId", String.valueOf(textId), "cardCount", "1");
 	}
 
+	// 만화가 완성됨.
 	public static Map<String, String> comicDone(long comicId, Long cardId) {
 		return comic("COMIC_DONE", comicId, cardId);
 	}
 
+	// 만화를 만들지 못함.
 	public static Map<String, String> comicFailed(long comicId, Long cardId) {
 		return comic("COMIC_FAILED", comicId, cardId);
 	}
@@ -67,10 +72,12 @@ public class PushService implements DisposableBean {
 		return video("VIDEO_DONE", videoId, cardId);
 	}
 
+	// 카드 영상을 만들지 못함.
 	public static Map<String, String> videoFailed(long videoId, Long cardId) {
 		return video("VIDEO_FAILED", videoId, cardId);
 	}
 
+	// 영상 푸시 값을 만든다.
 	private static Map<String, String> video(String type, long videoId, Long cardId) {
 		return Map.of("type", type, "videoId", String.valueOf(videoId), "cardId",
 				cardId == null ? "" : String.valueOf(cardId));
@@ -81,6 +88,7 @@ public class PushService implements DisposableBean {
 		return Map.of("type", "PROFILE_CHARACTER_READY");
 	}
 
+	// 프로필 캐릭터를 만들지 못함.
 	public static Map<String, String> profileCharacterFailed() {
 		return Map.of("type", "PROFILE_CHARACTER_FAILED");
 	}
@@ -90,6 +98,7 @@ public class PushService implements DisposableBean {
 		return Map.of("type", "VOICE_CLONE_READY");
 	}
 
+	// 내 목소리를 만들지 못함.
 	public static Map<String, String> voiceCloneFailed() {
 		return Map.of("type", "VOICE_CLONE_FAILED");
 	}

@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+// 카드 목록·상세·고치기·지우기 API.
 @RestController
 @RequestMapping("/api/cards")
 public class CardController {
@@ -29,22 +30,26 @@ public class CardController {
 		this.currentUser = currentUser;
 	}
 
+	// 내 카드 목록을 페이지로 돌려준다.
 	@GetMapping
 	public CardPage list(@RequestParam(required = false) String cursor, @RequestParam(required = false) Integer size,
 			@RequestParam(required = false) String sort) {
 		return cardService.list(currentUser.currentUserId(), cursor, size, sort);
 	}
 
+	// 카드 하나의 상세를 돌려준다.
 	@GetMapping("/{id}")
 	public CardDetail detail(@PathVariable Long id) {
 		return cardService.detail(currentUser.currentUserId(), id);
 	}
 
+	// 카드의 화자·대사·장소를 고친다.
 	@PatchMapping("/{id}")
 	public CardDetail update(@PathVariable Long id, @Valid @RequestBody CardUpdateRequest request) {
 		return cardService.update(currentUser.currentUserId(), id, request);
 	}
 
+	// 카드를 지운다.
 	@DeleteMapping("/{id}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void delete(@PathVariable Long id) {

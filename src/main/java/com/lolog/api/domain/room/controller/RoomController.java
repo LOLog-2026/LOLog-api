@@ -40,27 +40,32 @@ public class RoomController {
 		this.currentUser = currentUser;
 	}
 
+	// 내가 들어간 방 목록을 돌려준다.
 	@GetMapping
 	public RoomList list() {
 		return rooms.rooms(currentUser.currentUserId());
 	}
 
+	// 방을 만들고 친구를 초대한다.
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
 	public RoomItem create(@RequestBody RoomCreateRequest request) {
 		return rooms.create(currentUser.currentUserId(), request.name(), request.memberIds());
 	}
 
+	// 방 하나를 돌려준다.
 	@GetMapping("/{id}")
 	public RoomItem room(@PathVariable Long id) {
 		return rooms.room(currentUser.currentUserId(), id);
 	}
 
+	// 방 이름을 바꾼다(방장).
 	@PatchMapping("/{id}")
 	public RoomItem rename(@PathVariable Long id, @RequestBody RoomUpdateRequest request) {
 		return rooms.rename(currentUser.currentUserId(), id, request.name());
 	}
 
+	// 방을 해산한다(방장).
 	@DeleteMapping("/{id}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void disband(@PathVariable Long id) {
@@ -74,56 +79,66 @@ public class RoomController {
 		rooms.leave(currentUser.currentUserId(), id, newOwnerId);
 	}
 
+	// 멤버를 내보낸다(방장).
 	@DeleteMapping("/{id}/members/{userId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void kick(@PathVariable Long id, @PathVariable Long userId) {
 		rooms.kick(currentUser.currentUserId(), id, userId);
 	}
 
+	// 친구를 방에 초대한다(방장).
 	@PostMapping("/{id}/invites")
 	@ResponseStatus(HttpStatus.CREATED)
 	public InviteList invite(@PathVariable Long id, @RequestBody InviteCreateRequest request) {
 		return rooms.invite(currentUser.currentUserId(), id, request.userIds());
 	}
 
+	// 답을 기다리는 초대를 취소한다(방장).
 	@DeleteMapping("/{id}/invites/{inviteId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void cancelInvite(@PathVariable Long id, @PathVariable Long inviteId) {
 		rooms.cancelInvite(currentUser.currentUserId(), id, inviteId);
 	}
 
+	// 방에 올린 만화 목록을 돌려준다.
 	@GetMapping("/{id}/posts")
 	public PostList posts(@PathVariable Long id) {
 		return rooms.posts(currentUser.currentUserId(), id);
 	}
 
+	// 내 만화를 방에 올린다.
 	@PostMapping("/{id}/posts")
 	@ResponseStatus(HttpStatus.CREATED)
 	public RoomPost post(@PathVariable Long id, @RequestBody PostCreateRequest request) {
 		return rooms.postComic(currentUser.currentUserId(), id, request.comicId());
 	}
 
+	// 내가 올린 만화를 내린다.
 	@DeleteMapping("/{id}/posts/{postId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void removePost(@PathVariable Long id, @PathVariable Long postId) {
 		rooms.removePost(currentUser.currentUserId(), id, postId);
 	}
 
+	// 만화에 좋아요를 누른다.
 	@PutMapping("/{id}/posts/{postId}/like")
 	public RoomPost like(@PathVariable Long id, @PathVariable Long postId) {
 		return rooms.like(currentUser.currentUserId(), id, postId);
 	}
 
+	// 좋아요를 취소한다.
 	@DeleteMapping("/{id}/posts/{postId}/like")
 	public RoomPost unlike(@PathVariable Long id, @PathVariable Long postId) {
 		return rooms.unlike(currentUser.currentUserId(), id, postId);
 	}
 
+	// 방 대화를 페이지로 돌려준다.
 	@GetMapping("/{id}/messages")
 	public MessageList messages(@PathVariable Long id, @RequestParam(required = false) String cursor) {
 		return rooms.messages(currentUser.currentUserId(), id, cursor);
 	}
 
+	// 방 대화에 글을 남긴다.
 	@PostMapping("/{id}/messages")
 	@ResponseStatus(HttpStatus.CREATED)
 	public RoomMessage comment(@PathVariable Long id, @RequestBody RoomCommentRequest request) {

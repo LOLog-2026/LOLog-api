@@ -12,6 +12,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+// 영상 DB 조회.
 public interface VideoRepository extends JpaRepository<Video, Long> {
 
 	// 워커의 단계 보내기·fail이 겹쳐도 한 번에 하나씩 상태를 바꾸게 영상 행을 잠근다.
@@ -19,6 +20,7 @@ public interface VideoRepository extends JpaRepository<Video, Long> {
 	@Query("select v from Video v where v.id = :id")
 	Optional<Video> findByIdForUpdate(@Param("id") Long id);
 
+	// 내 영상 하나를 찾는다.
 	Optional<Video> findByIdAndUserId(Long id, Long userId);
 
 	// 최신순(id 내림차순). before가 null이면 처음부터.
@@ -29,8 +31,10 @@ public interface VideoRepository extends JpaRepository<Video, Long> {
 	@Query("select v from Video v where v.userId = :userId and (:after is null or v.id > :after) order by v.id asc")
 	List<Video> findPageOldest(@Param("userId") Long userId, @Param("after") Long after, Limit limit);
 
+	// 그 카드로 만든 영상(최근 것이 앞).
 	List<Video> findByCardIdOrderByIdDesc(Long cardId);
 
+	// 그 카드에 주어진 상태의 영상이 있는지 본다.
 	boolean existsByCardIdAndStatusIn(Long cardId, Collection<VideoStatus> statuses);
 
 }

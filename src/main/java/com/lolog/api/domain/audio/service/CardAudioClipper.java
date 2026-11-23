@@ -37,14 +37,17 @@ public class CardAudioClipper implements DisposableBean {
 		this.storage = storage;
 	}
 
+	// 서버가 꺼질 때 자르기 작업 실행기를 닫는다.
 	@Override
 	public void destroy() {
 		executor.close();
 	}
 
+	// 자르기에 필요한 카드 정보.
 	private record CardRow(long id, long userId, Long recordingId, long startMs, long endMs, String audioKey) {
 	}
 
+	// 녹음 음성 파일 하나의 키와 구간.
 	private record AudioFile(int seq, String key, long startMs, long endMs) {
 	}
 
@@ -64,12 +67,14 @@ public class CardAudioClipper implements DisposableBean {
 		}
 	}
 
+	// 녹음의 카드 중 음성이 없는 카드를 바로 자른다.
 	void clipRecording(long recordingId) {
 		List<Long> cardIds = jdbc.queryForList(
 				"select id from cards where recording_id = ? and audio_key is null order by id", Long.class, recordingId);
 		cardIds.forEach(this::clipQuietly);
 	}
 
+	// 카드 하나를 자르고, 실패하면 로그만 남긴다.
 	void clipQuietly(long cardId) {
 		try {
 			clip(cardId);

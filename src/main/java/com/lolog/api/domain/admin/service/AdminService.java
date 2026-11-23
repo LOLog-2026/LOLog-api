@@ -36,6 +36,7 @@ public class AdminService {
 
 	// ---- 공지사항 ----
 
+	// 공지사항을 만든다.
 	@Transactional
 	public Notice createNotice(String title, String body) {
 		String t = title(title);
@@ -136,6 +137,7 @@ public class AdminService {
 		return new FeedbackPage(items, next);
 	}
 
+	// 오류 신고·의견의 처리 상태를 바꾼다.
 	@Transactional
 	public FeedbackItem markFeedback(long id, String status) {
 		if (!Set.of("OPEN", "DONE").contains(status == null ? "" : status)) {
@@ -149,6 +151,7 @@ public class AdminService {
 
 	// ---- 안에서 쓰는 것 ----
 
+	// 공지사항 하나를 읽는다. 없으면 NOTICE_NOT_FOUND.
 	private Notice notice(long id) {
 		return jdbc.query("select * from notices where id = ?",
 				(rs, n) -> new Notice(rs.getLong("id"), rs.getString("title"), rs.getString("body"),
@@ -159,16 +162,19 @@ public class AdminService {
 			.orElseThrow(AdminService::noticeNotFound);
 	}
 
+	// 오류 신고·의견 하나를 읽는다.
 	private FeedbackItem feedback(long id) {
 		return jdbc.queryForObject("select * from feedback where id = ?", (rs, n) -> feedback(rs), id);
 	}
 
+	// DB 행을 FeedbackItem으로 바꾼다.
 	private static FeedbackItem feedback(ResultSet rs) throws SQLException {
 		return new FeedbackItem(rs.getLong("id"), (Long) rs.getObject("user_id"), rs.getString("category"),
 				rs.getString("text"), rs.getString("app_version"), rs.getString("device_model"), rs.getString("status"),
 				rs.getObject("created_at", OffsetDateTime.class));
 	}
 
+	// 제목을 다듬고 길이를 확인한다.
 	private static String title(String title) {
 		return trimmed(title, "title", TITLE_MAX, "제목은 1~100자예요.");
 	}
@@ -178,6 +184,7 @@ public class AdminService {
 		return trimmed(body, "body", Integer.MAX_VALUE, "본문을 적어 주세요.");
 	}
 
+	// 앞뒤 공백을 빼고 길이가 1~max자인지 확인한다.
 	private static String trimmed(String value, String field, int max, String message) {
 		String s = value == null ? "" : value.strip();
 		int length = s.codePointCount(0, s.length());
@@ -187,6 +194,7 @@ public class AdminService {
 		return s;
 	}
 
+	// NOTICE_NOT_FOUND 예외를 만든다.
 	private static ApiException noticeNotFound() {
 		return new ApiException(ErrorCode.NOTICE_NOT_FOUND);
 	}

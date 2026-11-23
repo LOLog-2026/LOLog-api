@@ -26,16 +26,19 @@ public class RoomInviteController {
 		this.currentUser = currentUser;
 	}
 
+	// 내가 받은 초대 목록을 돌려준다.
 	@GetMapping
 	public InviteList list() {
 		return rooms.receivedInvites(currentUser.currentUserId());
 	}
 
+	// 초대를 수락하고 방에 들어간다.
 	@PostMapping("/{inviteId}/accept")
 	public RoomItem accept(@PathVariable Long inviteId) {
 		return rooms.acceptInvite(currentUser.currentUserId(), inviteId);
 	}
 
+	// 초대를 거절한다.
 	@DeleteMapping("/{inviteId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void decline(@PathVariable Long inviteId) {

@@ -19,6 +19,7 @@ public final class VideoDtos {
 			String thumbnailUrl, Long durationMs, OffsetDateTime createdAt) {
 	}
 
+	// 영상 목록 한 페이지. 다음 페이지가 없으면 nextCursor는 null.
 	public record VideoPage(List<VideoResponse> videos, String nextCursor) {
 	}
 

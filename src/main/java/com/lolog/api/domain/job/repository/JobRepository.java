@@ -10,12 +10,14 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+// 작업(jobs)을 DB에서 읽고 쓴다.
 public interface JobRepository extends JpaRepository<Job, Long> {
 
 	// 커밋 뒤 큐에 넣지 못한 작업(attempts = 0). type은 DETECT 또는 COMIC.
 	@Query("select j.id from Job j where j.jobType = :type and j.status = 'QUEUED' and j.attempts = 0 and j.createdAt < :before order by j.id")
 	List<Long> findUnpublishedIds(@Param("type") String type, @Param("before") OffsetDateTime before);
 
+	// 만화의 작업을 찾는다.
 	Optional<Job> findByComicId(Long comicId);
 
 	// 잠그기 전에 엔티티를 읽어 두면 뒤의 잠금 조회가 그 옛 값을 돌려주므로, 만화 ID만 꺼낸다.
@@ -26,6 +28,7 @@ public interface JobRepository extends JpaRepository<Job, Long> {
 	@Query("select j.videoId from Job j where j.id = :id")
 	Optional<Long> findVideoIdById(@Param("id") Long id);
 
+	// 작업 종류만 꺼낸다.
 	@Query("select j.jobType from Job j where j.id = :id")
 	Optional<String> findTypeById(@Param("id") Long id);
 

@@ -39,12 +39,15 @@ public class SoundService {
 		this.storage = storage;
 	}
 
+	// 워커에 주는 소리 한 개.
 	public record SoundItem(Long id, String kind, Integer durationMs, String url) {
 	}
 
+	// 소리 목록 응답.
 	public record SoundList(List<SoundItem> sounds) {
 	}
 
+	// 넣거나 바꾼 소리의 ID.
 	public record SoundSaved(Long id) {
 	}
 
@@ -125,6 +128,7 @@ public class SoundService {
 				storage.presignedUrl(rs.getString("object_key")).toString()), k, q));
 	}
 
+	// SFX·BGM만 받는다.
 	private static String kind(String kind) {
 		if (kind == null || !KINDS.contains(kind)) {
 			throw ApiException.invalid("kind");
@@ -132,6 +136,7 @@ public class SoundService {
 		return kind;
 	}
 
+	// 검색어 모양을 확인한다.
 	private static String query(String query) {
 		if (query == null || !QUERY.matcher(query).matches()) {
 			throw ApiException.invalid("query");
@@ -144,6 +149,7 @@ public class SoundService {
 		return bytes.length >= 4 && bytes[0] == 'O' && bytes[1] == 'g' && bytes[2] == 'g' && bytes[3] == 'S';
 	}
 
+	// 트랜잭션이 커밋된 뒤에 할 일을 돌린다. 트랜잭션이 없으면 바로 돌린다.
 	private static void afterCommit(Runnable task) {
 		if (TransactionSynchronizationManager.isSynchronizationActive()) {
 			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {

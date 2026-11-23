@@ -26,6 +26,7 @@ public class CardAudioViews {
 	public record CardAudio(String status, String url, Long durationMs) {
 	}
 
+	// DB에서 읽은 카드 음성 상태.
 	private record State(String status, String key, Long durationMs) {
 	}
 
@@ -36,6 +37,7 @@ public class CardAudioViews {
 		return result;
 	}
 
+	// 카드 상세에 넣을 음성 상태와 재생 주소를 돌려준다.
 	public CardAudio detail(long cardId) {
 		State state = states(java.util.List.of(cardId)).get(cardId);
 		if (state == null || !"READY".equals(state.status())) {
@@ -44,6 +46,7 @@ public class CardAudioViews {
 		return new CardAudio("READY", storage.presignedUrl(state.key()).toString(), state.durationMs());
 	}
 
+	// 카드마다 음성 상태를 DB에서 한 번에 읽는다.
 	private Map<Long, State> states(Collection<Long> cardIds) {
 		Map<Long, State> result = new HashMap<>();
 		if (cardIds.isEmpty()) {

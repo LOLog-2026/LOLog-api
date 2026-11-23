@@ -10,6 +10,7 @@ public final class ComicDtos {
 	private ComicDtos() {
 	}
 
+	// 만화 목록 한 페이지와 다음 커서.
 	public record ComicPage(List<ComicResponse> comics, String nextCursor) {
 	}
 

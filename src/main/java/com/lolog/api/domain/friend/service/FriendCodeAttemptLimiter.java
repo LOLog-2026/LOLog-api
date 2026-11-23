@@ -17,6 +17,7 @@ public class FriendCodeAttemptLimiter {
 
 	private final StringRedisTemplate redis;
 
+	// 횟수를 셀 Redis를 받는다.
 	public FriendCodeAttemptLimiter(StringRedisTemplate redis) {
 		this.redis = redis;
 	}

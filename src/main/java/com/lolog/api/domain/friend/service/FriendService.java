@@ -38,6 +38,7 @@ public class FriendService {
 	private final CharacterDetacher detacher;
 	private final CharacterViews characters;
 
+	// 친구 기능에 필요한 저장소와 도구를 받는다.
 	public FriendService(JdbcTemplate jdbc, FriendCodeAttemptLimiter limiter, PushService push,
 			CharacterDetacher detacher, CharacterViews characters) {
 		this.jdbc = jdbc;
@@ -47,6 +48,7 @@ public class FriendService {
 		this.characters = characters;
 	}
 
+	// friendships 한 줄.
 	private record Friendship(long id, long requesterId, long addresseeId, String status, OffsetDateTime createdAt) {
 	}
 
@@ -253,12 +255,14 @@ public class FriendService {
 				Long.class, Math.min(a, b), Math.max(a, b));
 	}
 
+	// blocker가 blockedUser를 차단했는지 본다.
 	private boolean blocked(long blocker, long blockedUser) {
 		return Boolean.TRUE.equals(jdbc.queryForObject(
 				"select exists (select 1 from user_blocks where blocker_id = ? and blocked_id = ?)", Boolean.class,
 				blocker, blockedUser));
 	}
 
+	// 두 사람 사이의 친구 요청이나 친구 줄을 찾는다.
 	private Optional<Friendship> findPair(long a, long b) {
 		return jdbc.query("""
 				select id, requester_id, addressee_id, status, created_at from friendships
@@ -266,6 +270,7 @@ public class FriendService {
 				""", (rs, n) -> friendship(rs), a, b, b, a).stream().findFirst();
 	}
 
+	// 내가 받은 대기 중인 요청을 찾는다. 없으면 404다.
 	private Friendship receivedRequest(long me, long requestId) {
 		return jdbc.query("""
 				select id, requester_id, addressee_id, status, created_at from friendships
@@ -294,6 +299,7 @@ public class FriendService {
 				friendshipId);
 	}
 
+	// 회원 한 명의 닉네임과 친구 코드를 읽는다.
 	private FriendUser friendUser(long userId) {
 		return jdbc.queryForObject("select user_id, nickname, friend_code from user_profiles where user_id = ?",
 				(rs, n) -> new FriendUser(rs.getLong("user_id"), rs.getString("nickname"), rs.getString("friend_code")),
@@ -315,15 +321,18 @@ public class FriendService {
 				characters.friendCharacter(rs.getString("character_thumb_key"))), args);
 	}
 
+	// DB 한 줄을 Friendship으로 바꾼다.
 	private static Friendship friendship(java.sql.ResultSet rs) throws java.sql.SQLException {
 		return new Friendship(rs.getLong("id"), rs.getLong("requester_id"), rs.getLong("addressee_id"),
 				rs.getString("status"), rs.getObject("created_at", OffsetDateTime.class));
 	}
 
+	// 친구 코드를 찾지 못했다는 오류를 만든다.
 	private static ApiException codeNotFound() {
 		return new ApiException(ErrorCode.FRIEND_CODE_NOT_FOUND);
 	}
 
+	// 친구 요청을 찾지 못했다는 오류를 만든다.
 	private static ApiException requestNotFound() {
 		return new ApiException(ErrorCode.FRIEND_REQUEST_NOT_FOUND);
 	}

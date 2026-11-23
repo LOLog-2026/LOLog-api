@@ -22,6 +22,7 @@ public class UserDataService {
 		this.tx = tx;
 	}
 
+	// 회원 한 명의 데이터를 지운다.
 	public void delete(long userId) {
 		// 한 트랜잭션에서 지운다. 화자·대사·묶음은 DB가 함께 지운다(ON DELETE CASCADE).
 		// 진행 중인 감지·만화 작업도 지워지므로 워커의 다음 요청은 404·400이 된다(작업 취소).

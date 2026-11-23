@@ -48,6 +48,7 @@ public class CharacterViews {
 
 	// ---- 프로필·친구 ----
 
+	// 내 프로필 캐릭터 응답을 만든다. 만든 적이 없으면 null.
 	public ProfileCharacterService.ProfileCharacterResponse profileResponse(long userId) {
 		List<ProfileCharacterService.ProfileCharacterResponse> found = jdbc.query("""
 				select character_status, character_thumb_key, character_updated_at, character_voice, voice_clone_status,
@@ -79,6 +80,7 @@ public class CharacterViews {
 
 	// ---- 카드 응답 ----
 
+	// 카드 화자에 붙은 그림을 응답 모양으로 읽는다.
 	public Map<Ref, SpeakerCharacter> speakerCharacters(Collection<Ref> refs) {
 		Map<Ref, SpeakerCharacter> result = new HashMap<>();
 		Set<String> defaults = ids(refs, DEFAULT);
@@ -166,14 +168,17 @@ public class CharacterViews {
 		}
 	}
 
+	// 저장소 키를 10분 서명 주소로 바꾼다. 키가 없으면 null.
 	private String url(String key) {
 		return key == null ? null : storage.presignedUrl(key).toString();
 	}
 
+	// type이 같은 Ref의 id만 모은다.
 	private static Set<String> ids(Collection<Ref> refs, String type) {
 		return refs.stream().filter(r -> type.equals(r.type())).map(Ref::id).collect(Collectors.toSet());
 	}
 
+	// PROFILE Ref의 회원 ID만 모은다.
 	private static Set<Long> userIds(Collection<Ref> refs) {
 		return refs.stream()
 			.filter(r -> PROFILE.equals(r.type()))
@@ -182,6 +187,7 @@ public class CharacterViews {
 			.collect(Collectors.toSet());
 	}
 
+	// 글자로 적은 회원 ID를 숫자로 바꾼다. 모양이 틀리면 null.
 	static Long parseUserId(String id) {
 		if (id == null || !id.matches("\\d{1,18}")) {
 			return null;
@@ -189,6 +195,7 @@ public class CharacterViews {
 		return Long.parseLong(id);
 	}
 
+	// UNKNOWN_CHARACTER 예외를 만든다.
 	private static ApiException unknown(String field) {
 		return new ApiException(ErrorCode.UNKNOWN_CHARACTER, field);
 	}

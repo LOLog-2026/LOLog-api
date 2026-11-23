@@ -29,6 +29,7 @@ public class ComicPublisher {
 	private final ObjectMapper objectMapper;
 	private final TransactionTemplate tx;
 
+	// 큐에 넣는 데 필요한 저장소와 도구를 받는다.
 	public ComicPublisher(JobRepository jobs, ComicRepository comics, StringRedisTemplate redis,
 			ObjectMapper objectMapper, PlatformTransactionManager transactionManager) {
 		this.jobs = jobs;
@@ -46,6 +47,7 @@ public class ComicPublisher {
 	record AvatarMessage(Long jobId, String kind, Long userId) {
 	}
 
+	// 작업을 큐에 넣고, 실패하면 로그만 남긴다.
 	public void publishQuietly(Long jobId) {
 		try {
 			publish(jobId);
@@ -55,12 +57,14 @@ public class ComicPublisher {
 		}
 	}
 
+	// 아직 못 넣은 만화·캐릭터 작업을 다시 넣는다.
 	@Scheduled(fixedDelayString = "${lolog.detect.republish-delay-ms:60000}")
 	void republishPending() {
 		jobs.findUnpublishedIds("COMIC", OffsetDateTime.now().minusMinutes(1)).forEach(this::publishQuietly);
 		jobs.findUnpublishedIds("AVATAR", OffsetDateTime.now().minusMinutes(1)).forEach(this::publishQuietly);
 	}
 
+	// 작업 하나를 메시지로 만들어 스트림에 넣고 넣었다고 표시한다.
 	private void publish(Long jobId) {
 		tx.executeWithoutResult(status -> {
 			Job job = jobs.findById(jobId).orElseThrow();

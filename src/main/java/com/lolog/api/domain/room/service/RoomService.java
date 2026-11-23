@@ -93,6 +93,7 @@ public class RoomService {
 		return items(List.of(roomId), me).getFirst();
 	}
 
+	// 방 하나를 돌려준다.
 	@Transactional(readOnly = true)
 	public RoomItem room(long me, long roomId) {
 		requireMember(me, roomId);
@@ -208,6 +209,7 @@ public class RoomService {
 		return new InviteList(all.stream().filter(i -> userIds.contains(i.invitedUser().userId())).toList());
 	}
 
+	// 답을 기다리는 초대를 취소한다(방장).
 	@Transactional
 	public void cancelInvite(long me, long roomId, long inviteId) {
 		requireMember(me, roomId);
@@ -261,6 +263,7 @@ public class RoomService {
 
 	// ---- 올린 만화 ----
 
+	// 방에 올린 만화 목록을 돌려준다.
 	@Transactional(readOnly = true)
 	public PostList posts(long me, long roomId) {
 		requireMember(me, roomId);
@@ -352,6 +355,7 @@ public class RoomService {
 		return new MessageList(messages(me, roomId, rows), next);
 	}
 
+	// 방 대화에 글을 남긴다. postId가 있으면 그 만화에 단 댓글이다.
 	@Transactional
 	public RoomMessage comment(long me, long roomId, String text, Long postId) {
 		requireMember(me, roomId);
@@ -377,6 +381,7 @@ public class RoomService {
 
 	// ---- 안에서 쓰는 것 ----
 
+	// 방 이름의 앞뒤 공백을 빼고 길이를 확인한다.
 	private static String roomName(String name) {
 		String trimmed = name == null ? "" : name.strip();
 		int length = trimmed.codePointCount(0, trimmed.length());
@@ -413,6 +418,7 @@ public class RoomService {
 		}
 	}
 
+	// 초대 줄을 넣고 초대받은 사람에게 푸시를 보낸다.
 	private void sendInvites(long me, long roomId, String roomName, List<Long> userIds) {
 		for (Long userId : userIds) {
 			long inviteId = jdbc.queryForObject("""
@@ -431,6 +437,7 @@ public class RoomService {
 		return count == null ? 0 : count;
 	}
 
+	// 이미 들어간 방이 20개면 막는다.
 	private void checkRoomLimit(long userId) {
 		Long count = jdbc.queryForObject("select count(*) from room_members where user_id = ?", Long.class, userId);
 		if (count != null && count >= ROOM_LIMIT) {
@@ -448,6 +455,7 @@ public class RoomService {
 		jdbc.queryForList("select user_id from user_profiles where user_id = ? for update", Long.class, userId);
 	}
 
+	// 방장이 아니면 막는다.
 	private void requireOwner(long me, long roomId) {
 		Long owner = jdbc.queryForObject("select owner_id from rooms where id = ?", Long.class, roomId);
 		if (owner == null || owner != me) {
@@ -455,6 +463,7 @@ public class RoomService {
 		}
 	}
 
+	// 내가 받은 초대의 방 ID. 없으면 초대 없음 오류.
 	private long invitedRoom(long me, long inviteId) {
 		return jdbc.queryForList("select room_id from room_invites where id = ? and user_id = ?", Long.class, inviteId, me)
 			.stream()
@@ -462,10 +471,12 @@ public class RoomService {
 			.orElseThrow(RoomService::inviteNotFound);
 	}
 
+	// 방 인원 초과 오류를 만든다.
 	private static ApiException memberLimit() {
 		return new ApiException(ErrorCode.ROOM_MEMBER_LIMIT);
 	}
 
+	// 초대 없음 오류를 만든다.
 	private static ApiException inviteNotFound() {
 		return new ApiException(ErrorCode.ROOM_INVITE_NOT_FOUND);
 	}
@@ -488,15 +499,18 @@ public class RoomService {
 		return result;
 	}
 
+	// DB에서 읽은 대화 한 줄.
 	private record Row(long id, long userId, String type, Long postId, String body, OffsetDateTime at) {
 	}
 
+	// 지금 이 방의 멤버인지 본다.
 	private boolean isMember(long userId, long roomId) {
 		return Boolean.TRUE.equals(jdbc.queryForObject(
 				"select exists (select 1 from room_members where room_id = ? and user_id = ?)", Boolean.class, roomId,
 				userId));
 	}
 
+	// 멤버가 아니면 방 없음 오류.
 	private void requireMember(long me, long roomId) {
 		if (!isMember(me, roomId)) {
 			throw new ApiException(ErrorCode.ROOM_NOT_FOUND);
@@ -511,6 +525,7 @@ public class RoomService {
 			.orElseThrow(() -> new ApiException(ErrorCode.ROOM_POST_NOT_FOUND));
 	}
 
+	// 대화 줄을 넣고 방의 마지막 소식 시각을 바꾼다.
 	private long addMessage(long roomId, long userId, String type, Long postId, String body) {
 		long id = jdbc.queryForObject("""
 				insert into room_messages (room_id, user_id, message_type, post_id, body, created_at)
@@ -584,6 +599,7 @@ public class RoomService {
 				"select blocked_id from user_blocks where blocker_id = ? and hide_in_rooms", Long.class, me));
 	}
 
+	// 방 응답을 만든다(멤버·마지막 소식·받지 않은 글·초대).
 	private List<RoomItem> items(List<Long> roomIds, long me) {
 		if (roomIds.isEmpty()) {
 			return List.of();
@@ -640,10 +656,12 @@ public class RoomService {
 		return roomIds.stream().map(byId::get).filter(java.util.Objects::nonNull).toList();
 	}
 
+	// 방장이면 isOwner를 true로 바꾼다.
 	private static RoomMember withOwner(RoomMember m, long owner) {
 		return m.owner(m.userId() == owner);
 	}
 
+	// 방장 ID. 방이 없으면 null.
 	private Long ownerOf(long roomId) {
 		return jdbc.queryForList("select owner_id from rooms where id = ?", Long.class, roomId).stream().findFirst().orElse(null);
 	}
@@ -674,6 +692,7 @@ public class RoomService {
 		}).toList();
 	}
 
+	// 대화 줄을 응답 모양으로 바꾼다. 숨긴 사람의 줄은 내용을 뺀다.
 	private List<RoomMessage> messages(long me, long roomId, List<Row> rows) {
 		Set<Long> postIds = new HashSet<>();
 		rows.forEach(r -> {
@@ -699,6 +718,7 @@ public class RoomService {
 		}).toList();
 	}
 
+	// 저장소 키를 서명 주소로 바꾼다.
 	private String url(String key) {
 		return key == null ? null : storage.presignedUrl(key).toString();
 	}

@@ -86,6 +86,7 @@ public class Card {
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
 
+	// 녹음으로 만든 카드.
 	public Card(Long recordingId, Long userId, String kind, String summary, long startMs, long endMs,
 			OffsetDateTime recordedAt) {
 		this.recordingId = recordingId;
@@ -115,6 +116,7 @@ public class Card {
 		speakers.add(new CardSpeaker(this, key));
 	}
 
+	// 대사를 한 줄 더한다.
 	public void addLine(int lineNo, String speakerKey, String text, Long startMs, Long endMs) {
 		lines.add(new CardLine(this, lineNo, speakerKey, text, startMs, endMs));
 	}

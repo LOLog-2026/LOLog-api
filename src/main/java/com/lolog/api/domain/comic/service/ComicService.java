@@ -25,6 +25,7 @@ public class ComicService {
 	private final TransactionTemplate tx;
 	private final PushService push;
 
+	// 만화 요청에 필요한 저장소와 도구를 받는다.
 	public ComicService(CardRepository cards, ComicRepository comics, JobRepository jobs, ComicPublisher publisher,
 			TransactionTemplate tx, PushService push) {
 		this.cards = cards;
@@ -35,9 +36,11 @@ public class ComicService {
 		this.push = push;
 	}
 
+	// 만화 요청 응답. 새 만화 ID와 상태.
 	public record Created(Long comicId, ComicStatus status) {
 	}
 
+	// 카드로 만화를 요청하고 작업을 큐에 넣는다.
 	public Created request(long userId, long cardId) {
 		Created[] created = new Created[1];
 		Long jobId = tx.execute(status -> {
@@ -87,6 +90,7 @@ public class ComicService {
 		});
 	}
 
+	// 이미 만드는 중이라는 오류를 만든다.
 	private static ApiException inProgress() {
 		return new ApiException(ErrorCode.COMIC_IN_PROGRESS);
 	}

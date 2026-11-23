@@ -25,17 +25,20 @@ public class ProfileService {
 	private final CharacterViews characters;
 	private final SecureRandom random = new SecureRandom();
 
+	// DB와 캐릭터 조회 도구를 받는다.
 	public ProfileService(JdbcTemplate jdbc, CharacterViews characters) {
 		this.jdbc = jdbc;
 		this.characters = characters;
 	}
 
+	// 내 프로필을 돌려준다. 없으면 먼저 만든다.
 	@Transactional
 	public ProfileResponse get(long userId) {
 		ensure(userId);
 		return read(userId);
 	}
 
+	// 닉네임을 확인해 바꾸고 프로필을 돌려준다.
 	@Transactional
 	public ProfileResponse updateNickname(long userId, String nickname) {
 		String trimmed = nickname == null ? "" : nickname.strip();
@@ -62,11 +65,13 @@ public class ProfileService {
 		throw new IllegalStateException("친구 코드를 발급하지 못했습니다.");
 	}
 
+	// 프로필 줄이 있는지 본다.
 	private boolean exists(long userId) {
 		return Boolean.TRUE.equals(jdbc.queryForObject(
 				"select exists (select 1 from user_profiles where user_id = ?)", Boolean.class, userId));
 	}
 
+	// 프로필을 읽어 응답 모양으로 바꾼다.
 	private ProfileResponse read(long userId) {
 		return jdbc.queryForObject("select nickname, friend_code from user_profiles where user_id = ?",
 				(rs, n) -> {
@@ -76,6 +81,7 @@ public class ProfileService {
 				}, userId);
 	}
 
+	// 친구 코드 하나를 무작위로 뽑는다.
 	String newCode() {
 		StringBuilder code = new StringBuilder(CODE_LENGTH);
 		for (int i = 0; i < CODE_LENGTH; i++) {

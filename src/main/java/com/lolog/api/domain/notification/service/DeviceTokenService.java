@@ -10,6 +10,7 @@ public class DeviceTokenService {
 
 	private final JdbcTemplate jdbc;
 
+	// DB를 받는다.
 	public DeviceTokenService(JdbcTemplate jdbc) {
 		this.jdbc = jdbc;
 	}
@@ -29,10 +30,12 @@ public class DeviceTokenService {
 		jdbc.update("delete from device_tokens where token = ? and user_id = ?", token, userId);
 	}
 
+	// 사용자의 모든 폰 토큰을 돌려준다.
 	List<String> tokensOf(long userId) {
 		return jdbc.queryForList("select token from device_tokens where user_id = ? order by id", String.class, userId);
 	}
 
+	// FCM이 무효라고 한 토큰을 지운다.
 	void removeInvalid(List<String> tokens) {
 		jdbc.batchUpdate("delete from device_tokens where token = ?", tokens.stream().map(t -> new Object[] { t }).toList());
 	}

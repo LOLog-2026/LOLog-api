@@ -15,6 +15,7 @@ import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+// 앱에서 받은 녹음 하나. 글 묶음(RecordingPart) 여러 개로 나눠 받는다.
 @Entity
 @Table(name = "recordings")
 @Getter
@@ -56,6 +57,7 @@ public class Recording {
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
 
+	// 첫 묶음을 받을 때 새 녹음을 만든다.
 	public Recording(Long userId, String clientRecordingId, OffsetDateTime startedAt, boolean audioSaved) {
 		this.userId = userId;
 		this.clientRecordingId = clientRecordingId;

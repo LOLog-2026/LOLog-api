@@ -15,10 +15,12 @@ public class NotificationCleanupJob {
 
 	private final JdbcTemplate jdbc;
 
+	// DB를 받는다.
 	public NotificationCleanupJob(JdbcTemplate jdbc) {
 		this.jdbc = jdbc;
 	}
 
+	// 지난 알림을 지우고, 실패하면 로그만 남긴다.
 	@Scheduled(fixedDelayString = "${lolog.inbox.cleanup-delay-ms:3600000}",
 			initialDelayString = "${lolog.inbox.cleanup-initial-delay-ms:60000}")
 	public void run() {

@@ -39,6 +39,7 @@ public class BlogPoller {
 		this.objectMapper = objectMapper;
 	}
 
+	// 등록한 블로그를 모두 차례로 읽는다.
 	@Scheduled(initialDelayString = "${lolog.blog.poll-initial-delay-ms:300000}",
 			fixedDelayString = "${lolog.blog.poll-delay-ms:1800000}")
 	void pollAll() {

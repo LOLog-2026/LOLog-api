@@ -105,6 +105,7 @@ public class BlogService {
 		return tx.execute(status -> save(userId, siteUrl, title, categories, located, rule));
 	}
 
+	// 블로그를 저장하고 처음 글을 가져온다.
 	private Blog save(long userId, String siteUrl, String title, List<String> categories, Located located,
 			Categories rule) {
 		Platform platform = located.platform().platform();
@@ -124,6 +125,7 @@ public class BlogService {
 		return new Blog(id, siteUrl, title, categories, platform.optimized());
 	}
 
+	// 내 블로그 목록을 돌려준다.
 	@Transactional(readOnly = true)
 	public List<Blog> list(long userId) {
 		return jdbc.query(
@@ -133,6 +135,7 @@ public class BlogService {
 				userId);
 	}
 
+	// 카테고리를 바꿀 때 읽는 블로그 정보.
 	private record Source(Platform platform, String siteUrl, String feedUrl, String title, List<String> categories) {
 	}
 
@@ -188,6 +191,7 @@ public class BlogService {
 		return added.isEmpty() ? null : added;
 	}
 
+	// 피드를 받아 읽는다. 못 읽으면 INVALID_BLOG.
 	private Feed feed(String feedUrl) {
 		try {
 			Feed feed = FeedParser.parse(fetcher.get(feedUrl).body());
@@ -236,6 +240,7 @@ public class BlogService {
 				more ? String.valueOf(shown.getLast().id()) : null);
 	}
 
+	// 글 목록 한 줄과 커서로 쓸 ID.
 	private record Row(long id, BlogPost post) {
 	}
 
@@ -406,11 +411,13 @@ public class BlogService {
 		}
 	}
 
+	// JSON 카테고리 목록을 읽는다.
 	private List<String> read(String json) {
 		return objectMapper.readValue(json, new TypeReference<List<String>>() {
 		});
 	}
 
+	// 앞뒤 공백을 빼고 max자를 넘으면 자른다.
 	static String cut(String value, int max) {
 		if (value == null) {
 			return null;
@@ -419,14 +426,17 @@ public class BlogService {
 		return TextServiceLength.of(trimmed) > max ? TextServiceLength.head(trimmed, max) : trimmed;
 	}
 
+	// INVALID_BLOG 예외를 만든다.
 	private static ApiException invalidBlog() {
 		return new ApiException(ErrorCode.INVALID_BLOG);
 	}
 
+	// BLOG_EXISTS 예외를 만든다.
 	private static ApiException exists() {
 		return new ApiException(ErrorCode.BLOG_EXISTS);
 	}
 
+	// BLOG_NOT_FOUND 예외를 만든다.
 	static ApiException notFound() {
 		return new ApiException(ErrorCode.BLOG_NOT_FOUND);
 	}
@@ -437,10 +447,12 @@ public class BlogService {
 		private TextServiceLength() {
 		}
 
+		// 글자 수를 센다.
 		static int of(String value) {
 			return value.codePointCount(0, value.length());
 		}
 
+		// 앞에서 max자만 남긴다.
 		static String head(String value, int max) {
 			return value.substring(0, value.offsetByCodePoints(0, max));
 		}

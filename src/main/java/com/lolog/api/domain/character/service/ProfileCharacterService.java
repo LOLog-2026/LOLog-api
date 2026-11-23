@@ -72,6 +72,7 @@ public class ProfileCharacterService {
 			VoiceCloneService.VoiceCloneView voiceClone) {
 	}
 
+	// DB에서 읽은 프로필 캐릭터 상태.
 	private record State(String status, String thumbKey, OffsetDateTime updatedAt) {
 	}
 
@@ -246,11 +247,13 @@ public class ProfileCharacterService {
 		return views.profileResponse(userId);
 	}
 
+	// 프로필 행을 잠그고 캐릭터 상태를 읽는다.
 	private State lock(long userId) {
 		return jdbc.queryForObject("select character_status, character_thumb_key, character_updated_at "
 				+ "from user_profiles where user_id = ? for update", (rs, n) -> state(rs), userId);
 	}
 
+	// DB 행을 State로 바꾼다.
 	private static State state(java.sql.ResultSet rs) throws java.sql.SQLException {
 		return new State(rs.getString("character_status"), rs.getString("character_thumb_key"),
 				rs.getObject("character_updated_at", OffsetDateTime.class));
@@ -267,6 +270,7 @@ public class ProfileCharacterService {
 		return null;
 	}
 
+	// PNG면 그림으로 읽는다. 아니거나 못 읽으면 null.
 	private static BufferedImage readPng(byte[] bytes) {
 		if (bytes == null || !"image/png".equals(photoType(bytes))) {
 			return null;
@@ -301,6 +305,7 @@ public class ProfileCharacterService {
 		return out.toByteArray();
 	}
 
+	// 저장소 파일을 지운다. 실패하면 로그만 남긴다.
 	private void deleteQuietly(String key) {
 		try {
 			storage.delete(key);
@@ -310,6 +315,7 @@ public class ProfileCharacterService {
 		}
 	}
 
+	// 트랜잭션이 커밋된 뒤에 할 일을 맡긴다. 트랜잭션 밖이면 바로 한다.
 	private static void afterCommit(Runnable task) {
 		if (TransactionSynchronizationManager.isSynchronizationActive()) {
 			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -324,6 +330,7 @@ public class ProfileCharacterService {
 		}
 	}
 
+	// CHARACTER_NOT_FOUND 예외를 만든다.
 	private static ApiException notFound() {
 		return new ApiException(ErrorCode.CHARACTER_NOT_FOUND);
 	}

@@ -45,6 +45,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+// 카드 목록·상세·고치기·지우기를 맡는다.
 @Service
 public class CardService {
 
@@ -78,6 +79,7 @@ public class CardService {
 		this.characters = characters;
 	}
 
+	// 내 카드 목록을 최신순 또는 오래된순으로 돌려준다.
 	@Transactional(readOnly = true)
 	public CardPage list(long userId, String cursor, Integer size, String sort) {
 		PageSort order = PageSort.of(sort);
@@ -103,6 +105,7 @@ public class CardService {
 		return new CardPage(items, more ? String.valueOf(shown.getLast().getId()) : null);
 	}
 
+	// 카드 하나의 상세를 돌려준다.
 	@Transactional(readOnly = true)
 	public CardDetail detail(long userId, long id) {
 		return toDetail(find(userId, id));
@@ -284,6 +287,7 @@ public class CardService {
 		}
 	}
 
+	// "화자3"에서 번호 3을 꺼낸다.
 	private static int speakerNumber(String key) {
 		return Integer.parseInt(key.substring(SPEAKER_PREFIX.length()));
 	}
@@ -316,6 +320,7 @@ public class CardService {
 		}
 	}
 
+	// 내 카드를 찾는다. 없으면 CARD_NOT_FOUND.
 	private Card find(long userId, long id) {
 		return cards.findByIdAndUserId(id, userId).orElseThrow(CardService::notFound);
 	}
@@ -361,6 +366,7 @@ public class CardService {
 		}
 	}
 
+	// 카드를 상세 응답으로 바꾼다.
 	private CardDetail toDetail(Card card) {
 		List<Ref> refs = card.getSpeakers().stream()
 			.filter(s -> s.getCharacterType() != null)
@@ -390,6 +396,7 @@ public class CardService {
 	private record TextOrigin(String source, boolean truncated) {
 	}
 
+	// 글 ID마다 출처와 잘림을 읽는다.
 	private Map<Long, TextOrigin> origins(List<Long> textIds) {
 		if (textIds.isEmpty()) {
 			return Map.of();
@@ -418,18 +425,22 @@ public class CardService {
 		}
 	}
 
+	// null은 그대로, 아니면 앞뒤 공백을 뺀다.
 	private static String trimOrNull(String value) {
 		return value == null ? null : value.strip();
 	}
 
+	// [카드 ID, 개수] 줄을 Map으로 바꾼다.
 	private static Map<Long, Long> toMap(List<Object[]> rows) {
 		return rows.stream().collect(Collectors.toMap(r -> (Long) r[0], r -> (Long) r[1]));
 	}
 
+	// CARD_NOT_FOUND 예외를 만든다.
 	private static ApiException notFound() {
 		return new ApiException(ErrorCode.CARD_NOT_FOUND);
 	}
 
+	// UNKNOWN_SPEAKER 예외를 만든다.
 	private static ApiException unknownSpeaker(String field) {
 		return new ApiException(ErrorCode.UNKNOWN_SPEAKER, field);
 	}

@@ -6,6 +6,7 @@ import com.lolog.api.global.error.ErrorCode;
 // 요청한 사용자의 회원 ID를 돌려준다. 구현은 JwtAuthConfig(액세스 토큰의 sub)다.
 public interface CurrentUserProvider {
 
+	// 지금 요청한 회원의 ID다.
 	long currentUserId();
 
 	// 액세스 토큰의 role 클레임이 ADMIN인지(admin.md 1장, 초안). DB는 보지 않는다.

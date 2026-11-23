@@ -9,6 +9,7 @@ public record PageRequestParams(Long before, int size) {
 	public static final int DEFAULT_SIZE = 20;
 	public static final int MAX_SIZE = 50;
 
+	// cursor와 size를 검사해 목록 조회 조건으로 바꾼다.
 	public static PageRequestParams of(String cursor, Integer size) {
 		int limit = size == null ? DEFAULT_SIZE : size;
 		if (limit < 1 || limit > MAX_SIZE) {

@@ -20,6 +20,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
+// 녹음의 글 묶음 하나. 묶음마다 감지 작업을 따로 돌린다.
 @Entity
 @Table(name = "recording_parts")
 @Getter
@@ -66,6 +67,7 @@ public class RecordingPart {
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
 
+	// 받은 글 묶음을 만든다.
 	public RecordingPart(Recording recording, int partNo, boolean last, int durationSec, String sentences) {
 		this.recording = recording;
 		this.partNo = partNo;

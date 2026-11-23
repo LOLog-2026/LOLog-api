@@ -20,16 +20,19 @@ import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import tools.jackson.core.JacksonException;
 
+// 컨트롤러에서 난 예외를 명세의 오류 응답으로 바꾼다.
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
 	private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
+	// 서비스가 던진 오류 코드를 그대로 답한다.
 	@ExceptionHandler(ApiException.class)
 	public ResponseEntity<ErrorResponse> handleApi(ApiException e) {
 		return ResponseEntity.status(e.getStatus()).body(ErrorResponse.of(e));
 	}
 
+	// 검증에 실패한 첫 칸을 field로 400을 답한다.
 	@ExceptionHandler(MethodArgumentNotValidException.class)
 	public ResponseEntity<ErrorResponse> handleNotValid(MethodArgumentNotValidException e) {
 		String field = e.getBindingResult().getFieldError() != null ? e.getBindingResult().getFieldError().getField()
@@ -37,6 +40,7 @@ public class GlobalExceptionHandler {
 		return invalid(field);
 	}
 
+	// 본문 JSON을 읽지 못하면 틀린 위치를 field로 400을 답한다.
 	@ExceptionHandler(HttpMessageNotReadableException.class)
 	public ResponseEntity<ErrorResponse> handleNotReadable(HttpMessageNotReadableException e) {
 		return invalid(e.getCause() instanceof JacksonException je ? path(je.getPath()) : null);
@@ -61,15 +65,18 @@ public class GlobalExceptionHandler {
 		return respond(ErrorCode.UNSUPPORTED_MEDIA_TYPE, null);
 	}
 
+	// 경로·쿼리 값의 형식이 틀리면 그 이름을 field로 400을 답한다.
 	@ExceptionHandler(MethodArgumentTypeMismatchException.class)
 	public ResponseEntity<ErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
 		return invalid(e.getName());
 	}
 
+	// 400 INVALID_REQUEST 응답을 만든다.
 	private static ResponseEntity<ErrorResponse> invalid(String field) {
 		return respond(ErrorCode.INVALID_REQUEST, field);
 	}
 
+	// 오류 코드로 응답을 만든다.
 	private static ResponseEntity<ErrorResponse> respond(ErrorCode code, String field) {
 		return ResponseEntity.status(code.status()).body(ErrorResponse.of(code, field));
 	}
@@ -119,6 +126,7 @@ public class GlobalExceptionHandler {
 		return null;
 	}
 
+	// 위에서 잡지 못한 예외를 처리한다. 모르는 예외는 500이다.
 	@ExceptionHandler(Exception.class)
 	public ResponseEntity<ErrorResponse> handleUnexpected(Exception e) throws Exception {
 		// 보안 예외는 500으로 바꾸지 않고 Spring Security 처리(401 UNAUTHORIZED 등)로 넘긴다.

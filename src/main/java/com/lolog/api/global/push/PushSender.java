@@ -19,6 +19,7 @@ public interface PushSender {
 		}
 	};
 
+	// 푸시를 보낼 수 있는 상태인지 돌려준다.
 	default boolean enabled() {
 		return true;
 	}

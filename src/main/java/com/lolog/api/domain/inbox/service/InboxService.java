@@ -51,6 +51,7 @@ public class InboxService {
 	private final NamedParameterJdbcTemplate named;
 	private final ObjectMapper objectMapper;
 
+	// DB와 JSON 도구를 받는다.
 	public InboxService(JdbcTemplate jdbc, NamedParameterJdbcTemplate named, ObjectMapper objectMapper) {
 		this.jdbc = jdbc;
 		this.named = named;
@@ -113,6 +114,7 @@ public class InboxService {
 		return new InboxPage(items, next);
 	}
 
+	// 안 읽은 알림·공지사항이 있는지 돌려준다.
 	@Transactional(readOnly = true)
 	public Unread unread(long me) {
 		return new Unread(hasUnread(me));
@@ -177,6 +179,7 @@ public class InboxService {
 		}
 	}
 
+	// 마지막으로 본 뒤 그 기능의 알림이 왔는지 본다.
 	private boolean newSince(long me, String kind) {
 		return Boolean.TRUE.equals(named.queryForObject("""
 				select exists (select 1 from notifications x where x.user_id = :me and x.type in (:types)
@@ -194,6 +197,7 @@ public class InboxService {
 				""", Boolean.class, me, me));
 	}
 
+	// 30일 안의 안 읽은 알림이나 안 읽은 공지사항이 있는지 본다.
 	private boolean hasUnread(long me) {
 		return Boolean.TRUE.equals(jdbc.queryForObject("""
 				select exists (select 1 from notifications where user_id = ? and read_at is null and created_at > ?)
@@ -202,6 +206,7 @@ public class InboxService {
 				""", Boolean.class, me, OffsetDateTime.now(ZoneOffset.UTC).minusDays(KEEP_DAYS), me));
 	}
 
+	// 알림 data JSON을 맵으로 바꾼다.
 	private Map<String, Object> data(String json) {
 		return objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {
 		});

@@ -33,6 +33,7 @@ public class AudioRetentionJob {
 		this.clipper = clipper;
 	}
 
+	// 정해진 시간마다 자르기와 지우기를 차례로 한다.
 	@Scheduled(fixedDelayString = "${lolog.audio.retention-delay-ms:3600000}",
 			initialDelayString = "${lolog.audio.retention-initial-delay-ms:60000}")
 	public void run() {
@@ -45,6 +46,7 @@ public class AudioRetentionJob {
 		}
 	}
 
+	// 구간 음성이 없는 카드를 다시 자른다.
 	void retryClips() {
 		List<Long> cardIds = jdbc.queryForList("""
 				select c.id from cards c join recordings r on r.id = c.recording_id
@@ -55,6 +57,7 @@ public class AudioRetentionJob {
 		cardIds.forEach(clipper::clipQuietly);
 	}
 
+	// 7일 지난 녹음의 전체 음성 파일을 지운다.
 	void deleteExpired() {
 		List<long[]> expired = jdbc.query("""
 				select r.id, r.user_id from recordings r

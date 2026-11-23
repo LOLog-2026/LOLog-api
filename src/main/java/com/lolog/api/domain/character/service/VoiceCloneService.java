@@ -57,9 +57,11 @@ public class VoiceCloneService {
 	public record VoiceCloneView(String status, String previewUrl, String failReason, boolean shareWithFriends) {
 	}
 
+	// DB에서 읽은 내 목소리 상태와 파일 키.
 	private record State(String status, String sampleKey, String previewKey) {
 	}
 
+	// 녹음 파일 확장자와 Content-Type.
 	private record Audio(String ext, String contentType) {
 	}
 
@@ -250,12 +252,14 @@ public class VoiceCloneService {
 		return Boolean.TRUE.equals(found);
 	}
 
+	// 내 목소리 상태를 읽는다.
 	private State state(long userId) {
 		return jdbc.queryForObject(
 				"select voice_clone_status, voice_clone_key, voice_clone_preview_key from user_profiles where user_id = ?",
 				(rs, n) -> new State(rs.getString(1), rs.getString(2), rs.getString(3)), userId);
 	}
 
+	// 프로필 행을 잠그고 내 목소리 상태를 읽는다. 없으면 null.
 	private State lockedState(long userId) {
 		List<State> found = jdbc.query("""
 				select voice_clone_status, voice_clone_key, voice_clone_preview_key from user_profiles where user_id = ? for update
@@ -274,11 +278,13 @@ public class VoiceCloneService {
 		return null;
 	}
 
+	// wav 머리말(RIFF....WAVE)인지 본다.
 	static boolean isWav(byte[] bytes) {
 		return bytes.length >= 12 && bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F'
 				&& bytes[8] == 'W' && bytes[9] == 'A' && bytes[10] == 'V' && bytes[11] == 'E';
 	}
 
+	// 저장소 파일을 지운다. 실패하면 로그만 남긴다.
 	private void deleteQuietly(String key) {
 		try {
 			storage.delete(key);
@@ -288,6 +294,7 @@ public class VoiceCloneService {
 		}
 	}
 
+	// 트랜잭션이 커밋된 뒤에 할 일을 맡긴다. 트랜잭션 밖이면 바로 한다.
 	private static void afterCommit(Runnable task) {
 		if (TransactionSynchronizationManager.isSynchronizationActive()) {
 			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -302,6 +309,7 @@ public class VoiceCloneService {
 		}
 	}
 
+	// VOICE_CLONE_NOT_FOUND 예외를 만든다.
 	private static ApiException notFound() {
 		return new ApiException(ErrorCode.VOICE_CLONE_NOT_FOUND);
 	}

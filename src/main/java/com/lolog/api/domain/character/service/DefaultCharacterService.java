@@ -29,9 +29,11 @@ public class DefaultCharacterService {
 			String thumbnailUrl, String voiceUrl) {
 	}
 
+	// 기본 화자 목록 응답.
 	public record DefaultCharacterList(List<DefaultCharacterItem> characters) {
 	}
 
+	// 기본 화자 목록을 정한 순서대로 돌려준다.
 	@Transactional(readOnly = true)
 	public DefaultCharacterList list() {
 		return new DefaultCharacterList(jdbc.query("""
@@ -125,10 +127,12 @@ public class DefaultCharacterService {
 				&& b[10] == 'B' && b[11] == 'P';
 	}
 
+	// 4바이트를 큰 수 먼저(big-endian) int로 읽는다.
 	private static int readInt(byte[] b, int at) {
 		return ((b[at] & 0xFF) << 24) | ((b[at + 1] & 0xFF) << 16) | ((b[at + 2] & 0xFF) << 8) | (b[at + 3] & 0xFF);
 	}
 
+	// wav 머리말(RIFF....WAVE)인지 본다.
 	static boolean isWav(byte[] bytes) {
 		return bytes.length >= 12 && bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F'
 				&& bytes[8] == 'W' && bytes[9] == 'A' && bytes[10] == 'V' && bytes[11] == 'E';

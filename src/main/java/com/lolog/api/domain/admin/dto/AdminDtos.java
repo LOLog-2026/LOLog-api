@@ -13,6 +13,7 @@ public final class AdminDtos {
 	public record NoticeRequest(String title, String body) {
 	}
 
+	// 공지사항 응답.
 	public record Notice(Long id, String title, String body, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
 	}
 
@@ -20,6 +21,7 @@ public final class AdminDtos {
 	public record AdminUser(String nickname, String friendCode) {
 	}
 
+	// 오류 신고·의견 보내기 요청.
 	public record FeedbackRequest(String category, String text, String appVersion, String deviceModel) {
 	}
 
@@ -28,9 +30,11 @@ public final class AdminDtos {
 			String deviceModel, String status, OffsetDateTime createdAt) {
 	}
 
+	// 오류 신고·의견 목록 한 페이지.
 	public record FeedbackPage(List<FeedbackItem> items, String nextCursor) {
 	}
 
+	// 처리 상태(OPEN·DONE) 바꾸기 요청.
 	public record FeedbackStatusRequest(String status) {
 	}
 

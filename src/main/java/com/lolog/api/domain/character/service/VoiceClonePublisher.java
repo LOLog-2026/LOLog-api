@@ -45,13 +45,16 @@ public class VoiceClonePublisher {
 		this.tx = new TransactionTemplate(transactionManager);
 	}
 
+	// 큐에 넣는 내 목소리 작업 메시지.
 	record VoiceCloneMessage(Long jobId, String kind, Long userId, String text) {
 	}
 
+	// 큐에 넣기를 켰는지 알려 준다.
 	public boolean enabled() {
 		return enabled;
 	}
 
+	// 작업을 큐에 넣는다. 실패하면 로그만 남기고 다음에 다시 넣는다.
 	public void publishQuietly(Long jobId) {
 		if (!enabled) {
 			return;
@@ -64,6 +67,7 @@ public class VoiceClonePublisher {
 		}
 	}
 
+	// 아직 큐에 못 넣은 작업을 1분마다 다시 넣는다.
 	@Scheduled(fixedDelayString = "${lolog.detect.republish-delay-ms:60000}")
 	void republishPending() {
 		if (enabled) {
@@ -71,6 +75,7 @@ public class VoiceClonePublisher {
 		}
 	}
 
+	// 작업을 한 번만 큐에 넣고 넣었다고 표시한다.
 	private void publish(Long jobId) {
 		tx.executeWithoutResult(status -> {
 			Job job = jobs.findById(jobId).orElseThrow();

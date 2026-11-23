@@ -26,13 +26,16 @@ public final class FriendDtos {
 	public record FriendRequestCreate(String friendCode, Long userId) {
 	}
 
+	// 친구 요청에 보이는 상대 정보.
 	public record FriendUser(Long userId, String nickname, String friendCode) {
 	}
 
+	// 친구 요청 하나. direction은 SENT·RECEIVED다.
 	public record FriendRequestResponse(Long id, String direction, FriendUser user, String status,
 			OffsetDateTime createdAt) {
 	}
 
+	// 친구 요청 목록.
 	public record FriendRequestList(List<FriendRequestResponse> requests) {
 	}
 
@@ -41,6 +44,7 @@ public final class FriendDtos {
 			FriendCharacter character) {
 	}
 
+	// 내 친구 목록.
 	public record FriendList(List<FriendItem> friends) {
 	}
 
@@ -48,13 +52,16 @@ public final class FriendDtos {
 	public record BlockCreate(@NotNull Long userId, Boolean hideInRooms) {
 	}
 
+	// 차단한 사람의 방 글 숨기기 설정을 바꾸는 요청.
 	public record BlockUpdate(@NotNull Boolean hideInRooms) {
 	}
 
+	// 차단한 사람 하나.
 	public record BlockItem(Long userId, String nickname, String friendCode, OffsetDateTime blockedAt,
 			boolean hideInRooms) {
 	}
 
+	// 차단한 사람 목록.
 	public record BlockList(List<BlockItem> blocks) {
 	}
 

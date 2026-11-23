@@ -26,23 +26,27 @@ public class VideoController {
 		this.currentUser = currentUser;
 	}
 
+	// 카드로 영상 만들기를 요청한다.
 	@PostMapping("/api/cards/{id}/videos")
 	@ResponseStatus(HttpStatus.ACCEPTED)
 	public VideoAccepted request(@PathVariable Long id) {
 		return videos.request(currentUser.currentUserId(), id);
 	}
 
+	// 내 영상 목록을 페이지로 돌려준다.
 	@GetMapping("/api/videos")
 	public VideoPage list(@RequestParam(required = false) String cursor, @RequestParam(required = false) Integer size,
 			@RequestParam(required = false) String sort) {
 		return videos.list(currentUser.currentUserId(), cursor, size, sort);
 	}
 
+	// 내 영상 하나를 돌려준다.
 	@GetMapping("/api/videos/{id}")
 	public VideoResponse get(@PathVariable Long id) {
 		return videos.get(currentUser.currentUserId(), id);
 	}
 
+	// 내 영상을 지운다.
 	@DeleteMapping("/api/videos/{id}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void delete(@PathVariable Long id) {

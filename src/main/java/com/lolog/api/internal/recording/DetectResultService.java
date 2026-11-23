@@ -61,6 +61,7 @@ public class DetectResultService {
 		this.latePartMinutes = latePartMinutes;
 	}
 
+	// 감지 결과를 카드로 저장하고 다음 묶음을 큐에 넣는다.
 	public void receive(long recordingId, DetectResult result) {
 		List<Long> next = tx.execute(status -> {
 			Recording recording = recordings.findByIdForUpdate(recordingId)
@@ -103,6 +104,7 @@ public class DetectResultService {
 		next.forEach(publisher::publishQuietly);
 	}
 
+	// 감지 작업 실패를 기록하고 다음 묶음을 큐에 넣는다.
 	public void fail(long jobId, String reason) {
 		List<Long> next = tx.execute(status -> {
 			Long recordingId = jobs.findRecordingIdByJobId(jobId)
@@ -124,6 +126,7 @@ public class DetectResultService {
 		next.forEach(publisher::publishQuietly);
 	}
 
+	// 늦게 온 묶음이 있는지 주기적으로 확인한다.
 	@Scheduled(fixedDelayString = "${lolog.detect.late-check-delay-ms:60000}")
 	void dispatchLateCarries() {
 		dispatchLateCarries(OffsetDateTime.now().minusMinutes(latePartMinutes));
@@ -189,6 +192,7 @@ public class DetectResultService {
 			.toList();
 	}
 
+	// 감지한 카드를 저장할 Card로 바꾼다.
 	private Card toCard(Recording recording, DetectedCard detected) {
 		Card card = new Card(recording.getId(), recording.getUserId(), detected.kind(), detected.summary(),
 				detected.startMs(), detected.endMs(), recording.getStartedAt().plusNanos(detected.startMs() * 1_000_000));

@@ -97,6 +97,7 @@ public class VideoService {
 		return new VideoPage(items, next);
 	}
 
+	// 내 영상 하나를 돌려준다.
 	@Transactional(readOnly = true)
 	public VideoResponse get(long userId, long videoId) {
 		return videos.findByIdAndUserId(videoId, userId).map(this::response).orElseThrow(VideoService::notFound);
@@ -125,6 +126,7 @@ public class VideoService {
 		return Math.max(0, MAX_VIDEOS - used);
 	}
 
+	// 카드 내용을 아직 쓰는 영상 작업이 있는지 본다.
 	public boolean hasRunningBeforeDrawing(long cardId) {
 		return videos.existsByCardIdAndStatusIn(cardId, VideoStatus.BEFORE_DRAWING);
 	}
@@ -156,6 +158,7 @@ public class VideoService {
 		});
 	}
 
+	// 영상을 응답 모양으로 바꾼다. 파일 주소는 DONE일 때만 준다.
 	private VideoResponse response(Video video) {
 		boolean done = video.getStatus() == VideoStatus.DONE;
 		String summary = video.getCardSummary();
@@ -164,14 +167,17 @@ public class VideoService {
 				done ? video.getDurationMs() : null, video.getCreatedAt());
 	}
 
+	// 저장소 키를 서명 주소로 바꾼다.
 	private String url(String key) {
 		return key == null ? null : storage.presignedUrl(key).toString();
 	}
 
+	// 영상 없음 오류를 만든다.
 	private static ApiException notFound() {
 		return new ApiException(ErrorCode.VIDEO_NOT_FOUND);
 	}
 
+	// 이미 만드는 중 오류를 만든다.
 	private static ApiException inProgress() {
 		return new ApiException(ErrorCode.VIDEO_IN_PROGRESS);
 	}

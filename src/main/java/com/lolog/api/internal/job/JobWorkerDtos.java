@@ -9,6 +9,7 @@ public final class JobWorkerDtos {
 	private JobWorkerDtos() {
 	}
 
+	// 작업 실패 본문. reason은 실패 이유다.
 	public record JobFailRequest(@NotBlank @Size(max = 500) String reason) {
 	}
 

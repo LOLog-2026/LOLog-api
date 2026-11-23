@@ -11,6 +11,7 @@ public enum PageSort {
 	// 오래된순(id 오름차순)
 	OLDEST;
 
+	// 쿼리 sort 값을 정렬로 바꾼다. 모르는 값이면 400이다.
 	public static PageSort of(String sort) {
 		if (sort == null) {
 			return LATEST;

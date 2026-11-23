@@ -18,6 +18,7 @@ public class UploadSizeFilter extends OncePerRequestFilter {
 
 	private static final long MAX_BYTES = 1024 * 1024;
 
+	// 녹음 글 업로드 본문이 1MB를 넘으면 413으로 막는다.
 	@Override
 	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
 			throws ServletException, IOException {

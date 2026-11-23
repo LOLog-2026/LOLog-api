@@ -6,6 +6,7 @@ public enum Platform {
 
 	NAVER, TISTORY, VELOG, MEDIUM, WORDPRESS, OTHER;
 
+	// 따로 맞춘 플랫폼이면 true다.
 	public boolean optimized() {
 		return this != OTHER;
 	}

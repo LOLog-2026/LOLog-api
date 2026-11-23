@@ -89,6 +89,7 @@ public class TextService {
 		});
 	}
 
+	// 내 글 하나를 상태와 함께 돌려준다.
 	@Transactional(readOnly = true)
 	public TextResponse get(long userId, long id) {
 		List<TextResponse> rows = jdbc.query("""
@@ -116,6 +117,7 @@ public class TextService {
 		return "p.link as link, p.blog_title as blog_title";
 	}
 
+	// 블로그 글 정보를 붙이는 조인.
 	private static String blogJoin() {
 		return "left join blog_posts p on p.id = t.blog_post_id";
 	}
@@ -171,6 +173,7 @@ public class TextService {
 				""", OffsetDateTime.class, text.id());
 	}
 
+	// 워커가 알린 글 작업 실패를 기록한다.
 	@Transactional
 	public void fail(long jobId, String reason) {
 		Job job = jobs.findByIdForUpdate(jobId).orElseThrow(() -> ApiException.invalid(null));
@@ -199,6 +202,7 @@ public class TextService {
 		}
 	}
 
+	// 필수 칸의 앞뒤 공백을 빼고 길이를 확인한다.
 	private static String required(String value, int max, String field) {
 		String trimmed = value == null ? "" : value.strip();
 		if (trimmed.isEmpty()) {
@@ -222,14 +226,17 @@ public class TextService {
 		return trimmed;
 	}
 
+	// 글자 수를 센다(코드 포인트 기준).
 	static int length(String value) {
 		return value.codePointCount(0, value.length());
 	}
 
+	// 글 없음 오류를 만든다.
 	static ApiException notFound() {
 		return new ApiException(ErrorCode.TEXT_NOT_FOUND);
 	}
 
+	// 카드를 받을 때 읽는 글 한 줄.
 	record TextRow(long id, long userId, String source, String place, OffsetDateTime createdAt) {
 	}
 

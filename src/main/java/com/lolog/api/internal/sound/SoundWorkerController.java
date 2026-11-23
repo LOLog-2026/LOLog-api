@@ -25,6 +25,7 @@ public class SoundWorkerController {
 		this.sounds = sounds;
 	}
 
+	// 효과음·배경음을 넣거나 바꾼다.
 	@PutMapping("/internal/sounds/{freesoundId}")
 	public SoundSaved upsert(@PathVariable Long freesoundId,
 			@RequestPart(name = "file", required = false) MultipartFile file,
@@ -36,12 +37,14 @@ public class SoundWorkerController {
 				license);
 	}
 
+	// 효과음·배경음을 지운다.
 	@DeleteMapping("/internal/sounds/{freesoundId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void delete(@PathVariable Long freesoundId) {
 		sounds.delete(freesoundId);
 	}
 
+	// 저장한 효과음·배경음 목록을 준다.
 	@GetMapping("/internal/sounds")
 	public SoundList list(@RequestParam(required = false) String kind, @RequestParam(required = false) String query) {
 		return sounds.list(kind, query);

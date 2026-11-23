@@ -17,6 +17,7 @@ public final class CardDtos {
 	private CardDtos() {
 	}
 
+	// 카드 목록 한 페이지.
 	public record CardPage(List<CardSummary> cards, String nextCursor) {
 	}
 
@@ -26,6 +27,7 @@ public final class CardDtos {
 			OffsetDateTime createdAt) {
 	}
 
+	// 카드 상세 응답.
 	public record CardDetail(Long id, Long recordingId, String kind, String summary, String place,
 			OffsetDateTime recordedAt, Long startMs, Long endMs, List<Speaker> speakers, List<Line> lines,
 			List<ComicRef> comics, int comicRemaining, List<VideoRef> videos, int videoRemaining, CardAudio audio,
@@ -37,9 +39,11 @@ public final class CardDtos {
 	public record Speaker(String key, String name, SpeakerCharacter character) {
 	}
 
+	// 대사 한 줄.
 	public record Line(Long id, String speaker, String text) {
 	}
 
+	// 카드에 딸린 만화 하나의 ID와 상태.
 	public record ComicRef(Long id, ComicStatus status) {
 	}
 
@@ -154,6 +158,7 @@ public final class CardDtos {
 
 	}
 
+	// 고칠 대사. speaker·text 중 바꿀 것만 보낸다.
 	public record LineUpdate(@NotNull Long id, String speaker, String text) {
 	}
 

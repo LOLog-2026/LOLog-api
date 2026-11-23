@@ -27,12 +27,14 @@ public class ComicQueryService {
 	private final ImageStorage storage;
 	private final TransactionTemplate tx;
 
+	// 만화 저장소와 이미지 저장소를 받는다.
 	public ComicQueryService(ComicRepository comics, ImageStorage storage, TransactionTemplate tx) {
 		this.comics = comics;
 		this.storage = storage;
 		this.tx = tx;
 	}
 
+	// 내 만화 목록을 정렬해 페이지로 돌려준다.
 	public ComicPage list(long userId, String cursor, Integer size, String sort) {
 		PageSort order = PageSort.of(sort);
 		PageRequestParams params = PageRequestParams.of(cursor, size);
@@ -45,6 +47,7 @@ public class ComicQueryService {
 				more ? String.valueOf(shown.getLast().getId()) : null);
 	}
 
+	// 내 만화 하나를 돌려준다.
 	public ComicResponse detail(long userId, long id) {
 		return toResponse(comics.findByIdAndUserId(id, userId).orElseThrow(ComicQueryService::notFound));
 	}
@@ -66,6 +69,7 @@ public class ComicQueryService {
 		}
 	}
 
+	// 만화를 앱 응답 모양으로 바꾼다.
 	private ComicResponse toResponse(Comic comic) {
 		String url = comic.getStatus() == ComicStatus.DONE && comic.getImageKey() != null
 				? storage.presignedUrl(comic.getImageKey()).toString() : null;
@@ -75,6 +79,7 @@ public class ComicQueryService {
 				comic.getCreatedAt());
 	}
 
+	// 만화를 찾지 못했다는 오류를 만든다.
 	private static ApiException notFound() {
 		return new ApiException(ErrorCode.COMIC_NOT_FOUND);
 	}

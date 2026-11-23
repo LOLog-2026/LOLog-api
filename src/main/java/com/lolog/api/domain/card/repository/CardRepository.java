@@ -12,10 +12,13 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+// 카드 조회와 만화·영상 횟수 바꾸기.
 public interface CardRepository extends JpaRepository<Card, Long> {
 
+	// 녹음 하나의 카드를 ID순으로 읽는다.
 	List<Card> findByRecordingIdOrderById(Long recordingId);
 
+	// 내 카드 하나를 읽는다.
 	Optional<Card> findByIdAndUserId(Long id, Long userId);
 
 	// 고치기·지우기 중에 같은 카드로 만화를 요청하지 못하게 카드 행을 잠근다(#5의 만화 요청도 같은 행을 잠근다).
@@ -51,6 +54,7 @@ public interface CardRepository extends JpaRepository<Card, Long> {
 	@Query(value = "update cards set video_count = video_count - 1 where id = :id and video_count > 0", nativeQuery = true)
 	int decrementVideoCount(@Param("id") Long id);
 
+	// 카드마다 대사 수를 센다.
 	@Query("select l.card.id, count(l) from CardLine l where l.card.id in :cardIds group by l.card.id")
 	List<Object[]> countLinesByCardIds(@Param("cardIds") Collection<Long> cardIds);
 

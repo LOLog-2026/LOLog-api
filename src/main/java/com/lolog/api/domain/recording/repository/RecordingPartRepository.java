@@ -7,8 +7,10 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+// 녹음 묶음을 DB에서 읽고 쓴다.
 public interface RecordingPartRepository extends JpaRepository<RecordingPart, Long> {
 
+	// 녹음의 묶음을 순서대로 찾는다.
 	List<RecordingPart> findByRecordingIdOrderByPartNo(Long recordingId);
 
 	// 넘길 글이 있는데 다음 묶음이 오지 않은 묶음(늦게 온 묶음 규칙). before보다 먼저 받은 것만.

@@ -9,10 +9,12 @@ public class ApiException extends RuntimeException {
 	private final ErrorCode errorCode;
 	private final String field;
 
+	// 틀린 칸 없이 오류 코드만 담는다.
 	public ApiException(ErrorCode errorCode) {
 		this(errorCode, null);
 	}
 
+	// 오류 코드와 틀린 칸을 담는다.
 	public ApiException(ErrorCode errorCode, String field) {
 		super(errorCode.message());
 		this.errorCode = errorCode;

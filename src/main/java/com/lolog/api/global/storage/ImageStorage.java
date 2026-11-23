@@ -41,14 +41,17 @@ public class ImageStorage {
 		return "users/" + userId + "/videos/" + videoId + "/";
 	}
 
+	// 영상 파일 키
 	public static String videoKey(long userId, long videoId) {
 		return videoPrefix(userId, videoId) + "video.mp4";
 	}
 
+	// 영상 썸네일 키
 	public static String videoThumbKey(long userId, long videoId) {
 		return videoPrefix(userId, videoId) + "thumb.jpg";
 	}
 
+	// 영상 대사 음성 키
 	public static String videoAudioKey(long userId, long videoId) {
 		return videoPrefix(userId, videoId) + "audio.wav";
 	}
@@ -58,6 +61,7 @@ public class ImageStorage {
 		return recordingAudioPrefix(userId, recordingId) + seq + ".aac";
 	}
 
+	// 녹음 음성 파일들이 모인 폴더
 	public static String recordingAudioPrefix(long userId, long recordingId) {
 		return "users/" + userId + "/recordings/" + recordingId + "/audio/";
 	}
@@ -72,6 +76,7 @@ public class ImageStorage {
 		return "defaults/characters/" + id + ".png";
 	}
 
+	// 기본 화자 썸네일 키
 	public static String defaultCharacterThumbKey(String id) {
 		return "defaults/characters/" + id + "_thumb.webp";
 	}
@@ -91,10 +96,12 @@ public class ImageStorage {
 		return "users/" + userId + "/character/avatar.png";
 	}
 
+	// 프로필 캐릭터 썸네일 키
 	public static String profileCharacterThumbKey(long userId) {
 		return "users/" + userId + "/character/avatar_thumb.png";
 	}
 
+	// 프로필 원본 사진 키
 	public static String profilePhotoKey(long userId) {
 		return "users/" + userId + "/character/photo";
 	}
@@ -104,6 +111,7 @@ public class ImageStorage {
 		return "users/" + userId + "/voice/sample." + ext;
 	}
 
+	// 내 목소리 미리 듣기 키
 	public static String voiceClonePreviewKey(long userId) {
 		return "users/" + userId + "/voice/preview.wav";
 	}
@@ -112,15 +120,18 @@ public class ImageStorage {
 	public record StoredObject(byte[] bytes, String contentType) {
 	}
 
+	// 파일 내용과 Content-Type을 함께 꺼낸다.
 	public StoredObject getObject(String key) {
 		var response = s3.getObjectAsBytes(b -> b.bucket(bucket).key(key));
 		return new StoredObject(response.asByteArray(), response.response().contentType());
 	}
 
+	// PNG 이미지를 올린다.
 	public void putPng(String key, byte[] png) {
 		put(key, png, "image/png");
 	}
 
+	// AAC 음성을 올린다.
 	public void putAac(String key, byte[] aac) {
 		put(key, aac, "audio/aac");
 	}
@@ -136,6 +147,7 @@ public class ImageStorage {
 		}
 	}
 
+	// 파일 내용만 꺼낸다.
 	public byte[] get(String key) {
 		return s3.getObjectAsBytes(b -> b.bucket(bucket).key(key)).asByteArray();
 	}
@@ -180,11 +192,13 @@ public class ImageStorage {
 		}
 	}
 
+	// 10분 동안 열리는 서명 주소를 만든다.
 	public URL presignedUrl(String key) {
 		return presigner.presignGetObject(p -> p.signatureDuration(URL_TTL).getObjectRequest(g -> g.bucket(bucket).key(key)))
 			.url();
 	}
 
+	// 저장소에 파일 한 개를 올린다.
 	private void upload(String key, byte[] bytes, String contentType) {
 		s3.putObject(b -> b.bucket(bucket).key(key).contentType(contentType), RequestBody.fromBytes(bytes));
 	}

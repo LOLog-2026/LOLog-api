@@ -18,10 +18,12 @@ class InternalTokenFilter extends OncePerRequestFilter {
 
 	private final byte[] expected;
 
+	// 비교할 내부 토큰 값을 받는다.
 	InternalTokenFilter(String token) {
 		this.expected = token.getBytes(StandardCharsets.UTF_8);
 	}
 
+	// 헤더의 토큰이 맞을 때만 다음 필터로 넘긴다.
 	@Override
 	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
 			throws ServletException, IOException {
