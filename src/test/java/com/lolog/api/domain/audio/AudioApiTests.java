@@ -15,6 +15,8 @@ import com.lolog.api.global.auth.TestTokens;
 import com.lolog.api.global.storage.ImageStorage;
 import java.io.ByteArrayOutputStream;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
@@ -82,6 +84,10 @@ class AudioApiTests {
 	private static final AtomicLong USERS = new AtomicLong(8000);
 	private static final String INTERNAL = "internal-test-token";
 	private static final long WAIT_MS = 5000;
+	// 녹음 시작 시각. 음성 상태(PENDING)와 보관 작업이 녹음 끝 시각부터 7일을 세서, 고정 날짜를 쓰면 날짜가 지나며 결과가 바뀐다.
+	private static final OffsetDateTime STARTED_AT = OffsetDateTime.now(ZoneOffset.ofHours(9))
+		.minusHours(1)
+		.truncatedTo(ChronoUnit.SECONDS);
 
 	@Autowired
 	MockMvc mvc;
@@ -141,9 +147,9 @@ class AudioApiTests {
 			throws Exception {
 		String saved = audioSaved == null ? "" : ",\"audioSaved\":" + audioSaved;
 		String body = """
-				{"clientRecordingId":"%s","partNo":%d,"isLast":%s,"startedAt":"2026-11-10T12:30:00+09:00","durationSec":%d,
+				{"clientRecordingId":"%s","partNo":%d,"isLast":%s,"startedAt":"%s","durationSec":%d,
 				 "sentences":[{"startMs":1000,"endMs":2000,"text":"대화 글"}]%s}
-				""".formatted(clientId, partNo, isLast, durationSec, saved);
+				""".formatted(clientId, partNo, isLast, STARTED_AT, durationSec, saved);
 		String response = mvc.perform(post("/api/recordings").header("Authorization", TestTokens.bearer(userId))
 			.contentType(MediaType.APPLICATION_JSON)
 			.content(body)).andExpect(status().isAccepted()).andReturn().getResponse().getContentAsString();
@@ -314,9 +320,8 @@ class AudioApiTests {
 		long recording = upload(user, clientId, 1, false, 60, true);
 		upload(user, clientId, 2, false, 30, false);
 
-		OffsetDateTime started = OffsetDateTime.parse("2026-11-10T12:30:00+09:00");
 		assertThat(jdbc.queryForObject("select ended_at from recordings where id = ?", OffsetDateTime.class, recording)
-			.toInstant()).isEqualTo(started.plusSeconds(90).toInstant());
+			.toInstant()).isEqualTo(STARTED_AT.plusSeconds(90).toInstant());
 		assertThat(jdbc.queryForObject("select audio_saved from recordings where id = ?", Boolean.class, recording))
 			.isTrue();
 	}
