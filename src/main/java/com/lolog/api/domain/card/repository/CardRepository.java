@@ -41,6 +41,16 @@ public interface CardRepository extends JpaRepository<Card, Long> {
 	@Query(value = "update cards set comic_count = comic_count - 1 where id = :id and comic_count > 0", nativeQuery = true)
 	int decrementComicCount(@Param("id") Long id);
 
+	// 영상 만들기 횟수를 2보다 작을 때만 늘린다. 바뀐 줄이 0이면 이미 2번 만든 카드다(만화와 같은 방식).
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query(value = "update cards set video_count = video_count + 1 where id = :id and video_count < 2", nativeQuery = true)
+	int incrementVideoCount(@Param("id") Long id);
+
+	// 영상이 실패하면 횟수를 돌려준다(실패한 영상은 세지 않음).
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query(value = "update cards set video_count = video_count - 1 where id = :id and video_count > 0", nativeQuery = true)
+	int decrementVideoCount(@Param("id") Long id);
+
 	@Query("select l.card.id, count(l) from CardLine l where l.card.id in :cardIds group by l.card.id")
 	List<Object[]> countLinesByCardIds(@Param("cardIds") Collection<Long> cardIds);
 

@@ -65,6 +65,11 @@ public class Card {
 	@Column(name = "comic_count", nullable = false)
 	private int comicCount;
 
+	// 만든 영상 횟수(V14). 영상 요청 때 +1, 실패하면 −1, 영상을 지워도 줄지 않는다. videoRemaining = 2 − videoCount
+	// CardRepository의 조건 UPDATE로만 바꾼다. 카드를 고칠 때 엔티티가 옛 값으로 덮어쓰지 않게 읽기만 한다.
+	@Column(name = "video_count", nullable = false, insertable = false, updatable = false)
+	private int videoCount;
+
 	@OneToMany(mappedBy = "card", cascade = CascadeType.ALL, orphanRemoval = true)
 	@OrderBy("speakerKey")
 	private List<CardSpeaker> speakers = new ArrayList<>();

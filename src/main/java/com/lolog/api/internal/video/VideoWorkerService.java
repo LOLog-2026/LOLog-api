@@ -7,11 +7,12 @@ import com.lolog.api.domain.character.service.CharacterViews;
 import com.lolog.api.domain.job.entity.Job;
 import com.lolog.api.domain.job.repository.JobRepository;
 import com.lolog.api.domain.notification.service.PushService;
+import com.lolog.api.domain.video.entity.Video;
+import com.lolog.api.domain.video.repository.VideoRepository;
 import com.lolog.api.domain.video.service.VideoPublisher;
-import com.lolog.api.domain.video.service.VideoService.Video;
-import com.lolog.api.domain.video.service.VideoService;
 import com.lolog.api.global.error.ApiException;
 import com.lolog.api.global.storage.ImageStorage;
+import com.lolog.api.global.transaction.AfterCommit;
 import com.lolog.api.internal.comic.ComicWorkerDtos.Line;
 import com.lolog.api.internal.video.VideoWorkerDtos.SourceCharacter;
 import com.lolog.api.internal.video.VideoWorkerDtos.Speaker;
@@ -37,6 +38,7 @@ public class VideoWorkerService {
 	static final long MAX_BYTES = 20L * 1024 * 1024;
 
 	private final JdbcTemplate jdbc;
+	private final VideoRepository videos;
 	private final CardRepository cards;
 	private final JobRepository jobs;
 	private final CharacterViews characters;
@@ -46,10 +48,11 @@ public class VideoWorkerService {
 	private final VideoPublisher publisher;
 	private final PushService push;
 
-	public VideoWorkerService(JdbcTemplate jdbc, CardRepository cards, JobRepository jobs, CharacterViews characters,
-			ImageStorage storage, ObjectMapper objectMapper, TransactionTemplate tx, VideoPublisher publisher,
-			PushService push) {
+	public VideoWorkerService(JdbcTemplate jdbc, VideoRepository videos, CardRepository cards, JobRepository jobs,
+			CharacterViews characters, ImageStorage storage, ObjectMapper objectMapper, TransactionTemplate tx,
+			VideoPublisher publisher, PushService push) {
 		this.jdbc = jdbc;
+		this.videos = videos;
 		this.cards = cards;
 		this.jobs = jobs;
 		this.characters = characters;
@@ -64,9 +67,9 @@ public class VideoWorkerService {
 	public VideoSource source(long videoId) {
 		return tx.execute(status -> {
 			Video video = lockRunning(videoId);
-			Card card = cards.findById(video.cardId() == null ? -1L : video.cardId()).orElseThrow(VideoService::notFound);
-			jdbc.update("update videos set status = 'VOICE', updated_at = current_timestamp where id = ? and status = 'QUEUED'",
-					videoId);
+			Card card = cards.findById(video.getCardId() == null ? -1L : video.getCardId())
+				.orElseThrow(VideoWorkerService::notFound);
+			video.startVoice();
 			List<Ref> refs = card.getSpeakers()
 				.stream()
 				.filter(s -> s.getCharacterType() != null)
@@ -87,7 +90,7 @@ public class VideoWorkerService {
 	public void saveStoryboard(long videoId, JsonNode body) {
 		tx.executeWithoutResult(status -> {
 			Video video = lock(videoId);
-			if (!VideoService.IN_PROGRESS.contains(video.status())) {
+			if (!video.isInProgress()) {
 				return;
 			}
 			if (body == null || !body.isObject()) {
@@ -99,12 +102,11 @@ public class VideoWorkerService {
 			if (!body.path("videoId").isIntegralNumber() || body.path("videoId").asLong() != videoId) {
 				throw ApiException.invalid("videoId", "주소의 영상과 videoId가 다릅니다.");
 			}
-			if (!body.path("cardId").isIntegralNumber() || video.cardId() == null
-					|| body.path("cardId").asLong() != video.cardId()) {
+			if (!body.path("cardId").isIntegralNumber() || video.getCardId() == null
+					|| body.path("cardId").asLong() != video.getCardId()) {
 				throw ApiException.invalid("cardId", "영상의 카드와 cardId가 다릅니다.");
 			}
-			jdbc.update("update videos set storyboard = ?::jsonb, updated_at = current_timestamp where id = ?",
-					objectMapper.writeValueAsString(body), videoId);
+			video.saveStoryboard(objectMapper.writeValueAsString(body));
 		});
 	}
 
@@ -112,11 +114,10 @@ public class VideoWorkerService {
 	// 붙어 있던 프로필 캐릭터가 지워졌거나 친구가 끊겼으면 imageUrl 없이 준다(외모 글로만 그림).
 	public JsonNode storyboard(long videoId) {
 		Video video = running(videoId);
-		String json = jdbc.queryForObject("select storyboard::text from videos where id = ?", String.class, videoId);
-		if (json == null) {
-			throw VideoService.notFound();
+		if (!video.hasStoryboard()) {
+			throw notFound();
 		}
-		JsonNode board = objectMapper.readTree(json);
+		JsonNode board = objectMapper.readTree(video.getStoryboard());
 		JsonNode cast = board.path("characters");
 		if (cast.isArray()) {
 			List<Ref> refs = new ArrayList<>();
@@ -126,7 +127,7 @@ public class VideoWorkerService {
 					refs.add(ref);
 				}
 			}
-			Map<Ref, SourceCharacter> found = sourceCharacters(video.userId(), refs);
+			Map<Ref, SourceCharacter> found = sourceCharacters(video.getUserId(), refs);
 			for (JsonNode c : cast) {
 				Ref ref = parseRef(c.path("ref").asString(null));
 				if (c instanceof ObjectNode node) {
@@ -146,7 +147,7 @@ public class VideoWorkerService {
 	// 대사 음성(wav). 콘티를 먼저 받아야 한다. 받으면 DRAWING이 되고 2호 큐에 넣는다. 다시 보내면 파일만 덮어쓴다.
 	public void saveAudio(long videoId, byte[] wav) {
 		Video found = find(videoId);
-		if (!VideoService.IN_PROGRESS.contains(found.status())) {
+		if (!found.isInProgress()) {
 			return;
 		}
 		checkSize(wav);
@@ -154,25 +155,21 @@ public class VideoWorkerService {
 				|| wav[9] != 'A' || wav[10] != 'V' || wav[11] != 'E') {
 			throw ApiException.invalid("file", "wav 파일이 아닙니다.");
 		}
-		String key = ImageStorage.videoAudioKey(found.userId(), videoId);
+		String key = ImageStorage.videoAudioKey(found.getUserId(), videoId);
 		storage.put(key, wav, "audio/wav");
 		Long drawJob = tx.execute(status -> {
 			Video video = lock(videoId);
-			if (!VideoService.IN_PROGRESS.contains(video.status())) {
+			if (!video.isInProgress()) {
 				return null;
 			}
-			Boolean hasBoard = jdbc.queryForObject("select storyboard is not null from videos where id = ?", Boolean.class,
-					videoId);
-			if (!Boolean.TRUE.equals(hasBoard)) {
+			if (!video.hasStoryboard()) {
 				throw ApiException.invalid(null, "콘티를 먼저 보내 주세요.");
 			}
-			jdbc.update("update videos set audio_key = ?, updated_at = current_timestamp where id = ?", key, videoId);
-			if ("DRAWING".equals(video.status())) {
+			if (!video.attachAudio(key)) {
 				return null;
 			}
-			jdbc.update("update videos set status = 'DRAWING', updated_at = current_timestamp where id = ?", videoId);
 			completeJob(videoId, "VIDEO_VOICE");
-			return jobs.save(Job.video("VIDEO_DRAW", videoId, video.userId())).getId();
+			return jobs.save(Job.video("VIDEO_DRAW", videoId, video.getUserId())).getId();
 		});
 		if (drawJob != null) {
 			publisher.publishQuietly(drawJob);
@@ -180,10 +177,9 @@ public class VideoWorkerService {
 	}
 
 	public byte[] audio(long videoId) {
-		running(videoId);
-		String key = jdbc.queryForObject("select audio_key from videos where id = ?", String.class, videoId);
+		String key = running(videoId).getAudioKey();
 		if (key == null) {
-			throw VideoService.notFound();
+			throw notFound();
 		}
 		return storage.get(key);
 	}
@@ -191,7 +187,7 @@ public class VideoWorkerService {
 	// 완성 영상(mp4)과 목록용 그림(jpeg). 받으면 DONE, 중간 음성 파일을 지우고 푸시를 보낸다.
 	public void saveVideo(long videoId, byte[] mp4, byte[] thumbnail, Long durationMs) {
 		Video found = find(videoId);
-		if (!VideoService.IN_PROGRESS.contains(found.status())) {
+		if (!found.isInProgress()) {
 			return;
 		}
 		checkSize(mp4);
@@ -206,23 +202,21 @@ public class VideoWorkerService {
 		if (durationMs == null || durationMs <= 0) {
 			throw ApiException.invalid("durationMs", "durationMs는 0보다 커야 합니다.");
 		}
-		String videoKey = ImageStorage.videoKey(found.userId(), videoId);
-		String thumbKey = ImageStorage.videoThumbKey(found.userId(), videoId);
+		String videoKey = ImageStorage.videoKey(found.getUserId(), videoId);
+		String thumbKey = ImageStorage.videoThumbKey(found.getUserId(), videoId);
 		storage.put(videoKey, mp4, "video/mp4");
 		storage.put(thumbKey, thumbnail, "image/jpeg");
 		tx.executeWithoutResult(status -> {
 			Video video = lock(videoId);
-			if (!VideoService.IN_PROGRESS.contains(video.status())) {
+			if (!video.isInProgress()) {
 				return;
 			}
-			jdbc.update("""
-					update videos set status = 'DONE', video_key = ?, thumb_key = ?, duration_ms = ?, audio_key = null,
-					    updated_at = current_timestamp where id = ?
-					""", videoKey, thumbKey, durationMs, videoId);
+			String audioKey = video.getAudioKey();
+			video.finish(videoKey, thumbKey, durationMs);
 			completeJob(videoId, "VIDEO_DRAW");
-			push.notify(video.userId(), PushService.videoDone(videoId, video.cardId()));
-			if (video.audioKey() != null) {
-				VideoService.afterCommit(() -> storage.delete(video.audioKey()));
+			push.notify(video.getUserId(), PushService.videoDone(videoId, video.getCardId()));
+			if (audioKey != null) {
+				AfterCommit.run(() -> storage.delete(audioKey));
 			}
 		});
 	}
@@ -292,33 +286,24 @@ public class VideoWorkerService {
 	}
 
 	private Video find(long videoId) {
-		return jdbc.query("select * from videos where id = ?", (rs, n) -> Video.of(rs), videoId)
-			.stream()
-			.findFirst()
-			.orElseThrow(VideoService::notFound);
+		return videos.findById(videoId).orElseThrow(VideoWorkerService::notFound);
 	}
 
 	private Video lock(long videoId) {
-		return jdbc.query("select * from videos where id = ? for update", (rs, n) -> Video.of(rs), videoId)
-			.stream()
-			.findFirst()
-			.orElseThrow(VideoService::notFound);
+		return videos.findByIdForUpdate(videoId).orElseThrow(VideoWorkerService::notFound);
 	}
 
 	private Video lockRunning(long videoId) {
-		Video video = lock(videoId);
-		if (!VideoService.IN_PROGRESS.contains(video.status())) {
-			throw VideoService.notFound();
-		}
-		return video;
+		return videos.findByIdForUpdate(videoId).filter(Video::isInProgress).orElseThrow(VideoWorkerService::notFound);
 	}
 
 	private Video running(long videoId) {
-		Video video = find(videoId);
-		if (!VideoService.IN_PROGRESS.contains(video.status())) {
-			throw VideoService.notFound();
-		}
-		return video;
+		return videos.findById(videoId).filter(Video::isInProgress).orElseThrow(VideoWorkerService::notFound);
+	}
+
+	// 영상이 없거나 이미 끝났을 때(DONE·FAILED). 앱 쪽 404와 같은 코드·문구다.
+	private static ApiException notFound() {
+		return new ApiException(HttpStatus.NOT_FOUND, "VIDEO_NOT_FOUND", "영상을 찾을 수 없습니다.");
 	}
 
 	// multipart 한도(파일 20MB)가 먼저 막지만, 설정이 바뀌어도 넘지 않게 여기서도 본다.
