@@ -1,6 +1,7 @@
 package com.lolog.api.domain.character.service;
 
 import com.lolog.api.global.error.ApiException;
+import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.storage.ImageStorage;
 import java.time.OffsetDateTime;
 import java.util.Collection;
@@ -9,7 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
-import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -162,7 +162,7 @@ public class CharacterViews {
 		List<String> key = jdbc.queryForList("select character_key from user_profiles where user_id = :id",
 				Map.of("id", userId), String.class);
 		if (key.isEmpty() || key.getFirst() == null) {
-			throw new ApiException(HttpStatus.CONFLICT, "CHARACTER_NOT_READY", "쓸 수 있는 그림이 없는 캐릭터예요.");
+			throw new ApiException(ErrorCode.CHARACTER_NOT_READY);
 		}
 	}
 
@@ -190,7 +190,7 @@ public class CharacterViews {
 	}
 
 	private static ApiException unknown(String field) {
-		return new ApiException(HttpStatus.BAD_REQUEST, "UNKNOWN_CHARACTER", "붙일 수 없는 그림이에요.", field);
+		return new ApiException(ErrorCode.UNKNOWN_CHARACTER, field);
 	}
 
 }

@@ -13,13 +13,13 @@ import com.lolog.api.domain.comic.repository.ComicRepository;
 import com.lolog.api.domain.job.repository.JobRepository;
 import com.lolog.api.domain.notification.service.PushService;
 import com.lolog.api.global.error.ApiException;
+import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.storage.ImageStorage;
 import com.lolog.api.internal.comic.ComicWorkerDtos.ComicSource;
 import com.lolog.api.internal.comic.ComicWorkerDtos.Line;
 import com.lolog.api.internal.comic.ComicWorkerDtos.Speaker;
 import java.util.List;
 import java.util.Map;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
@@ -99,7 +99,7 @@ public class ComicWorkerService {
 		}
 		// 서버 앞단의 multipart 제한(20MB)이 먼저 막지만, 설정이 바뀌어도 넘지 않게 여기서도 본다.
 		if (png.length > MAX_BYTES) {
-			throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE", "파일이 너무 큽니다.");
+			throw new ApiException(ErrorCode.PAYLOAD_TOO_LARGE);
 		}
 		checkPng(png);
 		// 올린 뒤에 상태를 바꾼다. 같은 키라 다시 올려도 덮어쓴다.
@@ -129,20 +129,20 @@ public class ComicWorkerService {
 	// 기본만 본다: JSON 객체, version 1, comicId·cardId가 이 만화와 같음, panels 4개. 나머지 규칙은 워커가 검사한다.
 	private static void checkStoryboard(Comic comic, JsonNode body) {
 		if (body == null || !body.isObject()) {
-			throw ApiException.invalid(null, "콘티는 JSON 객체여야 합니다.");
+			throw ApiException.invalid(null);
 		}
 		if (!body.path("version").isIntegralNumber() || body.path("version").asLong() != 1) {
-			throw ApiException.invalid("version", "콘티 version은 1이어야 합니다.");
+			throw ApiException.invalid("version");
 		}
 		if (!body.path("comicId").isIntegralNumber() || body.path("comicId").asLong() != comic.getId()) {
-			throw ApiException.invalid("comicId", "주소의 만화와 comicId가 다릅니다.");
+			throw ApiException.invalid("comicId");
 		}
 		if (!body.path("cardId").isIntegralNumber() || comic.getCardId() == null
 				|| body.path("cardId").asLong() != comic.getCardId()) {
-			throw ApiException.invalid("cardId", "만화의 카드와 cardId가 다릅니다.");
+			throw ApiException.invalid("cardId");
 		}
 		if (!body.path("panels").isArray() || body.path("panels").size() != 4) {
-			throw ApiException.invalid("panels", "panels는 4개여야 합니다.");
+			throw ApiException.invalid("panels");
 		}
 	}
 
@@ -151,10 +151,10 @@ public class ComicWorkerService {
 		boolean header = png.length >= 24 && java.util.Arrays.equals(png, 0, 8, PNG_SIGNATURE, 0, 8)
 				&& png[12] == 'I' && png[13] == 'H' && png[14] == 'D' && png[15] == 'R';
 		if (!header) {
-			throw ApiException.invalid("file", "PNG 파일이 아닙니다.");
+			throw ApiException.invalid("file");
 		}
 		if (readInt(png, 16) != WIDTH || readInt(png, 20) != HEIGHT) {
-			throw ApiException.invalid("file", "이미지 크기는 800×3152px이어야 합니다.");
+			throw ApiException.invalid("file");
 		}
 	}
 
@@ -163,7 +163,7 @@ public class ComicWorkerService {
 	}
 
 	private static ApiException notFound() {
-		return new ApiException(HttpStatus.NOT_FOUND, "COMIC_NOT_FOUND", "만화가 없거나 이미 끝났습니다.");
+		return new ApiException(ErrorCode.COMIC_NOT_FOUND);
 	}
 
 }

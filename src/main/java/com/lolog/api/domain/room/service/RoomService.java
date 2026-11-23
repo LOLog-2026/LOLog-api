@@ -14,6 +14,7 @@ import com.lolog.api.domain.room.dto.RoomDtos.RoomPost;
 import com.lolog.api.domain.room.dto.RoomDtos.RoomPostSummary;
 import com.lolog.api.domain.room.dto.RoomDtos.RoomRef;
 import com.lolog.api.global.error.ApiException;
+import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.storage.ImageStorage;
 import com.lolog.api.global.web.PageRequestParams;
 import java.time.OffsetDateTime;
@@ -25,7 +26,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -79,7 +79,7 @@ public class RoomService {
 		}
 		List<String> nickname = jdbc.queryForList("select nickname from user_profiles where user_id = ?", String.class, me);
 		if (nickname.isEmpty() || nickname.getFirst() == null) {
-			throw new ApiException(HttpStatus.CONFLICT, "PROFILE_REQUIRED", "닉네임을 먼저 정해 주세요.");
+			throw new ApiException(ErrorCode.PROFILE_REQUIRED);
 		}
 		requireFriends(me, memberIds, "memberIds");
 		lockUser(me);
@@ -129,10 +129,10 @@ public class RoomService {
 		lockRoom(roomId);
 		requireOwner(me, roomId);
 		if (userId == me) {
-			throw ApiException.invalid("userId", "방장은 내보낼 수 없어요. 나가기를 써 주세요.");
+			throw ApiException.invalid("userId");
 		}
 		if (jdbc.update("delete from room_members where room_id = ? and user_id = ?", roomId, userId) == 0) {
-			throw new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "이 방의 멤버가 아니에요.");
+			throw new ApiException(ErrorCode.USER_NOT_FOUND);
 		}
 	}
 
@@ -147,13 +147,13 @@ public class RoomService {
 				roomId, me);
 		if (owner != null && owner == me && others != null && others > 0) {
 			if (newOwnerId == null) {
-				throw new ApiException(HttpStatus.CONFLICT, "NEW_OWNER_REQUIRED", "나가기 전에 새 방장을 골라 주세요.");
+				throw new ApiException(ErrorCode.NEW_OWNER_REQUIRED);
 			}
 			Boolean member = jdbc.queryForObject(
 					"select exists (select 1 from room_members where room_id = ? and user_id = ?)", Boolean.class, roomId,
 					newOwnerId);
 			if (newOwnerId == me || !Boolean.TRUE.equals(member)) {
-				throw ApiException.invalid("newOwnerId", "새 방장은 이 방의 다른 멤버여야 해요.");
+				throw ApiException.invalid("newOwnerId");
 			}
 			jdbc.update("update rooms set owner_id = ?, updated_at = current_timestamp where id = ?", newOwnerId, roomId);
 		}
@@ -187,7 +187,7 @@ public class RoomService {
 					"select exists (select 1 from room_members where room_id = ? and user_id = ?)", Boolean.class, roomId,
 					userIds.get(i));
 			if (Boolean.TRUE.equals(member)) {
-				throw ApiException.invalid("userIds[" + i + "]", "이미 방에 있는 사람이에요.");
+				throw ApiException.invalid("userIds[" + i + "]");
 			}
 		}
 		List<Long> fresh = new ArrayList<>();
@@ -272,20 +272,20 @@ public class RoomService {
 	public RoomPost postComic(long me, long roomId, Long comicId) {
 		requireMember(me, roomId);
 		if (comicId == null) {
-			throw ApiException.invalid("comicId", "comicId가 필요해요.");
+			throw ApiException.invalid("comicId");
 		}
 		Boolean mine = jdbc.queryForObject(
 				"select exists (select 1 from comics where id = ? and user_id = ? and status = 'DONE')", Boolean.class,
 				comicId, me);
 		if (!Boolean.TRUE.equals(mine)) {
-			throw new ApiException(HttpStatus.NOT_FOUND, "COMIC_NOT_FOUND", "올릴 수 있는 만화가 아니에요.");
+			throw new ApiException(ErrorCode.COMIC_NOT_FOUND);
 		}
 		List<Long> created = jdbc.queryForList("""
 				insert into room_posts (room_id, comic_id, user_id) values (?, ?, ?)
 				on conflict (room_id, comic_id) do nothing returning id
 				""", Long.class, roomId, comicId, me);
 		if (created.isEmpty()) {
-			throw new ApiException(HttpStatus.CONFLICT, "ROOM_POST_EXISTS", "이미 이 방에 올린 만화예요.");
+			throw new ApiException(ErrorCode.ROOM_POST_EXISTS);
 		}
 		long postId = created.getFirst();
 		addMessage(roomId, me, "POSTED", postId, null);
@@ -298,7 +298,7 @@ public class RoomService {
 		requireMember(me, roomId);
 		long author = postAuthor(roomId, postId);
 		if (author != me) {
-			throw new ApiException(HttpStatus.FORBIDDEN, "ROOM_POST_NOT_MINE", "올린 사람만 내릴 수 있어요.");
+			throw new ApiException(ErrorCode.ROOM_POST_NOT_MINE);
 		}
 		jdbc.update("delete from room_posts where id = ?", postId);
 	}
@@ -358,7 +358,7 @@ public class RoomService {
 		String trimmed = text == null ? "" : text.strip();
 		int length = trimmed.codePointCount(0, trimmed.length());
 		if (length < 1 || length > COMMENT_MAX) {
-			throw ApiException.invalid("text", "댓글은 1~200자예요.");
+			throw ApiException.invalid("text");
 		}
 		Long author = postId == null ? null : postAuthor(roomId, postId);
 		long id = addMessage(roomId, me, "COMMENT", postId, trimmed);
@@ -381,7 +381,7 @@ public class RoomService {
 		String trimmed = name == null ? "" : name.strip();
 		int length = trimmed.codePointCount(0, trimmed.length());
 		if (length < 1 || length > NAME_MAX) {
-			throw ApiException.invalid("name", "방 이름은 1~20자예요.");
+			throw ApiException.invalid("name");
 		}
 		return trimmed;
 	}
@@ -389,13 +389,13 @@ public class RoomService {
 	// 비었거나, 같은 사람이 두 번이거나, 나를 넣으면 400.
 	private static void checkInvitees(long me, List<Long> ids, String field, String emptyMessage) {
 		if (ids == null || ids.isEmpty()) {
-			throw ApiException.invalid(field, emptyMessage);
+			throw ApiException.invalid(field);
 		}
 		Set<Long> seen = new HashSet<>();
 		for (int i = 0; i < ids.size(); i++) {
 			Long id = ids.get(i);
 			if (id == null || id == me || !seen.add(id)) {
-				throw ApiException.invalid(field + "[" + i + "]", "같은 사람이나 나는 넣을 수 없어요.");
+				throw ApiException.invalid(field + "[" + i + "]");
 			}
 		}
 	}
@@ -408,7 +408,7 @@ public class RoomService {
 					  and ((requester_id = ? and addressee_id = ?) or (requester_id = ? and addressee_id = ?)))
 					""", Boolean.class, me, ids.get(i), ids.get(i), me);
 			if (!Boolean.TRUE.equals(friend)) {
-				throw new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "친구가 아닌 사람이에요.", field + "[" + i + "]");
+				throw new ApiException(ErrorCode.USER_NOT_FOUND, field + "[" + i + "]");
 			}
 		}
 	}
@@ -434,7 +434,7 @@ public class RoomService {
 	private void checkRoomLimit(long userId) {
 		Long count = jdbc.queryForObject("select count(*) from room_members where user_id = ?", Long.class, userId);
 		if (count != null && count >= ROOM_LIMIT) {
-			throw new ApiException(HttpStatus.CONFLICT, "ROOM_LIMIT", "방은 20개까지 들어갈 수 있어요.");
+			throw new ApiException(ErrorCode.ROOM_LIMIT);
 		}
 	}
 
@@ -451,7 +451,7 @@ public class RoomService {
 	private void requireOwner(long me, long roomId) {
 		Long owner = jdbc.queryForObject("select owner_id from rooms where id = ?", Long.class, roomId);
 		if (owner == null || owner != me) {
-			throw new ApiException(HttpStatus.FORBIDDEN, "ROOM_OWNER_ONLY", "방장만 할 수 있어요.");
+			throw new ApiException(ErrorCode.ROOM_OWNER_ONLY);
 		}
 	}
 
@@ -463,11 +463,11 @@ public class RoomService {
 	}
 
 	private static ApiException memberLimit() {
-		return new ApiException(HttpStatus.CONFLICT, "ROOM_MEMBER_LIMIT", "나를 포함해 6명까지예요.");
+		return new ApiException(ErrorCode.ROOM_MEMBER_LIMIT);
 	}
 
 	private static ApiException inviteNotFound() {
-		return new ApiException(HttpStatus.NOT_FOUND, "ROOM_INVITE_NOT_FOUND", "초대를 찾을 수 없어요.");
+		return new ApiException(ErrorCode.ROOM_INVITE_NOT_FOUND);
 	}
 
 	// 방장이 보는 답을 기다리는 초대. 방장이 아닌 방은 빈 목록.
@@ -499,7 +499,7 @@ public class RoomService {
 
 	private void requireMember(long me, long roomId) {
 		if (!isMember(me, roomId)) {
-			throw new ApiException(HttpStatus.NOT_FOUND, "ROOM_NOT_FOUND", "방을 찾을 수 없어요.");
+			throw new ApiException(ErrorCode.ROOM_NOT_FOUND);
 		}
 	}
 
@@ -508,7 +508,7 @@ public class RoomService {
 		return jdbc.queryForList("select user_id from room_posts where id = ? and room_id = ?", Long.class, postId, roomId)
 			.stream()
 			.findFirst()
-			.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ROOM_POST_NOT_FOUND", "만화를 찾을 수 없어요."));
+			.orElseThrow(() -> new ApiException(ErrorCode.ROOM_POST_NOT_FOUND));
 	}
 
 	private long addMessage(long roomId, long userId, String type, Long postId, String body) {

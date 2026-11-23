@@ -41,7 +41,7 @@ public class ProfileService {
 		String trimmed = nickname == null ? "" : nickname.strip();
 		int length = trimmed.codePointCount(0, trimmed.length());
 		if (length < 1 || length > NICKNAME_MAX) {
-			throw ApiException.invalid("nickname", "닉네임은 1~10자로 입력해 주세요.");
+			throw ApiException.invalid("nickname");
 		}
 		ensure(userId);
 		jdbc.update("update user_profiles set nickname = ?, updated_at = current_timestamp where user_id = ?", trimmed,

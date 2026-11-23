@@ -35,7 +35,7 @@ public class JobFailService {
 	}
 
 	public void fail(long jobId, String reason) {
-		String type = jobs.findTypeById(jobId).orElseThrow(() -> ApiException.invalid(null, "작업을 찾을 수 없습니다."));
+		String type = jobs.findTypeById(jobId).orElseThrow(() -> ApiException.invalid(null));
 		if ("COMIC".equals(type)) {
 			comics.fail(jobId, reason);
 		}

@@ -4,12 +4,12 @@ import com.lolog.api.domain.job.entity.Job;
 import com.lolog.api.domain.job.repository.JobRepository;
 import com.lolog.api.domain.notification.service.PushService;
 import com.lolog.api.global.error.ApiException;
+import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.storage.ImageStorage;
 import com.lolog.api.global.util.SafeLog;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -67,33 +67,33 @@ public class VoiceCloneService {
 	@Transactional
 	public ProfileCharacterService.ProfileCharacterResponse upload(long userId, byte[] audio, Boolean consent) {
 		if (!publisher.enabled()) {
-			throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "VOICE_CLONE_UNAVAILABLE", "아직 내 목소리를 만들 수 없어요.");
+			throw new ApiException(ErrorCode.VOICE_CLONE_UNAVAILABLE);
 		}
 		if (!Boolean.TRUE.equals(consent)) {
-			throw ApiException.invalid("consent", "녹음 보관에 동의해야 만들 수 있어요.");
+			throw ApiException.invalid("consent");
 		}
 		if (audio == null || audio.length == 0) {
-			throw ApiException.invalid("audio", "녹음이 없어요.");
+			throw ApiException.invalid("audio");
 		}
 		if (audio.length > MAX_AUDIO_BYTES) {
-			throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE", "녹음이 너무 큽니다.");
+			throw new ApiException(ErrorCode.PAYLOAD_TOO_LARGE);
 		}
 		Audio type = audioType(audio);
 		if (type == null) {
-			throw ApiException.invalid("audio", "wav나 m4a 녹음만 받아요.");
+			throw ApiException.invalid("audio");
 		}
 		if (recording(userId)) {
-			throw new ApiException(HttpStatus.CONFLICT, "RECORDING_IN_PROGRESS", "대화를 녹음하는 중에는 만들 수 없어요.");
+			throw new ApiException(ErrorCode.RECORDING_IN_PROGRESS);
 		}
 		// 목소리는 프로필 캐릭터가 있을 때만 고를 수 있어서 만들기도 같다(FR-CHAR-04).
 		List<String> character = jdbc.queryForList("select character_key from user_profiles where user_id = ? for update",
 				String.class, userId);
 		if (character.isEmpty() || character.getFirst() == null) {
-			throw new ApiException(HttpStatus.NOT_FOUND, "CHARACTER_NOT_FOUND", "프로필 캐릭터가 없어요.");
+			throw new ApiException(ErrorCode.CHARACTER_NOT_FOUND);
 		}
 		State state = state(userId);
 		if ("PROCESSING".equals(state.status())) {
-			throw new ApiException(HttpStatus.CONFLICT, "VOICE_CLONE_IN_PROGRESS", "내 목소리를 만드는 중이에요.");
+			throw new ApiException(ErrorCode.VOICE_CLONE_IN_PROGRESS);
 		}
 		String key = ImageStorage.voiceCloneSampleKey(userId, type.ext());
 		storage.put(key, audio, type.contentType());
@@ -152,14 +152,14 @@ public class VoiceCloneService {
 	@Transactional
 	public void share(long userId, Boolean shareWithFriends) {
 		if (shareWithFriends == null) {
-			throw ApiException.invalid("shareWithFriends", "shareWithFriends가 필요해요.");
+			throw ApiException.invalid("shareWithFriends");
 		}
 		int updated = jdbc.update("""
 				update user_profiles set voice_clone_share_friends = ?, updated_at = current_timestamp
 				where user_id = ? and voice_clone_status is not null
 				""", shareWithFriends, userId);
 		if (updated == 0) {
-			throw notFound("내 목소리가 없어요.");
+			throw notFound();
 		}
 	}
 
@@ -171,13 +171,13 @@ public class VoiceCloneService {
 				where user_id = ? and voice_clone_status in ('PROCESSING', 'READY') and voice_clone_key is not null
 				""", String.class, userId);
 		if (key.isEmpty()) {
-			throw notFound("받을 녹음이 없습니다.");
+			throw notFound();
 		}
 		try {
 			return storage.getObject(key.getFirst());
 		}
 		catch (software.amazon.awssdk.services.s3.model.NoSuchKeyException e) {
-			throw notFound("받을 녹음이 없습니다.");
+			throw notFound();
 		}
 	}
 
@@ -185,14 +185,14 @@ public class VoiceCloneService {
 	@Transactional
 	public void preview(long userId, byte[] wav) {
 		if (wav == null || !isWav(wav)) {
-			throw ApiException.invalid("file", "wav 파일이어야 해요.");
+			throw ApiException.invalid("file");
 		}
 		if (wav.length > MAX_AUDIO_BYTES) {
-			throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE", "미리 듣기가 너무 큽니다.");
+			throw new ApiException(ErrorCode.PAYLOAD_TOO_LARGE);
 		}
 		State state = lockedState(userId);
 		if (state == null || !"PROCESSING".equals(state.status())) {
-			throw notFound("만드는 중인 내 목소리가 없습니다.");
+			throw notFound();
 		}
 		String key = ImageStorage.voiceClonePreviewKey(userId);
 		storage.put(key, wav, "audio/wav");
@@ -210,7 +210,7 @@ public class VoiceCloneService {
 	// 이미 결과나 fail을 받은 작업이면 무시한다.
 	@Transactional
 	public void fail(long jobId, String reason) {
-		Job job = jobs.findByIdForUpdate(jobId).orElseThrow(() -> ApiException.invalid(null, "작업을 찾을 수 없습니다."));
+		Job job = jobs.findByIdForUpdate(jobId).orElseThrow(() -> ApiException.invalid(null));
 		if (job.isFinished()) {
 			return;
 		}
@@ -302,8 +302,8 @@ public class VoiceCloneService {
 		}
 	}
 
-	private static ApiException notFound(String message) {
-		return new ApiException(HttpStatus.NOT_FOUND, "VOICE_CLONE_NOT_FOUND", message);
+	private static ApiException notFound() {
+		return new ApiException(ErrorCode.VOICE_CLONE_NOT_FOUND);
 	}
 
 }

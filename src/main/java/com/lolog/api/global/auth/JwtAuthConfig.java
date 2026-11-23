@@ -1,6 +1,7 @@
 package com.lolog.api.global.auth;
 
 import com.lolog.api.global.error.ApiException;
+import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.util.SafeLog;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -17,7 +18,6 @@ import org.springframework.core.annotation.Order;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -67,16 +67,16 @@ public class JwtAuthConfig {
 				// 검사기는 모두 돌고 오류를 모은다. 만료된 토큰은 Redis와 관계없이 TOKEN_EXPIRED로 답해 앱이 갱신하게 한다.
 				.authenticationEntryPoint((request, response, e) -> {
 					if (hasError(e, EXPIRED)) {
-						UnauthorizedWriter.write(response, true);
+						UnauthorizedWriter.write(response, ErrorCode.TOKEN_EXPIRED);
 					}
 					else if (hasError(e, UNAVAILABLE)) {
-						UnauthorizedWriter.writeInternalError(response);
+						UnauthorizedWriter.write(response, ErrorCode.INTERNAL_ERROR);
 					}
 					else {
-						UnauthorizedWriter.write(response, false);
+						UnauthorizedWriter.write(response, ErrorCode.UNAUTHORIZED);
 					}
 				}))
-			.exceptionHandling(e -> e.authenticationEntryPoint((request, response, ex) -> UnauthorizedWriter.write(response)))
+			.exceptionHandling(e -> e.authenticationEntryPoint((request, response, ex) -> UnauthorizedWriter.write(response, ErrorCode.UNAUTHORIZED)))
 			.build();
 	}
 
@@ -110,7 +110,7 @@ public class JwtAuthConfig {
 			private Jwt jwt() {
 				Authentication auth = SecurityContextHolder.getContext().getAuthentication();
 				if (auth == null || !(auth.getPrincipal() instanceof Jwt jwt)) {
-					throw new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "인증이 필요합니다.");
+					throw new ApiException(ErrorCode.UNAUTHORIZED);
 				}
 				return jwt;
 			}

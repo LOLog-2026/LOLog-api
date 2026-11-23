@@ -11,6 +11,7 @@ import com.lolog.api.domain.video.entity.Video;
 import com.lolog.api.domain.video.repository.VideoRepository;
 import com.lolog.api.domain.video.service.VideoPublisher;
 import com.lolog.api.global.error.ApiException;
+import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.storage.ImageStorage;
 import com.lolog.api.global.transaction.AfterCommit;
 import com.lolog.api.internal.comic.ComicWorkerDtos.Line;
@@ -21,7 +22,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -94,17 +94,17 @@ public class VideoWorkerService {
 				return;
 			}
 			if (body == null || !body.isObject()) {
-				throw ApiException.invalid(null, "콘티는 JSON 객체여야 합니다.");
+				throw ApiException.invalid(null);
 			}
 			if (!body.path("version").isIntegralNumber() || body.path("version").asLong() != 1) {
-				throw ApiException.invalid("version", "콘티 version은 1이어야 합니다.");
+				throw ApiException.invalid("version");
 			}
 			if (!body.path("videoId").isIntegralNumber() || body.path("videoId").asLong() != videoId) {
-				throw ApiException.invalid("videoId", "주소의 영상과 videoId가 다릅니다.");
+				throw ApiException.invalid("videoId");
 			}
 			if (!body.path("cardId").isIntegralNumber() || video.getCardId() == null
 					|| body.path("cardId").asLong() != video.getCardId()) {
-				throw ApiException.invalid("cardId", "영상의 카드와 cardId가 다릅니다.");
+				throw ApiException.invalid("cardId");
 			}
 			video.saveStoryboard(objectMapper.writeValueAsString(body));
 		});
@@ -153,7 +153,7 @@ public class VideoWorkerService {
 		checkSize(wav);
 		if (wav.length < 12 || wav[0] != 'R' || wav[1] != 'I' || wav[2] != 'F' || wav[3] != 'F' || wav[8] != 'W'
 				|| wav[9] != 'A' || wav[10] != 'V' || wav[11] != 'E') {
-			throw ApiException.invalid("file", "wav 파일이 아닙니다.");
+			throw ApiException.invalid("file");
 		}
 		String key = ImageStorage.videoAudioKey(found.getUserId(), videoId);
 		storage.put(key, wav, "audio/wav");
@@ -163,7 +163,7 @@ public class VideoWorkerService {
 				return null;
 			}
 			if (!video.hasStoryboard()) {
-				throw ApiException.invalid(null, "콘티를 먼저 보내 주세요.");
+				throw ApiException.invalid(null);
 			}
 			if (!video.attachAudio(key)) {
 				return null;
@@ -193,14 +193,14 @@ public class VideoWorkerService {
 		checkSize(mp4);
 		checkSize(thumbnail);
 		if (mp4.length < 12 || mp4[4] != 'f' || mp4[5] != 't' || mp4[6] != 'y' || mp4[7] != 'p') {
-			throw ApiException.invalid("file", "mp4 파일이 아닙니다.");
+			throw ApiException.invalid("file");
 		}
 		if (thumbnail.length < 3 || (thumbnail[0] & 0xFF) != 0xFF || (thumbnail[1] & 0xFF) != 0xD8
 				|| (thumbnail[2] & 0xFF) != 0xFF) {
-			throw ApiException.invalid("thumbnail", "JPEG 파일이 아닙니다.");
+			throw ApiException.invalid("thumbnail");
 		}
 		if (durationMs == null || durationMs <= 0) {
-			throw ApiException.invalid("durationMs", "durationMs는 0보다 커야 합니다.");
+			throw ApiException.invalid("durationMs");
 		}
 		String videoKey = ImageStorage.videoKey(found.getUserId(), videoId);
 		String thumbKey = ImageStorage.videoThumbKey(found.getUserId(), videoId);
@@ -303,13 +303,13 @@ public class VideoWorkerService {
 
 	// 영상이 없거나 이미 끝났을 때(DONE·FAILED). 앱 쪽 404와 같은 코드·문구다.
 	private static ApiException notFound() {
-		return new ApiException(HttpStatus.NOT_FOUND, "VIDEO_NOT_FOUND", "영상을 찾을 수 없습니다.");
+		return new ApiException(ErrorCode.VIDEO_NOT_FOUND);
 	}
 
 	// multipart 한도(파일 20MB)가 먼저 막지만, 설정이 바뀌어도 넘지 않게 여기서도 본다.
 	private static void checkSize(byte[] bytes) {
 		if (bytes.length > MAX_BYTES) {
-			throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE", "파일이 너무 큽니다.");
+			throw new ApiException(ErrorCode.PAYLOAD_TOO_LARGE);
 		}
 	}
 

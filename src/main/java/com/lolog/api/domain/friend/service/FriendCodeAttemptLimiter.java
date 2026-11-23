@@ -1,9 +1,9 @@
 package com.lolog.api.domain.friend.service;
 
 import com.lolog.api.global.error.ApiException;
+import com.lolog.api.global.error.ErrorCode;
 import java.time.Duration;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 // 친구 코드 입력을 1분에 10번까지 받는다(코드 맞히기 막기, friends.md 오류 코드 TOO_MANY_REQUESTS).
@@ -34,7 +34,7 @@ public class FriendCodeAttemptLimiter {
 			if (ttl != null && ttl < 0) {
 				redis.expire(key, WINDOW);
 			}
-			throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "TOO_MANY_REQUESTS", "잠시 뒤에 다시 시도해 주세요.");
+			throw new ApiException(ErrorCode.TOO_MANY_REQUESTS);
 		}
 	}
 

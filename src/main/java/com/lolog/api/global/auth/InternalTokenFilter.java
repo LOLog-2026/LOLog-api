@@ -1,5 +1,6 @@
 package com.lolog.api.global.auth;
 
+import com.lolog.api.global.error.ErrorCode;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -29,7 +30,7 @@ class InternalTokenFilter extends OncePerRequestFilter {
 		boolean ok = expected.length > 0 && actual != null
 				&& MessageDigest.isEqual(expected, actual.getBytes(StandardCharsets.UTF_8));
 		if (!ok) {
-			UnauthorizedWriter.write(response);
+			UnauthorizedWriter.write(response, ErrorCode.UNAUTHORIZED);
 			return;
 		}
 		chain.doFilter(request, response);

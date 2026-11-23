@@ -22,6 +22,7 @@ import com.lolog.api.domain.comic.entity.ComicStatus;
 import com.lolog.api.domain.comic.repository.ComicRepository;
 import com.lolog.api.domain.video.service.VideoService;
 import com.lolog.api.global.error.ApiException;
+import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.storage.ImageStorage;
 import com.lolog.api.global.util.SafeLog;
 import com.lolog.api.global.web.PageRequestParams;
@@ -39,7 +40,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Limit;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -114,7 +114,7 @@ public class CardService {
 	public CardDetail update(long userId, long id, CardUpdateRequest request) {
 		if (request.getSpeakers().isEmpty() && request.getRemoveSpeakers().isEmpty() && request.getLines().isEmpty()
 				&& !request.isPlaceSent()) {
-			throw ApiException.invalid(null, "바꿀 내용이 없습니다.");
+			throw ApiException.invalid(null);
 		}
 		Card card = findLocked(userId, id);
 		Map<String, CardSpeaker> speakers = card.getSpeakers().stream()
@@ -138,7 +138,7 @@ public class CardService {
 			SpeakerUpdate update = request.getSpeakers().get(i);
 			String at = "speakers[" + i + "]";
 			if (!seenKeys.add(update.getKey())) {
-				throw ApiException.invalid(at + ".key", "같은 화자를 두 번 보냈습니다.");
+				throw ApiException.invalid(at + ".key");
 			}
 			boolean isNew = !speakers.containsKey(update.getKey());
 			if (isNew && !allowedNew.contains(update.getKey())) {
@@ -146,7 +146,7 @@ public class CardService {
 			}
 			// 새 화자는 이름·그림 없이 만들어도 된다.
 			if (!isNew && !update.isNameSent() && !update.isCharacterSent()) {
-				throw ApiException.invalid(at, "name이나 character가 필요합니다. 지우려면 null을 보내세요.");
+				throw ApiException.invalid(at);
 			}
 			if (update.isNameSent()) {
 				checkText(update.getName(), MAX_NAME, at + ".name");
@@ -154,10 +154,10 @@ public class CardService {
 			if (update.isCharacterSent() && update.getCharacter() != null) {
 				CharacterRef ref = update.getCharacter();
 				if (!CharacterViews.DEFAULT.equals(ref.type()) && !CharacterViews.PROFILE.equals(ref.type())) {
-					throw ApiException.invalid(at + ".character.type", "type은 DEFAULT 또는 PROFILE이에요.");
+					throw ApiException.invalid(at + ".character.type");
 				}
 				if (ref.id() == null || ref.id().isBlank()) {
-					throw ApiException.invalid(at + ".character.id", "id가 필요합니다.");
+					throw ApiException.invalid(at + ".character.id");
 				}
 				characters.checkAttachable(userId, new Ref(ref.type(), ref.id()), at + ".character");
 			}
@@ -168,13 +168,13 @@ public class CardService {
 			String key = request.getRemoveSpeakers().get(i);
 			String at = "removeSpeakers[" + i + "]";
 			if (!removeKeys.add(key)) {
-				throw ApiException.invalid(at, "같은 화자를 두 번 보냈습니다.");
+				throw ApiException.invalid(at);
 			}
 			if (!speakers.containsKey(key)) {
 				throw unknownSpeaker(at);
 			}
 			if (seenKeys.contains(key)) {
-				throw ApiException.invalid(at, "speakers에도 있는 화자는 뺄 수 없습니다.");
+				throw ApiException.invalid(at);
 			}
 		}
 
@@ -183,10 +183,10 @@ public class CardService {
 			LineUpdate update = request.getLines().get(j);
 			String at = "lines[" + j + "]";
 			if (!seenIds.add(update.id())) {
-				throw ApiException.invalid(at + ".id", "같은 대사를 두 번 보냈습니다.");
+				throw ApiException.invalid(at + ".id");
 			}
 			if (!lines.containsKey(update.id())) {
-				throw ApiException.invalid(at + ".id", "이 카드의 대사가 아닙니다.");
+				throw ApiException.invalid(at + ".id");
 			}
 			// 같은 요청에서 만드는 새 화자의 key도 쓸 수 있다.
 			if (update.speaker() != null && !speakers.containsKey(update.speaker())
@@ -211,20 +211,20 @@ public class CardService {
 		for (int i = 0; i < request.getSpeakers().size(); i++) {
 			String key = request.getSpeakers().get(i).getKey();
 			if (newKeys.contains(key) && !speakerOfLine.containsValue(key)) {
-				throw ApiException.invalid("speakers[" + i + "]", "새 화자에게 줄 대사가 없습니다.");
+				throw ApiException.invalid("speakers[" + i + "]");
 			}
 		}
 		int countAfter = speakers.size() + newKeys.size() - removeKeys.size();
 		if (countAfter < 1) {
-			throw ApiException.invalid("removeSpeakers", "화자가 한 명은 남아야 합니다.");
+			throw ApiException.invalid("removeSpeakers");
 		}
 		if (countAfter > MAX_SPEAKERS) {
-			throw new ApiException(HttpStatus.CONFLICT, "SPEAKER_LIMIT", "화자는 4명까지예요.");
+			throw new ApiException(ErrorCode.SPEAKER_LIMIT);
 		}
 		// 빼는 화자에게 대사가 남아 있으면 뺄 수 없다(대사 변경을 적용한 뒤 기준).
 		for (int i = 0; i < request.getRemoveSpeakers().size(); i++) {
 			if (speakerOfLine.containsValue(request.getRemoveSpeakers().get(i))) {
-				throw new ApiException(HttpStatus.CONFLICT, "SPEAKER_HAS_LINES", "대사가 남아 있는 화자는 뺄 수 없어요.");
+				throw new ApiException(ErrorCode.SPEAKER_HAS_LINES);
 			}
 		}
 		checkNoDuplicateCharacter(card, request.getSpeakers(), removeKeys);
@@ -324,11 +324,11 @@ public class CardService {
 	private Card findLocked(long userId, long id) {
 		Card card = cards.findByIdAndUserIdForUpdate(id, userId).orElseThrow(CardService::notFound);
 		if (comics.existsByCardIdAndStatusIn(card.getId(), ComicStatus.IN_PROGRESS)) {
-			throw new ApiException(HttpStatus.CONFLICT, "CARD_LOCKED", "만화를 만드는 중인 카드입니다.");
+			throw new ApiException(ErrorCode.CARD_LOCKED);
 		}
 		// 영상은 3호가 카드 내용을 받아 목소리를 만드는 동안(QUEUED·VOICE)만 막는다. 그림 단계는 카드를 보지 않는다.
 		if (videos.hasRunningBeforeDrawing(card.getId())) {
-			throw new ApiException(HttpStatus.CONFLICT, "CARD_LOCKED", "영상을 만드는 중인 카드입니다.");
+			throw new ApiException(ErrorCode.CARD_LOCKED);
 		}
 		return card;
 	}
@@ -356,8 +356,7 @@ public class CardService {
 		for (int i = 0; i < updates.size(); i++) {
 			Ref ref = after.get(updates.get(i).getKey());
 			if (ref != null && updates.get(i).isCharacterSent() && after.values().stream().filter(ref::equals).count() > 1) {
-				throw new ApiException(HttpStatus.BAD_REQUEST, "DUPLICATE_CHARACTER", "한 카드에서 같은 그림을 두 화자에 붙일 수 없어요.",
-						"speakers[" + i + "].character");
+				throw new ApiException(ErrorCode.DUPLICATE_CHARACTER, "speakers[" + i + "].character");
 			}
 		}
 	}
@@ -415,7 +414,7 @@ public class CardService {
 		}
 		String trimmed = value.strip();
 		if (trimmed.isEmpty() || trimmed.codePointCount(0, trimmed.length()) > max) {
-			throw ApiException.invalid(field, "1~" + max + "자로 써야 합니다.");
+			throw ApiException.invalid(field);
 		}
 	}
 
@@ -428,11 +427,11 @@ public class CardService {
 	}
 
 	private static ApiException notFound() {
-		return new ApiException(HttpStatus.NOT_FOUND, "CARD_NOT_FOUND", "카드를 찾을 수 없습니다.");
+		return new ApiException(ErrorCode.CARD_NOT_FOUND);
 	}
 
 	private static ApiException unknownSpeaker(String field) {
-		return new ApiException(HttpStatus.BAD_REQUEST, "UNKNOWN_SPEAKER", "카드에 없는 화자입니다.", field);
+		return new ApiException(ErrorCode.UNKNOWN_SPEAKER, field);
 	}
 
 }

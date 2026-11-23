@@ -6,6 +6,7 @@ import com.lolog.api.domain.comic.entity.Comic;
 import com.lolog.api.domain.comic.entity.ComicStatus;
 import com.lolog.api.domain.comic.repository.ComicRepository;
 import com.lolog.api.global.error.ApiException;
+import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.storage.ImageStorage;
 import com.lolog.api.global.web.PageRequestParams;
 import com.lolog.api.global.web.PageSort;
@@ -13,7 +14,6 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Limit;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -76,7 +76,7 @@ public class ComicQueryService {
 	}
 
 	private static ApiException notFound() {
-		return new ApiException(HttpStatus.NOT_FOUND, "COMIC_NOT_FOUND", "만화를 찾을 수 없습니다.");
+		return new ApiException(ErrorCode.COMIC_NOT_FOUND);
 	}
 
 }

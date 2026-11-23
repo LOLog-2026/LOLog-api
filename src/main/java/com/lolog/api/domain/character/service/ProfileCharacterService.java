@@ -6,6 +6,7 @@ import com.lolog.api.domain.job.entity.Job;
 import com.lolog.api.domain.job.repository.JobRepository;
 import com.lolog.api.domain.notification.service.PushService;
 import com.lolog.api.global.error.ApiException;
+import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.storage.ImageStorage;
 import com.lolog.api.global.util.SafeLog;
 import java.awt.Image;
@@ -19,7 +20,6 @@ import java.util.List;
 import javax.imageio.ImageIO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -79,19 +79,19 @@ public class ProfileCharacterService {
 	@Transactional
 	public ProfileCharacterResponse upload(long userId, byte[] photo) {
 		if (photo == null || photo.length == 0) {
-			throw ApiException.invalid("photo", "사진이 없어요.");
+			throw ApiException.invalid("photo");
 		}
 		if (photo.length > MAX_PHOTO_BYTES) {
-			throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE", "사진이 너무 큽니다.");
+			throw new ApiException(ErrorCode.PAYLOAD_TOO_LARGE);
 		}
 		String contentType = photoType(photo);
 		if (contentType == null) {
-			throw ApiException.invalid("photo", "JPEG나 PNG 사진만 받아요.");
+			throw ApiException.invalid("photo");
 		}
 		profiles.ensure(userId);
 		State state = lock(userId);
 		if ("PROCESSING".equals(state.status())) {
-			throw new ApiException(HttpStatus.CONFLICT, "CHARACTER_IN_PROGRESS", "캐릭터를 만드는 중이에요.");
+			throw new ApiException(ErrorCode.CHARACTER_IN_PROGRESS);
 		}
 		// 한국 시간 오늘 0시부터 받은 것(202). 실패한 작업은 세지 않는다. 만드는 중에 사용자가 지워서 멈춘 작업은
 		// 실패가 아니라 받은 것이라 센다(characters.md "202를 받은 것을 세고").
@@ -101,7 +101,7 @@ public class ProfileCharacterService {
 				  and created_at >= (date_trunc('day', now() at time zone 'Asia/Seoul') at time zone 'Asia/Seoul')
 				""", Long.class, userId);
 		if (today != null && today >= DAILY_LIMIT) {
-			throw new ApiException(HttpStatus.CONFLICT, "CHARACTER_LIMIT", "오늘은 캐릭터를 더 만들 수 없어요.");
+			throw new ApiException(ErrorCode.CHARACTER_LIMIT);
 		}
 
 		storage.put(ImageStorage.profilePhotoKey(userId), photo, contentType);
@@ -162,11 +162,11 @@ public class ProfileCharacterService {
 	public void avatar(long userId, byte[] png, String appearance) {
 		BufferedImage image = readPng(png);
 		if (image == null || image.getWidth() != AVATAR_SIZE || image.getHeight() != AVATAR_SIZE) {
-			throw ApiException.invalid("file", "768×768 PNG여야 해요.");
+			throw ApiException.invalid("file");
 		}
 		String text = appearance == null ? "" : appearance.strip();
 		if (text.isEmpty() || text.length() > MAX_APPEARANCE) {
-			throw ApiException.invalid("appearance", "appearance는 1~200자예요.");
+			throw ApiException.invalid("appearance");
 		}
 		List<State> found = jdbc.query("select character_status, character_thumb_key, character_updated_at "
 				+ "from user_profiles where user_id = ? for update", (rs, n) -> state(rs), userId);
@@ -192,7 +192,7 @@ public class ProfileCharacterService {
 	// 이미 결과나 fail을 받은 작업이면 무시한다.
 	@Transactional
 	public void fail(long jobId, String reason) {
-		Job job = jobs.findByIdForUpdate(jobId).orElseThrow(() -> ApiException.invalid(null, "작업을 찾을 수 없습니다."));
+		Job job = jobs.findByIdForUpdate(jobId).orElseThrow(() -> ApiException.invalid(null));
 		if (job.isFinished()) {
 			return;
 		}
@@ -220,14 +220,13 @@ public class ProfileCharacterService {
 		List<String> key = jdbc.queryForList("select character_key from user_profiles where user_id = ? for update",
 				String.class, userId);
 		if (key.isEmpty() || key.getFirst() == null) {
-			throw new ApiException(HttpStatus.NOT_FOUND, "CHARACTER_NOT_FOUND", "프로필 캐릭터가 없어요.");
+			throw new ApiException(ErrorCode.CHARACTER_NOT_FOUND);
 		}
 		if ("self".equals(voice)) {
 			String clone = jdbc.queryForObject("select voice_clone_status from user_profiles where user_id = ?",
 					String.class, userId);
 			if (!"READY".equals(clone)) {
-				throw new ApiException(HttpStatus.CONFLICT, "VOICE_CLONE_NOT_READY", "아직 고를 수 있는 내 목소리가 없어요.",
-						"voice");
+				throw new ApiException(ErrorCode.VOICE_CLONE_NOT_READY, "voice");
 			}
 		}
 		else if (voice != null) {
@@ -235,7 +234,7 @@ public class ProfileCharacterService {
 					"select exists (select 1 from default_characters where id = ? and voice_key is not null)", Boolean.class,
 					voice);
 			if (!Boolean.TRUE.equals(exists)) {
-				throw new ApiException(HttpStatus.BAD_REQUEST, "UNKNOWN_CHARACTER", "고를 수 없는 목소리예요.", "voice");
+				throw new ApiException(ErrorCode.UNKNOWN_CHARACTER, "voice");
 			}
 		}
 		jdbc.update("update user_profiles set character_voice = ?, updated_at = current_timestamp where user_id = ?", voice,
@@ -326,7 +325,7 @@ public class ProfileCharacterService {
 	}
 
 	private static ApiException notFound() {
-		return new ApiException(HttpStatus.NOT_FOUND, "CHARACTER_NOT_FOUND", "받을 사진이 없습니다.");
+		return new ApiException(ErrorCode.CHARACTER_NOT_FOUND);
 	}
 
 }

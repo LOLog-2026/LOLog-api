@@ -1,6 +1,7 @@
 package com.lolog.api.domain.sound.service;
 
 import com.lolog.api.global.error.ApiException;
+import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.storage.ImageStorage;
 import com.lolog.api.global.util.SafeLog;
 import java.util.List;
@@ -8,7 +9,6 @@ import java.util.Set;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,16 +54,16 @@ public class SoundService {
 	public SoundSaved upsert(long freesoundId, byte[] file, String kind, String query, String title, Integer durationMs,
 			String sourceUrl, String license) {
 		if (freesoundId <= 0) {
-			throw ApiException.invalid("freesoundId", "freesoundId는 0보다 커야 해요.");
+			throw ApiException.invalid("freesoundId");
 		}
 		if (file == null || file.length == 0) {
-			throw ApiException.invalid("file", "소리 파일이 없어요.");
+			throw ApiException.invalid("file");
 		}
 		if (file.length > MAX_FILE_BYTES) {
-			throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE", "소리 파일이 너무 큽니다.");
+			throw new ApiException(ErrorCode.PAYLOAD_TOO_LARGE);
 		}
 		if (!isOgg(file)) {
-			throw ApiException.invalid("file", "ogg 파일만 받아요.");
+			throw ApiException.invalid("file");
 		}
 		String k = kind(kind);
 		String q = query(query);
@@ -72,15 +72,15 @@ public class SoundService {
 			t = t.substring(0, t.offsetByCodePoints(0, MAX_TITLE));
 		}
 		if (durationMs == null || durationMs <= 0) {
-			throw ApiException.invalid("durationMs", "durationMs는 0보다 커야 해요.");
+			throw ApiException.invalid("durationMs");
 		}
 		String source = sourceUrl == null ? "" : sourceUrl.strip();
 		if (source.isEmpty() || source.length() > MAX_SOURCE_URL
 				|| !(source.startsWith("https://") || source.startsWith("http://"))) {
-			throw ApiException.invalid("sourceUrl", "sourceUrl은 " + MAX_SOURCE_URL + "자 이하 http·https 주소예요.");
+			throw ApiException.invalid("sourceUrl");
 		}
 		if (license != null && !LICENSE.equals(license.strip())) {
-			throw ApiException.invalid("license", "CC0 소리만 받아요.");
+			throw ApiException.invalid("license");
 		}
 		// object_key는 id로 정해지니 넣은 뒤에 채운다(그 전에는 빈 값).
 		long id = jdbc.queryForObject("""
@@ -127,14 +127,14 @@ public class SoundService {
 
 	private static String kind(String kind) {
 		if (kind == null || !KINDS.contains(kind)) {
-			throw ApiException.invalid("kind", "kind는 SFX 또는 BGM이에요.");
+			throw ApiException.invalid("kind");
 		}
 		return kind;
 	}
 
 	private static String query(String query) {
 		if (query == null || !QUERY.matcher(query).matches()) {
-			throw ApiException.invalid("query", "query는 영어 소문자·숫자·_ 1~30자예요.");
+			throw ApiException.invalid("query");
 		}
 		return query;
 	}

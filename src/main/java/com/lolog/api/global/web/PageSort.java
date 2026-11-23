@@ -18,7 +18,7 @@ public enum PageSort {
 		return switch (sort) {
 			case "latest" -> LATEST;
 			case "oldest" -> OLDEST;
-			default -> throw ApiException.invalid("sort", "sort는 latest, oldest 중 하나입니다.");
+			default -> throw ApiException.invalid("sort");
 		};
 	}
 

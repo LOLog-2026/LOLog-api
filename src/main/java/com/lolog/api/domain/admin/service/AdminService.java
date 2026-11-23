@@ -6,6 +6,7 @@ import com.lolog.api.domain.admin.dto.AdminDtos.FeedbackPage;
 import com.lolog.api.domain.admin.dto.AdminDtos.FeedbackRequest;
 import com.lolog.api.domain.admin.dto.AdminDtos.Notice;
 import com.lolog.api.global.error.ApiException;
+import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.web.PageRequestParams;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -13,7 +14,6 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -99,7 +99,7 @@ public class AdminService {
 	public FeedbackItem send(long me, FeedbackRequest request) {
 		String category = request.category();
 		if (!Set.of("BUG", "OPINION").contains(category == null ? "" : category)) {
-			throw ApiException.invalid("category", "category는 BUG 또는 OPINION이에요.");
+			throw ApiException.invalid("category");
 		}
 		String text = trimmed(request.text(), "text", FEEDBACK_MAX, "내용은 1~1000자예요.");
 		String appVersion = trimmed(request.appVersion(), "appVersion", 30, "appVersion이 필요해요(30자까지).");
@@ -109,7 +109,7 @@ public class AdminService {
 				"select count(*) from feedback where user_id = ? and created_at > current_timestamp - interval '1 day'",
 				Long.class, me);
 		if (today != null && today >= FEEDBACK_PER_DAY) {
-			throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "TOO_MANY_REQUESTS", "의견은 하루에 10번까지 보낼 수 있어요.");
+			throw new ApiException(ErrorCode.TOO_MANY_REQUESTS);
 		}
 		long id = jdbc.queryForObject("""
 				insert into feedback (user_id, category, text, app_version, device_model) values (?, ?, ?, ?, ?) returning id
@@ -121,7 +121,7 @@ public class AdminService {
 	@Transactional(readOnly = true)
 	public FeedbackPage feedbackList(String status, String cursor) {
 		if (status != null && !Set.of("OPEN", "DONE").contains(status)) {
-			throw ApiException.invalid("status", "status는 OPEN 또는 DONE이에요.");
+			throw ApiException.invalid("status");
 		}
 		PageRequestParams page = PageRequestParams.of(cursor, PAGE_SIZE);
 		List<FeedbackItem> items = new ArrayList<>(jdbc.query("""
@@ -139,10 +139,10 @@ public class AdminService {
 	@Transactional
 	public FeedbackItem markFeedback(long id, String status) {
 		if (!Set.of("OPEN", "DONE").contains(status == null ? "" : status)) {
-			throw ApiException.invalid("status", "status는 OPEN 또는 DONE이에요.");
+			throw ApiException.invalid("status");
 		}
 		if (jdbc.update("update feedback set status = ?, updated_at = current_timestamp where id = ?", status, id) == 0) {
-			throw new ApiException(HttpStatus.NOT_FOUND, "FEEDBACK_NOT_FOUND", "의견을 찾을 수 없어요.");
+			throw new ApiException(ErrorCode.FEEDBACK_NOT_FOUND);
 		}
 		return feedback(id);
 	}
@@ -182,13 +182,13 @@ public class AdminService {
 		String s = value == null ? "" : value.strip();
 		int length = s.codePointCount(0, s.length());
 		if (length < 1 || length > max) {
-			throw ApiException.invalid(field, message);
+			throw ApiException.invalid(field);
 		}
 		return s;
 	}
 
 	private static ApiException noticeNotFound() {
-		return new ApiException(HttpStatus.NOT_FOUND, "NOTICE_NOT_FOUND", "공지사항을 찾을 수 없어요.");
+		return new ApiException(ErrorCode.NOTICE_NOT_FOUND);
 	}
 
 }

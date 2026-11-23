@@ -13,9 +13,9 @@ import com.lolog.api.domain.text.dto.TextDtos.TextResponse;
 import com.lolog.api.domain.text.dto.TextDtos.TextResult;
 import com.lolog.api.domain.text.dto.TextStatus;
 import com.lolog.api.global.error.ApiException;
+import com.lolog.api.global.error.ErrorCode;
 import java.time.OffsetDateTime;
 import java.util.List;
-import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -63,10 +63,10 @@ public class TextService {
 		String title = required(request.title(), MAX_TITLE, "title");
 		String body = request.body() == null ? null : request.body().strip();
 		if (body == null || body.isEmpty()) {
-			throw ApiException.invalid("body", "본문을 써 주세요.");
+			throw ApiException.invalid("body");
 		}
 		if (length(body) > MAX_BODY) {
-			throw new ApiException(HttpStatus.BAD_REQUEST, "TEXT_TOO_LONG", "글은 " + MAX_BODY + "자까지 쓸 수 있어요.", "body");
+			throw new ApiException(ErrorCode.TEXT_TOO_LONG, "body");
 		}
 		String place = optional(request.place(), MAX_PLACE, "place");
 		String situation = optional(request.situation(), MAX_SITUATION, "situation");
@@ -133,9 +133,9 @@ public class TextService {
 		TextRow text = found.getFirst();
 		Job job = jobs.findById(result.jobId())
 			.filter(j -> "TEXT".equals(j.getJobType()))
-			.orElseThrow(() -> ApiException.invalid("jobId", "글 작업을 찾을 수 없습니다."));
+			.orElseThrow(() -> ApiException.invalid("jobId"));
 		if (!job.getTextId().equals(textId)) {
-			throw ApiException.invalid("jobId", "이 글의 작업이 아닙니다.");
+			throw ApiException.invalid("jobId");
 		}
 		if (job.isFinished()) {
 			return;
@@ -173,7 +173,7 @@ public class TextService {
 
 	@Transactional
 	public void fail(long jobId, String reason) {
-		Job job = jobs.findByIdForUpdate(jobId).orElseThrow(() -> ApiException.invalid(null, "작업을 찾을 수 없습니다."));
+		Job job = jobs.findByIdForUpdate(jobId).orElseThrow(() -> ApiException.invalid(null));
 		if (job.isFinished()) {
 			return;
 		}
@@ -185,16 +185,16 @@ public class TextService {
 		String at = "cards[0]";
 		for (int k = 0; k < card.speakers().size(); k++) {
 			if (!card.speakers().get(k).equals("화자" + (k + 1))) {
-				throw ApiException.invalid(at + ".speakers[" + k + "]", "화자는 화자1부터 빠짐없이 써야 합니다.");
+				throw ApiException.invalid(at + ".speakers[" + k + "]");
 			}
 		}
 		for (int j = 0; j < card.lines().size(); j++) {
 			TextLine line = card.lines().get(j);
 			if (line.lineNo() != j + 1) {
-				throw ApiException.invalid(at + ".lines[" + j + "].lineNo", "대사 번호는 1부터 차례로 써야 합니다.");
+				throw ApiException.invalid(at + ".lines[" + j + "].lineNo");
 			}
 			if (!card.speakers().contains(line.speaker())) {
-				throw ApiException.invalid(at + ".lines[" + j + "].speaker", "speakers에 없는 화자입니다.");
+				throw ApiException.invalid(at + ".lines[" + j + "].speaker");
 			}
 		}
 	}
@@ -202,10 +202,10 @@ public class TextService {
 	private static String required(String value, int max, String field) {
 		String trimmed = value == null ? "" : value.strip();
 		if (trimmed.isEmpty()) {
-			throw ApiException.invalid(field, field + "을 써 주세요.");
+			throw ApiException.invalid(field);
 		}
 		if (length(trimmed) > max) {
-			throw ApiException.invalid(field, max + "자까지 쓸 수 있어요.");
+			throw ApiException.invalid(field);
 		}
 		return trimmed;
 	}
@@ -217,7 +217,7 @@ public class TextService {
 			return null;
 		}
 		if (length(trimmed) > max) {
-			throw ApiException.invalid(field, max + "자까지 쓸 수 있어요.");
+			throw ApiException.invalid(field);
 		}
 		return trimmed;
 	}
@@ -227,7 +227,7 @@ public class TextService {
 	}
 
 	static ApiException notFound() {
-		return new ApiException(HttpStatus.NOT_FOUND, "TEXT_NOT_FOUND", "글을 찾을 수 없어요.");
+		return new ApiException(ErrorCode.TEXT_NOT_FOUND);
 	}
 
 	record TextRow(long id, long userId, String source, String place, OffsetDateTime createdAt) {

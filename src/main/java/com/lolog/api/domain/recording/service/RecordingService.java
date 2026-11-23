@@ -13,6 +13,7 @@ import com.lolog.api.domain.recording.entity.RecordingStatus;
 import com.lolog.api.domain.recording.repository.RecordingPartRepository;
 import com.lolog.api.domain.recording.repository.RecordingRepository;
 import com.lolog.api.global.error.ApiException;
+import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.web.PageRequestParams;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -22,7 +23,6 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Limit;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -66,7 +66,7 @@ public class RecordingService {
 
 	public StatusResponse status(long userId, long id) {
 		Recording recording = recordings.findByIdAndUserId(id, userId)
-			.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "RECORDING_NOT_FOUND", "녹음을 찾을 수 없습니다."));
+			.orElseThrow(() -> new ApiException(ErrorCode.RECORDING_NOT_FOUND));
 		return new StatusResponse(recording.getId(), recording.getStatus(), Math.toIntExact(recordings.countCards(id)));
 	}
 
@@ -99,7 +99,7 @@ public class RecordingService {
 				result.add(RecordingStatus.valueOf(name.strip()));
 			}
 			catch (IllegalArgumentException e) {
-				throw ApiException.invalid("status", "status는 RECEIVED, DETECTING, DONE, FAILED 중에서 고릅니다.");
+				throw ApiException.invalid("status");
 			}
 		}
 		return result;
@@ -116,11 +116,11 @@ public class RecordingService {
 
 	private void validate(UploadRequest request) {
 		if (request.sentences().size() > MAX_SENTENCES) {
-			throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE", "묶음의 구간이 너무 많습니다.");
+			throw new ApiException(ErrorCode.PAYLOAD_TOO_LARGE);
 		}
 		for (int i = 0; i < request.sentences().size(); i++) {
 			if (request.sentences().get(i).endMs() <= request.sentences().get(i).startMs()) {
-				throw ApiException.invalid("sentences[" + i + "].endMs", "구간의 끝은 시작보다 뒤여야 합니다.");
+				throw ApiException.invalid("sentences[" + i + "].endMs");
 			}
 		}
 	}
@@ -138,10 +138,10 @@ public class RecordingService {
 			return new Saved(response(recording), List.of());
 		}
 		if (!existing.isEmpty() && existing.getLast().isLast()) {
-			throw new ApiException(HttpStatus.CONFLICT, "RECORDING_CLOSED", "이미 끝난 녹음입니다.");
+			throw new ApiException(ErrorCode.RECORDING_CLOSED);
 		}
 		if (request.partNo() != existing.size() + 1) {
-			throw new ApiException(HttpStatus.CONFLICT, "PART_OUT_OF_ORDER", "다음 묶음 번호는 " + (existing.size() + 1) + "입니다.");
+			throw new ApiException(ErrorCode.PART_OUT_OF_ORDER);
 		}
 		parts.saveAndFlush(new RecordingPart(recording, request.partNo(), request.isLast(), request.durationSec(),
 				objectMapper.writeValueAsString(request.sentences())));

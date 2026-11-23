@@ -52,35 +52,35 @@ public class DefaultCharacterService {
 	public void upsert(String id, byte[] image, byte[] thumbnail, byte[] voice, String ageGroup, String gender,
 			Boolean glasses, String label, String appearance, Integer sortOrder) {
 		if (id == null || !id.matches("[a-z0-9-]{1,20}")) {
-			throw ApiException.invalid("id", "id는 영어 소문자·숫자·-로 20자까지예요.");
+			throw ApiException.invalid("id");
 		}
 		if (!AGE_GROUPS.contains(ageGroup)) {
-			throw ApiException.invalid("ageGroup", "ageGroup은 CHILD, YOUNG, MIDDLE 중 하나예요.");
+			throw ApiException.invalid("ageGroup");
 		}
 		if (!GENDERS.contains(gender)) {
-			throw ApiException.invalid("gender", "gender는 F, M 중 하나예요.");
+			throw ApiException.invalid("gender");
 		}
 		if (glasses == null) {
-			throw ApiException.invalid("glasses", "glasses가 필요해요.");
+			throw ApiException.invalid("glasses");
 		}
 		if (label == null || label.isBlank() || label.length() > 50) {
-			throw ApiException.invalid("label", "label은 1~50자예요.");
+			throw ApiException.invalid("label");
 		}
 		if (appearance == null || appearance.isBlank() || appearance.length() > 200) {
-			throw ApiException.invalid("appearance", "appearance는 1~200자예요.");
+			throw ApiException.invalid("appearance");
 		}
 		if (sortOrder == null) {
-			throw ApiException.invalid("sortOrder", "sortOrder가 필요해요.");
+			throw ApiException.invalid("sortOrder");
 		}
 		// 그림은 PNG 768×768, 줄인 그림은 WebP다(characters.md /internal 표). 크기가 틀린 그림이 목록에 오르지 않게 본다.
 		if (image != null && !isPng(image, 768, 768)) {
-			throw ApiException.invalid("image", "image는 768×768 PNG여야 해요.");
+			throw ApiException.invalid("image");
 		}
 		if (thumbnail != null && !isWebp(thumbnail)) {
-			throw ApiException.invalid("thumbnail", "thumbnail은 WebP 파일이어야 해요.");
+			throw ApiException.invalid("thumbnail");
 		}
 		if (voice != null && !isWav(voice)) {
-			throw ApiException.invalid("voice", "voice는 wav 파일이어야 해요.");
+			throw ApiException.invalid("voice");
 		}
 		String imageKey = ImageStorage.defaultCharacterKey(id);
 		String thumbKey = ImageStorage.defaultCharacterThumbKey(id);

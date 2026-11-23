@@ -11,11 +11,11 @@ import com.lolog.api.domain.friend.dto.FriendDtos.FriendRequestResponse;
 import com.lolog.api.domain.friend.dto.FriendDtos.FriendUser;
 import com.lolog.api.domain.notification.service.PushService;
 import com.lolog.api.global.error.ApiException;
+import com.lolog.api.global.error.ErrorCode;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
-import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,13 +54,13 @@ public class FriendService {
 	@Transactional
 	public FriendRequestResponse sendRequest(long me, String friendCode, Long userId) {
 		if ((friendCode == null) == (userId == null)) {
-			throw ApiException.invalid(friendCode == null ? "friendCode" : "userId", "friendCode와 userId 중 하나만 보내 주세요.");
+			throw ApiException.invalid(friendCode == null ? "friendCode" : "userId");
 		}
 		long target;
 		if (userId != null) {
 			// 나에게 보내면 친구 코드와 같게 400이다(friends.md CANNOT_FRIEND_SELF). 방 조회보다 먼저 본다.
 			if (userId == me) {
-				throw new ApiException(HttpStatus.BAD_REQUEST, "CANNOT_FRIEND_SELF", "나에게는 친구 요청을 보낼 수 없어요.");
+				throw new ApiException(ErrorCode.CANNOT_FRIEND_SELF);
 			}
 			requireNickname(me);
 			// 지금 같은 방에 있지 않거나 닉네임이 없으면 친구 코드를 모를 때와 같은 404다.
@@ -73,7 +73,7 @@ public class FriendService {
 		else {
 			String code = friendCode.strip().toUpperCase(Locale.ROOT);
 			if (code.length() != ProfileService.CODE_LENGTH) {
-				throw ApiException.invalid("friendCode", "친구 코드 8자리를 입력해 주세요.");
+				throw ApiException.invalid("friendCode");
 			}
 			requireNickname(me);
 			limiter.check(me);
@@ -86,7 +86,7 @@ public class FriendService {
 				.orElseThrow(FriendService::codeNotFound);
 		}
 		if (target == me) {
-			throw new ApiException(HttpStatus.BAD_REQUEST, "CANNOT_FRIEND_SELF", "내 친구 코드는 넣을 수 없어요.");
+			throw new ApiException(ErrorCode.CANNOT_FRIEND_SELF);
 		}
 		lockPair(me, target);
 		// 상대가 나를 차단했으면 없는 코드와 똑같이 답한다. 차단됐다는 걸 알 수 없게 한다.
@@ -94,14 +94,14 @@ public class FriendService {
 			throw codeNotFound();
 		}
 		if (blocked(me, target)) {
-			throw new ApiException(HttpStatus.CONFLICT, "USER_BLOCKED", "차단한 사람이에요. 차단을 풀고 요청해 주세요.");
+			throw new ApiException(ErrorCode.USER_BLOCKED);
 		}
 		Optional<Friendship> existing = findPair(me, target);
 		if (existing.isPresent() && ACCEPTED.equals(existing.get().status())) {
-			throw new ApiException(HttpStatus.CONFLICT, "ALREADY_FRIENDS", "이미 친구예요.");
+			throw new ApiException(ErrorCode.ALREADY_FRIENDS);
 		}
 		if (existing.isPresent() && existing.get().requesterId() == me) {
-			throw new ApiException(HttpStatus.CONFLICT, "FRIEND_REQUEST_EXISTS", "이미 요청을 보냈어요.");
+			throw new ApiException(ErrorCode.FRIEND_REQUEST_EXISTS);
 		}
 		checkLimit(me, target);
 		FriendUser user = friendUser(target);
@@ -130,7 +130,7 @@ public class FriendService {
 			received = false;
 		}
 		else {
-			throw ApiException.invalid("direction", "direction은 received 또는 sent예요.");
+			throw ApiException.invalid("direction");
 		}
 		String mine = received ? "addressee_id" : "requester_id";
 		String other = received ? "requester_id" : "addressee_id";
@@ -193,12 +193,12 @@ public class FriendService {
 	@Transactional
 	public void block(long me, long userId, boolean hideInRooms) {
 		if (userId == me) {
-			throw new ApiException(HttpStatus.BAD_REQUEST, "CANNOT_FRIEND_SELF", "나는 차단할 수 없어요.");
+			throw new ApiException(ErrorCode.CANNOT_FRIEND_SELF);
 		}
 		Boolean exists = jdbc.queryForObject("select exists (select 1 from user_profiles where user_id = ?)",
 				Boolean.class, userId);
 		if (!Boolean.TRUE.equals(exists)) {
-			throw new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "회원을 찾을 수 없어요.");
+			throw new ApiException(ErrorCode.USER_NOT_FOUND);
 		}
 		lockPair(me, userId);
 		if (blocked(me, userId)) {
@@ -215,7 +215,7 @@ public class FriendService {
 	public void updateBlock(long me, long userId, boolean hideInRooms) {
 		if (jdbc.update("update user_blocks set hide_in_rooms = ? where blocker_id = ? and blocked_id = ?", hideInRooms, me,
 				userId) == 0) {
-			throw new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "차단한 사람이 아니에요.");
+			throw new ApiException(ErrorCode.USER_NOT_FOUND);
 		}
 	}
 
@@ -243,7 +243,7 @@ public class FriendService {
 		List<String> nickname = jdbc.queryForList("select nickname from user_profiles where user_id = ?", String.class,
 				userId);
 		if (nickname.isEmpty() || nickname.getFirst() == null) {
-			throw new ApiException(HttpStatus.CONFLICT, "PROFILE_REQUIRED", "닉네임을 먼저 정해 주세요.");
+			throw new ApiException(ErrorCode.PROFILE_REQUIRED);
 		}
 	}
 
@@ -283,7 +283,7 @@ public class FriendService {
 					"select count(*) from friendships where status = 'ACCEPTED' and (requester_id = ? or addressee_id = ?)",
 					Long.class, userId, userId);
 			if (count != null && count >= FRIEND_LIMIT) {
-				throw new ApiException(HttpStatus.CONFLICT, "FRIEND_LIMIT", "친구는 100명까지예요.");
+				throw new ApiException(ErrorCode.FRIEND_LIMIT);
 			}
 		}
 	}
@@ -321,11 +321,11 @@ public class FriendService {
 	}
 
 	private static ApiException codeNotFound() {
-		return new ApiException(HttpStatus.NOT_FOUND, "FRIEND_CODE_NOT_FOUND", "친구 코드를 찾을 수 없어요.");
+		return new ApiException(ErrorCode.FRIEND_CODE_NOT_FOUND);
 	}
 
 	private static ApiException requestNotFound() {
-		return new ApiException(HttpStatus.NOT_FOUND, "FRIEND_REQUEST_NOT_FOUND", "친구 요청을 찾을 수 없어요.");
+		return new ApiException(ErrorCode.FRIEND_REQUEST_NOT_FOUND);
 	}
 
 }

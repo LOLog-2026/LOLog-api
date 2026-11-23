@@ -13,6 +13,7 @@ import com.lolog.api.domain.video.entity.Video;
 import com.lolog.api.domain.video.entity.VideoStatus;
 import com.lolog.api.domain.video.repository.VideoRepository;
 import com.lolog.api.global.error.ApiException;
+import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.storage.ImageStorage;
 import com.lolog.api.global.transaction.AfterCommit;
 import com.lolog.api.global.web.PageRequestParams;
@@ -21,7 +22,6 @@ import java.util.ArrayList;
 import java.util.List;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Limit;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -58,12 +58,12 @@ public class VideoService {
 		Long jobId = tx.execute(status -> {
 			// 카드 행을 잠가, 같은 카드의 요청·고치기·지우기가 한 번에 하나씩 일어나게 한다.
 			Card card = cards.findByIdAndUserIdForUpdate(cardId, userId)
-				.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CARD_NOT_FOUND", "카드를 찾을 수 없습니다."));
+				.orElseThrow(() -> new ApiException(ErrorCode.CARD_NOT_FOUND));
 			if (videos.existsByCardIdAndStatusIn(card.getId(), VideoStatus.IN_PROGRESS)) {
 				throw inProgress();
 			}
 			if (cards.incrementVideoCount(card.getId()) == 0) {
-				throw new ApiException(HttpStatus.CONFLICT, "VIDEO_LIMIT", "이 카드로는 영상을 더 만들 수 없습니다.");
+				throw new ApiException(ErrorCode.VIDEO_LIMIT);
 			}
 			Video video;
 			try {
@@ -133,7 +133,7 @@ public class VideoService {
 	public void fail(long jobId, String reason) {
 		tx.executeWithoutResult(status -> {
 			Long videoId = jobs.findVideoIdById(jobId)
-				.orElseThrow(() -> ApiException.invalid(null, "작업을 찾을 수 없습니다."));
+				.orElseThrow(() -> ApiException.invalid(null));
 			// 잠금 순서는 영상 → 작업(VideoWorkerService와 같음)
 			Video video = videos.findByIdForUpdate(videoId).orElse(null);
 			Job job = jobs.findByIdForUpdate(jobId).orElseThrow();
@@ -169,11 +169,11 @@ public class VideoService {
 	}
 
 	private static ApiException notFound() {
-		return new ApiException(HttpStatus.NOT_FOUND, "VIDEO_NOT_FOUND", "영상을 찾을 수 없습니다.");
+		return new ApiException(ErrorCode.VIDEO_NOT_FOUND);
 	}
 
 	private static ApiException inProgress() {
-		return new ApiException(HttpStatus.CONFLICT, "VIDEO_IN_PROGRESS", "이 카드로 만드는 중인 영상이 있습니다.");
+		return new ApiException(ErrorCode.VIDEO_IN_PROGRESS);
 	}
 
 }

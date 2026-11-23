@@ -15,6 +15,7 @@ import com.lolog.api.domain.blog.service.FeedParser.Item;
 import com.lolog.api.domain.text.dto.TextStatus;
 import com.lolog.api.domain.text.service.TextService;
 import com.lolog.api.global.error.ApiException;
+import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.web.PageRequestParams;
 import java.net.URI;
 import java.time.OffsetDateTime;
@@ -24,7 +25,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import org.springframework.dao.DuplicateKeyException;
-import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -87,11 +87,11 @@ public class BlogService {
 		List<String> categories = categories(requested);
 		String siteUrl = normalize(url);
 		if (siteUrl.length() > MAX_URL) {
-			throw ApiException.invalid("url", "주소는 " + MAX_URL + "자까지예요.");
+			throw ApiException.invalid("url");
 		}
 		Located located = locate(siteUrl);
 		if (located.feedUrl().length() > MAX_URL) {
-			throw invalidBlog("RSS 주소가 너무 깁니다.");
+			throw invalidBlog();
 		}
 		// WordPress는 여기서 REST로 카테고리 목록을 받아 온다. 트랜잭션 밖에서 받는다.
 		Categories rule = located.platform().categories(URI.create(siteUrl), located.feed());
@@ -141,7 +141,7 @@ public class BlogService {
 	// 피드를 받는 동안 DB 연결을 붙잡지 않게, 받은 뒤에 트랜잭션을 연다. 피드를 받지 못하면 400 INVALID_BLOG이고 바꾸지 않는다(초안).
 	public Blog update(long userId, long id, List<String> requested) {
 		if (requested == null) {
-			throw ApiException.invalid("categories", "categories가 필요해요.");
+			throw ApiException.invalid("categories");
 		}
 		List<String> categories = categories(requested);
 		List<Source> found = jdbc.query("""
@@ -192,12 +192,12 @@ public class BlogService {
 		try {
 			Feed feed = FeedParser.parse(fetcher.get(feedUrl).body());
 			if (feed == null) {
-				throw invalidBlog("RSS를 읽지 못했습니다.");
+				throw invalidBlog();
 			}
 			return feed;
 		}
 		catch (FetchException e) {
-			throw invalidBlog(e.getMessage());
+			throw invalidBlog();
 		}
 	}
 
@@ -355,7 +355,7 @@ public class BlogService {
 	// Medium·velog처럼 카테고리가 없는 블로그에 카테고리를 고르면 거절한다(초안, texts.md 4장 "플랫폼별 카테고리").
 	private static void requireSelectable(Categories rule, List<String> categories) {
 		if (!rule.selectable() && !categories.isEmpty()) {
-			throw ApiException.invalid("categories", "이 블로그는 카테고리를 고를 수 없어요.");
+			throw ApiException.invalid("categories");
 		}
 	}
 
@@ -365,7 +365,7 @@ public class BlogService {
 			return List.of();
 		}
 		if (requested.size() > MAX_CATEGORIES) {
-			throw ApiException.invalid("categories", "카테고리는 " + MAX_CATEGORIES + "개까지 골라요.");
+			throw ApiException.invalid("categories");
 		}
 		List<String> result = new ArrayList<>();
 		Set<String> seen = new HashSet<>();
@@ -373,10 +373,10 @@ public class BlogService {
 			String value = requested.get(i) == null ? "" : requested.get(i).strip();
 			String at = "categories[" + i + "]";
 			if (value.isEmpty() || TextServiceLength.of(value) > MAX_CATEGORY) {
-				throw ApiException.invalid(at, "카테고리는 1~" + MAX_CATEGORY + "자예요.");
+				throw ApiException.invalid(at);
 			}
 			if (!seen.add(value.toLowerCase(Locale.ROOT))) {
-				throw ApiException.invalid(at, "이미 있는 카테고리예요.");
+				throw ApiException.invalid(at);
 			}
 			result.add(value);
 		}
@@ -389,20 +389,20 @@ public class BlogService {
 			return locator.locate(url);
 		}
 		catch (FetchException e) {
-			throw invalidBlog(e.getMessage());
+			throw invalidBlog();
 		}
 	}
 
 	// 빠지거나 빈 주소는 다른 빠진 칸처럼 400 INVALID_REQUEST(field url)이다(api-dto.md). 주소 모양이 틀리면 INVALID_BLOG.
 	private static String normalize(String url) {
 		if (url == null || url.isBlank()) {
-			throw ApiException.invalid("url", "블로그 주소를 넣어 주세요.");
+			throw ApiException.invalid("url");
 		}
 		try {
 			return FeedLocator.normalize(url);
 		}
 		catch (FetchException e) {
-			throw invalidBlog(e.getMessage());
+			throw invalidBlog();
 		}
 	}
 
@@ -419,16 +419,16 @@ public class BlogService {
 		return TextServiceLength.of(trimmed) > max ? TextServiceLength.head(trimmed, max) : trimmed;
 	}
 
-	private static ApiException invalidBlog(String message) {
-		return new ApiException(HttpStatus.BAD_REQUEST, "INVALID_BLOG", message);
+	private static ApiException invalidBlog() {
+		return new ApiException(ErrorCode.INVALID_BLOG);
 	}
 
 	private static ApiException exists() {
-		return new ApiException(HttpStatus.CONFLICT, "BLOG_EXISTS", "이미 연결한 블로그예요.");
+		return new ApiException(ErrorCode.BLOG_EXISTS);
 	}
 
 	static ApiException notFound() {
-		return new ApiException(HttpStatus.NOT_FOUND, "BLOG_NOT_FOUND", "블로그를 찾을 수 없어요.");
+		return new ApiException(ErrorCode.BLOG_NOT_FOUND);
 	}
 
 	// 글자 수는 코드포인트로 센다(TextService와 같음).

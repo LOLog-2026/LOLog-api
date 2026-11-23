@@ -1,7 +1,7 @@
 package com.lolog.api.global.auth;
 
 import com.lolog.api.global.error.ApiException;
-import org.springframework.http.HttpStatus;
+import com.lolog.api.global.error.ErrorCode;
 
 // 요청한 사용자의 회원 ID를 돌려준다. 구현은 JwtAuthConfig(액세스 토큰의 sub)다.
 public interface CurrentUserProvider {
@@ -17,7 +17,7 @@ public interface CurrentUserProvider {
 	default long requireAdmin() {
 		long userId = currentUserId();
 		if (!isAdmin()) {
-			throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", "관리자만 쓸 수 있어요.");
+			throw new ApiException(ErrorCode.FORBIDDEN);
 		}
 		return userId;
 	}

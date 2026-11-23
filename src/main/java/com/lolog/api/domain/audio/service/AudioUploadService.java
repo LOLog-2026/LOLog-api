@@ -1,8 +1,8 @@
 package com.lolog.api.domain.audio.service;
 
 import com.lolog.api.global.error.ApiException;
+import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.storage.ImageStorage;
-import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,34 +28,34 @@ public class AudioUploadService {
 	@Transactional
 	public void upload(long userId, long recordingId, int seq, byte[] file, Long startMs, Long endMs) {
 		if (seq < 1) {
-			throw ApiException.invalid("seq", "파일 번호는 1부터예요.");
+			throw ApiException.invalid("seq");
 		}
 		if (startMs == null || startMs < 0) {
-			throw ApiException.invalid("startMs", "startMs는 0 이상이어야 해요.");
+			throw ApiException.invalid("startMs");
 		}
 		if (endMs == null || endMs <= startMs) {
-			throw ApiException.invalid("endMs", "endMs는 startMs보다 커야 해요.");
+			throw ApiException.invalid("endMs");
 		}
 		if (file == null) {
-			throw ApiException.invalid("file", "음성 파일이 없어요.");
+			throw ApiException.invalid("file");
 		}
 		if (file.length > MAX_BYTES) {
-			throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE", "파일이 너무 큽니다.");
+			throw new ApiException(ErrorCode.PAYLOAD_TOO_LARGE);
 		}
 		try {
 			Adts.frames(file);
 		}
 		catch (IllegalArgumentException e) {
-			throw ApiException.invalid("file", "AAC(ADTS) 파일이 아니에요.");
+			throw ApiException.invalid("file");
 		}
 		// 녹음 행을 잠가 같은 번호가 동시에 와도 차례로 덮어쓴다.
 		Boolean audioSaved = jdbc.query("select audio_saved from recordings where id = ? and user_id = ? for update",
 				(rs, n) -> rs.getBoolean("audio_saved"), recordingId, userId)
 			.stream()
 			.findFirst()
-			.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "RECORDING_NOT_FOUND", "녹음을 찾을 수 없습니다."));
+			.orElseThrow(() -> new ApiException(ErrorCode.RECORDING_NOT_FOUND));
 		if (!audioSaved) {
-			throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "음성 저장을 켜지 않은 녹음이에요.");
+			throw new ApiException(ErrorCode.INVALID_REQUEST);
 		}
 
 		// 키가 번호마다 같아서, 파일을 올린 뒤 DB 저장이 실패해도 다시 올리면 덮어써진다.

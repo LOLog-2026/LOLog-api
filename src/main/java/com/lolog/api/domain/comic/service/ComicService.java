@@ -9,8 +9,8 @@ import com.lolog.api.domain.job.entity.Job;
 import com.lolog.api.domain.job.repository.JobRepository;
 import com.lolog.api.domain.notification.service.PushService;
 import com.lolog.api.global.error.ApiException;
+import com.lolog.api.global.error.ErrorCode;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -43,13 +43,13 @@ public class ComicService {
 		Long jobId = tx.execute(status -> {
 			// 카드 행을 잠가, 같은 카드의 요청·고치기·지우기가 한 번에 하나씩 일어나게 한다.
 			Card card = cards.findByIdAndUserIdForUpdate(cardId, userId)
-				.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CARD_NOT_FOUND", "카드를 찾을 수 없습니다."));
+				.orElseThrow(() -> new ApiException(ErrorCode.CARD_NOT_FOUND));
 			// 만드는 중인 만화가 먼저다. 횟수가 다 찼어도 그 만화가 실패하면 다시 만들 수 있기 때문이다(LOLog-docs PR #22).
 			if (comics.existsByCardIdAndStatusIn(card.getId(), ComicStatus.IN_PROGRESS)) {
 				throw inProgress();
 			}
 			if (cards.incrementComicCount(card.getId()) == 0) {
-				throw new ApiException(HttpStatus.CONFLICT, "COMIC_LIMIT", "이 카드로는 더 만들 수 없습니다.");
+				throw new ApiException(ErrorCode.COMIC_LIMIT);
 			}
 			Comic comic;
 			try {
@@ -70,7 +70,7 @@ public class ComicService {
 	public void fail(long jobId, String reason) {
 		tx.executeWithoutResult(status -> {
 			Long comicId = jobs.findComicIdById(jobId)
-				.orElseThrow(() -> ApiException.invalid(null, "작업을 찾을 수 없습니다."));
+				.orElseThrow(() -> ApiException.invalid(null));
 			// 잠금 순서는 이미지 받기(ComicWorkerService)와 같게 만화 → 작업이다. 순서가 다르면 둘이 겹칠 때 교착 상태가 된다.
 			Comic comic = comics.findByIdForUpdate(comicId).orElseThrow();
 			Job job = jobs.findByIdForUpdate(jobId).orElseThrow();
@@ -88,7 +88,7 @@ public class ComicService {
 	}
 
 	private static ApiException inProgress() {
-		return new ApiException(HttpStatus.CONFLICT, "COMIC_IN_PROGRESS", "이 카드로 만드는 중인 만화가 있습니다.");
+		return new ApiException(ErrorCode.COMIC_IN_PROGRESS);
 	}
 
 }

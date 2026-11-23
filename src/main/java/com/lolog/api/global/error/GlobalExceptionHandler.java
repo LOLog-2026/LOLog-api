@@ -4,7 +4,6 @@ import com.lolog.api.global.util.SafeLog;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -28,8 +27,7 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(ApiException.class)
 	public ResponseEntity<ErrorResponse> handleApi(ApiException e) {
-		return ResponseEntity.status(e.getStatus())
-			.body(new ErrorResponse(e.getCode(), e.getMessage(), e.getField()));
+		return ResponseEntity.status(e.getStatus()).body(ErrorResponse.of(e));
 	}
 
 	@ExceptionHandler(MethodArgumentNotValidException.class)
@@ -53,16 +51,14 @@ public class GlobalExceptionHandler {
 	// 완성 이미지 20MB 초과(spring.servlet.multipart.max-file-size)
 	@ExceptionHandler(MaxUploadSizeExceededException.class)
 	public ResponseEntity<ErrorResponse> handleTooLarge(MaxUploadSizeExceededException e) {
-		return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
-			.body(new ErrorResponse("PAYLOAD_TOO_LARGE", "파일이 너무 큽니다."));
+		return respond(ErrorCode.PAYLOAD_TOO_LARGE, null);
 	}
 
 	// 파일 주소에 multipart가 아닌 본문(api-dto.md 오류 코드). consumes가 없는 주소는 Spring이 이 예외를 던진다.
 	// 크기 초과(MaxUploadSizeExceededException)는 위의 더 좁은 처리가 먼저다.
 	@ExceptionHandler(MultipartException.class)
 	public ResponseEntity<ErrorResponse> handleNotMultipart(MultipartException e) {
-		return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
-			.body(new ErrorResponse("UNSUPPORTED_MEDIA_TYPE", "이 주소가 받지 않는 Content-Type입니다."));
+		return respond(ErrorCode.UNSUPPORTED_MEDIA_TYPE, null);
 	}
 
 	@ExceptionHandler(MethodArgumentTypeMismatchException.class)
@@ -71,8 +67,11 @@ public class GlobalExceptionHandler {
 	}
 
 	private static ResponseEntity<ErrorResponse> invalid(String field) {
-		return ResponseEntity.badRequest()
-			.body(new ErrorResponse("INVALID_REQUEST", "요청 형식이 올바르지 않습니다.", field));
+		return respond(ErrorCode.INVALID_REQUEST, field);
+	}
+
+	private static ResponseEntity<ErrorResponse> respond(ErrorCode code, String field) {
+		return ResponseEntity.status(code.status()).body(ErrorResponse.of(code, field));
 	}
 
 	// JSON을 읽다 틀린 위치를 lines[2].text 모양으로 만든다. 위치를 모르면 null이다.
@@ -97,14 +96,14 @@ public class GlobalExceptionHandler {
 			log.error("처리하지 못한 예외", SafeLog.withoutMessages(e));
 			return ResponseEntity.status(status)
 				.headers(error.getHeaders())
-				.body(new ErrorResponse("INTERNAL_ERROR", "서버 오류가 발생했습니다."));
+				.body(ErrorResponse.of(ErrorCode.INTERNAL_ERROR));
 		}
 		ErrorResponse body = switch (status.value()) {
-			case 404 -> new ErrorResponse("NOT_FOUND", "없는 주소입니다.");
-			case 405 -> new ErrorResponse("METHOD_NOT_ALLOWED", "이 주소에서 쓸 수 없는 메서드입니다.");
-			case 406 -> new ErrorResponse("NOT_ACCEPTABLE", "JSON으로만 답할 수 있습니다.");
-			case 415 -> new ErrorResponse("UNSUPPORTED_MEDIA_TYPE", "이 주소가 받지 않는 Content-Type입니다.");
-			default -> new ErrorResponse("INVALID_REQUEST", "요청 형식이 올바르지 않습니다.", field(e));
+			case 404 -> ErrorResponse.of(ErrorCode.NOT_FOUND);
+			case 405 -> ErrorResponse.of(ErrorCode.METHOD_NOT_ALLOWED);
+			case 406 -> ErrorResponse.of(ErrorCode.NOT_ACCEPTABLE);
+			case 415 -> ErrorResponse.of(ErrorCode.UNSUPPORTED_MEDIA_TYPE);
+			default -> ErrorResponse.of(ErrorCode.INVALID_REQUEST, field(e));
 		};
 		return ResponseEntity.status(status).headers(error.getHeaders()).body(body);
 	}
@@ -130,8 +129,7 @@ public class GlobalExceptionHandler {
 			return framework(e, error);
 		}
 		log.error("처리하지 못한 예외", SafeLog.withoutMessages(e));
-		return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-			.body(new ErrorResponse("INTERNAL_ERROR", "서버 오류가 발생했습니다."));
+		return respond(ErrorCode.INTERNAL_ERROR, null);
 	}
 
 }

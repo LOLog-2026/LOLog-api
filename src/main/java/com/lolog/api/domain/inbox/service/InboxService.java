@@ -7,6 +7,7 @@ import com.lolog.api.domain.inbox.dto.InboxDtos.NoticeContent;
 import com.lolog.api.domain.inbox.dto.InboxDtos.NotificationContent;
 import com.lolog.api.domain.inbox.dto.InboxDtos.Unread;
 import com.lolog.api.global.error.ApiException;
+import com.lolog.api.global.error.ErrorCode;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -17,7 +18,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -62,7 +62,7 @@ public class InboxService {
 	public InboxPage list(long me, String tab, String cursor) {
 		String which = tab == null ? "ALL" : tab;
 		if (!Set.of("ALL", "NOTICE", "NOTIFICATION").contains(which)) {
-			throw ApiException.invalid("tab", "tab은 ALL, NOTICE, NOTIFICATION 중 하나예요.");
+			throw ApiException.invalid("tab");
 		}
 		MapSqlParameterSource args = new MapSqlParameterSource("me", me).addValue("limit", PAGE_SIZE + 1)
 			.addValue("since", OffsetDateTime.now(ZoneOffset.UTC).minusDays(KEEP_DAYS));
@@ -70,7 +70,7 @@ public class InboxService {
 		if (cursor != null) {
 			Matcher m = CURSOR.matcher(cursor);
 			if (!m.matches()) {
-				throw ApiException.invalid("cursor", "cursor가 올바르지 않습니다.");
+				throw ApiException.invalid("cursor");
 			}
 			long micros = Long.parseLong(m.group(1));
 			args.addValue("cAt", OffsetDateTime.ofInstant(Instant.EPOCH.plus(micros, ChronoUnit.MICROS), ZoneOffset.UTC))
@@ -124,7 +124,7 @@ public class InboxService {
 		if ("notice".equals(kind)) {
 			Boolean exists = jdbc.queryForObject("select exists (select 1 from notices where id = ?)", Boolean.class, id);
 			if (!Boolean.TRUE.equals(exists)) {
-				throw new ApiException(HttpStatus.NOT_FOUND, "NOTICE_NOT_FOUND", "공지사항을 찾을 수 없어요.");
+				throw new ApiException(ErrorCode.NOTICE_NOT_FOUND);
 			}
 			jdbc.update("insert into notice_reads (notice_id, user_id) values (?, ?) on conflict do nothing", id, me);
 		}
@@ -133,11 +133,11 @@ public class InboxService {
 					"update notifications set read_at = coalesce(read_at, current_timestamp) where id = ? and user_id = ?", id,
 					me);
 			if (updated == 0) {
-				throw new ApiException(HttpStatus.NOT_FOUND, "NOTIFICATION_NOT_FOUND", "알림을 찾을 수 없어요.");
+				throw new ApiException(ErrorCode.NOTIFICATION_NOT_FOUND);
 			}
 		}
 		else {
-			throw ApiException.invalid("kind", "kind는 notice 또는 notification이에요.");
+			throw ApiException.invalid("kind");
 		}
 	}
 
@@ -167,7 +167,7 @@ public class InboxService {
 	@Transactional
 	public void seen(long me, String kind) {
 		if (!BADGE_KINDS.contains(kind)) {
-			throw ApiException.invalid("kind", "kind는 cards, comics, profileCharacter, friends, rooms, inbox 중 하나예요.");
+			throw ApiException.invalid("kind");
 		}
 		if (SEEN_KINDS.containsKey(kind)) {
 			jdbc.update("""
