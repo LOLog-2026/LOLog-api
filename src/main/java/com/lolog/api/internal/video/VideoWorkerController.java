@@ -1,6 +1,6 @@
 package com.lolog.api.internal.video;
 
-import com.lolog.api.domain.video.dto.VideoDtos.VideoSource;
+import com.lolog.api.internal.video.VideoWorkerDtos.VideoSource;
 import java.io.IOException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
