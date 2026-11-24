@@ -12,6 +12,7 @@ import lombok.NoArgsConstructor;
 
 // 쇼츠 효과음·배경음 하나(sound_library). freesound_id 하나에 한 줄이다(uk_sound_library_freesound_id).
 // 넣기·바꾸기는 upsert 한 문장이라 리포지토리의 native query로 만든다.
+// 소리 벡터(embedding, embedding_model)는 pgvector 칸이라 엔티티에 두지 않고 리포지토리의 native query로만 다룬다.
 @Entity
 @Table(name = "sound_library")
 @Getter
@@ -26,8 +27,8 @@ public class Sound {
 	@Column(nullable = false, length = 5)
 	private String kind;
 
-	// 콘티가 고르는 검색어 값(door_slam 등)
-	@Column(nullable = false, length = 30)
+	// 모을 때 쓴 검색어(door_slam 등)
+	@Column(nullable = false, length = 50)
 	private String query;
 
 	@Column(length = 200)

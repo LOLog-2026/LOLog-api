@@ -14,6 +14,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.testcontainers.utility.DockerImageName;
 
 // Redis에 붙지 못하면 503 DOWN이고, 오래 기다리지 않는다. Redis 주소는 아무것도 없는 포트로 둔다.
 @SpringBootTest(properties = { "spring.data.redis.host=127.0.0.1", "spring.data.redis.port=1" })
@@ -23,7 +24,7 @@ class HealthDownTests {
 
 	@Container
 	@ServiceConnection
-	static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:latest");
+	static PostgreSQLContainer postgres = new PostgreSQLContainer(DockerImageName.parse("pgvector/pgvector:pg17").asCompatibleSubstituteFor("postgres"));
 
 	@Autowired
 	MockMvc mvc;

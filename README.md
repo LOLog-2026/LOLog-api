@@ -157,7 +157,26 @@ docker compose up -d          # PostgreSQL, Redis, SeaweedFS(로컬용 S3)
 
 - 로컬은 S3 호환 저장소로 SeaweedFS를 쓰고, 배포 서버는 학교 MinIO를 써요. 코드는 같아요(S3 API).
 - 인증 서버 없이 시험할 때는 `scripts/dev-token.sh [사용자 ID]`로 토큰을 만들어 `Authorization: Bearer <토큰>`으로 보내요.
-- 기본 화자 데이터는 `scripts/seed-default-characters.sh`, 효과음 목록은 `scripts/collect-sounds.sh`로 넣어요.
+- 기본 화자 데이터는 `scripts/seed-default-characters.sh`로 넣어요.
+- `compose.yaml`의 PostgreSQL은 pgvector가 든 `pgvector/pgvector:pg17` 이미지예요. 효과음 벡터 검색(V23)이 pgvector 확장을 써요.
+
+### 효과음·배경음 벡터 검색
+
+콘티의 소리 설명 글("door slamming" 등)과 가까운 소리를 CLAP 벡터로 찾아요(LOLog-docs sounds.md, #106).
+
+- 소리 벡터는 수집 스크립트가 맥에서 만들어 넣고, 글 벡터는 api가 검색할 때 ONNX로 만들어요.
+- Python 도구는 맥의 가상 환경에서 돌려요.
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r scripts/requirements-sounds.txt
+.venv/bin/python scripts/export_clap_text.py ~/clap-text      # 글 쪽 ONNX 만들기(모델을 바꿀 때만)
+FREESOUND_API_KEY=... API_URL=http://localhost:8080 INTERNAL_TOKEN=... \
+  .venv/bin/python scripts/collect_sounds.py --max-total 30    # 소리 모으기(빼면 sound-queries.tsv 전부)
+```
+
+- `export_clap_text.py`는 만든 ONNX가 PyTorch와 같은 벡터를 내는지 확인하고 `reference.json`을 남겨요. 그 폴더를 `SOUND_EMBED_MODEL_DIR`로 주면 `ClapTextEmbedderTests`가 Java 결과도 같은지 봐요. 모델 파일은 레포에 넣지 않아요.
+- api 설정: `SOUND_EMBED_MODEL_DIR`(모델 폴더, 비어 있으면 검색만 503 `EMBEDDING_UNAVAILABLE`), `SOUND_EMBED_MODEL_NAME`(기본 `laion/clap-htsat-unfused`), `SOUND_MAX_DISTANCE`(코사인 거리 기준, 비어 있으면 거르지 않음).
+- 모을 검색어는 `scripts/sound-queries.tsv`예요. Freesound는 하루 2,000번까지라, 한도에 걸리면 다음 날 같은 명령으로 이어서 돌려요(넣은 소리는 `~/.lolog-collect-sounds.txt`에 적어 두고 건너뜀).
 
 ## 테스트
 
@@ -165,7 +184,7 @@ docker compose up -d          # PostgreSQL, Redis, SeaweedFS(로컬용 S3)
 ./mvnw verify
 ```
 
-Testcontainers가 PostgreSQL 컨테이너를 띄우므로 Docker가 켜져 있어야 해요.
+Testcontainers가 PostgreSQL(`pgvector/pgvector:pg17`) 컨테이너를 띄우므로 Docker가 켜져 있어야 해요.
 
 ## 배포
 

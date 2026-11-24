@@ -14,6 +14,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.testcontainers.utility.DockerImageName;
 
 // Redis에 못 붙어 탈퇴 여부를 모르면 토큰을 통과시키지 않고 500 INTERNAL_ERROR다.
 // 401이면 앱이 로그인을 풀어 버리므로 5xx로 답해 다시 시도하게 한다. Redis 주소는 아무것도 없는 포트로 둔다.
@@ -24,7 +25,7 @@ class JwtRedisDownTests {
 
 	@Container
 	@ServiceConnection
-	static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:latest");
+	static PostgreSQLContainer postgres = new PostgreSQLContainer(DockerImageName.parse("pgvector/pgvector:pg17").asCompatibleSubstituteFor("postgres"));
 
 	@Autowired
 	MockMvc mvc;
