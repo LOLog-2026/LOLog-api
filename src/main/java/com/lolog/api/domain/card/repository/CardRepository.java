@@ -55,6 +55,10 @@ public interface CardRepository extends JpaRepository<Card, Long> {
 	@Query(value = "update cards set video_count = video_count - 1 where id = :id and video_count > 0", nativeQuery = true)
 	int decrementVideoCount(@Param("id") Long id);
 
+	// 글마다 그 글로 만든 첫 카드의 ID. [글 ID, 카드 ID] 줄이고, 카드가 없는 글은 빠진다.
+	@Query("select c.textId, min(c.id) from Card c where c.textId in :textIds group by c.textId")
+	List<Object[]> findFirstCardIdsByTextIds(@Param("textIds") Collection<Long> textIds);
+
 	// 녹음의 카드 중 아직 구간 음성이 없는 카드(id 순서).
 	@Query("select c.id from Card c where c.recordingId = :recordingId and c.audioKey is null order by c.id")
 	List<Long> findIdsWithoutAudio(@Param("recordingId") Long recordingId);

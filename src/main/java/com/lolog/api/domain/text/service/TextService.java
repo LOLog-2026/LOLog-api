@@ -1,5 +1,7 @@
 package com.lolog.api.domain.text.service;
 
+import com.lolog.api.domain.blog.entity.BlogPost;
+import com.lolog.api.domain.blog.repository.BlogPostRepository;
 import com.lolog.api.domain.card.entity.Card;
 import com.lolog.api.domain.card.repository.CardRepository;
 import com.lolog.api.domain.job.entity.Job;
@@ -12,11 +14,17 @@ import com.lolog.api.domain.text.dto.TextDtos.TextLine;
 import com.lolog.api.domain.text.dto.TextDtos.TextResponse;
 import com.lolog.api.domain.text.dto.TextDtos.TextResult;
 import com.lolog.api.domain.text.dto.TextStatus;
+import com.lolog.api.domain.text.entity.Text;
+import com.lolog.api.domain.text.repository.TextRepository;
 import com.lolog.api.global.error.ApiException;
 import com.lolog.api.global.error.ErrorCode;
 import java.time.OffsetDateTime;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
-import org.springframework.jdbc.core.JdbcTemplate;
+import java.util.Map;
+import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -33,24 +41,18 @@ public class TextService {
 	// 글의 장소는 그대로 카드 장소가 되므로 카드 고치기의 장소 한도(20자)와 같다.
 	static final int MAX_PLACE = 20;
 	static final int MAX_SITUATION = 500;
-	static final String WRITTEN = "WRITTEN";
-	static final String BLOG = "BLOG";
 
-	// 글 상태: 그 글로 만든 카드가 있으면 DONE, TEXT 작업이 실패면 FAILED, 그 밖에는 QUEUED
-	public static final String STATUS_SQL = """
-			case when exists (select 1 from cards c where c.text_id = t.id) then 'DONE'
-			     when exists (select 1 from jobs j where j.text_id = t.id and j.status = 'FAILED') then 'FAILED'
-			     else 'QUEUED' end""";
-
-	private final JdbcTemplate jdbc;
+	private final TextRepository texts;
+	private final BlogPostRepository blogPosts;
 	private final JobRepository jobs;
 	private final CardRepository cards;
 	private final TextPublisher publisher;
 	private final PushService push;
 
-	public TextService(JdbcTemplate jdbc, JobRepository jobs, CardRepository cards, TextPublisher publisher,
-			PushService push) {
-		this.jdbc = jdbc;
+	public TextService(TextRepository texts, BlogPostRepository blogPosts, JobRepository jobs, CardRepository cards,
+			TextPublisher publisher, PushService push) {
+		this.texts = texts;
+		this.blogPosts = blogPosts;
 		this.jobs = jobs;
 		this.cards = cards;
 		this.publisher = publisher;
@@ -70,16 +72,20 @@ public class TextService {
 		}
 		String place = optional(request.place(), MAX_PLACE, "place");
 		String situation = optional(request.situation(), MAX_SITUATION, "situation");
-		long textId = jdbc.queryForObject("""
-				insert into texts (user_id, source, title, body, place, situation) values (?, 'WRITTEN', ?, ?, ?, ?)
-				returning id
-				""", Long.class, userId, title, body, place, situation);
+		long textId = texts.save(Text.written(userId, title, body, place, situation)).getId();
 		queue(textId, userId);
 		return new TextAccepted(textId, TextStatus.QUEUED);
 	}
 
-	// 작업을 만들고 커밋 뒤에 큐에 넣는다. 블로그 글을 가져올 때도 쓴다.
-	public void queue(long textId, long userId) {
+	// 가져온 블로그 글로 글을 만들고 카드 작업을 큐에 넣는다. 부르는 쪽의 트랜잭션 안에서 부른다.
+	public long createFromBlog(long userId, long blogPostId, String title, String body, boolean truncated) {
+		long textId = texts.save(Text.blog(userId, blogPostId, title, body, truncated)).getId();
+		queue(textId, userId);
+		return textId;
+	}
+
+	// 작업을 만들고 커밋 뒤에 큐에 넣는다.
+	private void queue(long textId, long userId) {
 		long jobId = jobs.save(Job.text(textId, userId)).getId();
 		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
 			@Override
@@ -92,47 +98,59 @@ public class TextService {
 	// 내 글 하나를 상태와 함께 돌려준다.
 	@Transactional(readOnly = true)
 	public TextResponse get(long userId, long id) {
-		List<TextResponse> rows = jdbc.query("""
-				select t.id, t.source, t.title, t.body, t.place, t.situation, t.truncated, t.created_at,
-				       (select c.id from cards c where c.text_id = t.id order by c.id limit 1) as card_id,
-				       %s as status, %s
-				from texts t %s
-				where t.id = ? and t.user_id = ?
-				""".formatted(STATUS_SQL, blogColumns(), blogJoin()), (rs, n) -> {
-			boolean blog = BLOG.equals(rs.getString("source"));
-			Long cardId = rs.getObject("card_id", Long.class);
-			return new TextResponse(rs.getLong("id"), rs.getString("source"), TextStatus.valueOf(rs.getString("status")),
-					cardId, rs.getString("title"), blog ? null : rs.getString("body"), rs.getString("place"),
-					rs.getString("situation"), blog ? rs.getString("link") : null, blog ? rs.getString("blog_title") : null,
-					rs.getBoolean("truncated"), rs.getObject("created_at", OffsetDateTime.class));
-		}, id, userId);
-		if (rows.isEmpty()) {
-			throw notFound();
+		Text text = texts.findByIdAndUserId(id, userId).orElseThrow(TextService::notFound);
+		TextProgress progress = statuses(List.of(text.getId())).get(text.getId());
+		// 블로그 글이면 원문 링크와 가져올 때 복사해 둔 블로그 이름(연결을 끊어도 남음)을 붙이고 본문은 보내지 않는다.
+		BlogPost post = text.isBlog() ? blogPosts.findById(text.getBlogPostId()).orElse(null) : null;
+		return new TextResponse(text.getId(), text.getSource().name(), progress.status(), progress.cardId(),
+				text.getTitle(), text.isBlog() ? null : text.getBody(), text.getPlace(), text.getSituation(),
+				post == null ? null : post.getLink(), post == null ? null : post.getBlogTitle(), text.isTruncated(),
+				text.getCreatedAt());
+	}
+
+	// 글의 첫 카드와 상태.
+	public record TextProgress(Long cardId, TextStatus status) {
+	}
+
+	// 가져온 블로그 글마다 그 글로 만든 글의 첫 카드와 상태. 글을 만들지 않은 블로그 글은 빠진다.
+	@Transactional(readOnly = true)
+	public Map<Long, TextProgress> progressByBlogPosts(Collection<Long> blogPostIds) {
+		Map<Long, TextProgress> result = new HashMap<>();
+		if (blogPostIds.isEmpty()) {
+			return result;
 		}
-		return rows.getFirst();
+		List<Text> found = texts.findByBlogPostIdIn(blogPostIds);
+		Map<Long, TextProgress> byText = statuses(found.stream().map(Text::getId).toList());
+		found.forEach(t -> result.put(t.getBlogPostId(), byText.get(t.getId())));
+		return result;
 	}
 
-	// 블로그 글이면 원문 링크와 가져올 때 복사해 둔 블로그 이름(연결을 끊어도 남음)
-	private static String blogColumns() {
-		return "p.link as link, p.blog_title as blog_title";
-	}
-
-	// 블로그 글 정보를 붙이는 조인.
-	private static String blogJoin() {
-		return "left join blog_posts p on p.id = t.blog_post_id";
+	// 글마다 상태를 한 번에 정한다. 그 글로 만든 카드가 있으면 DONE, TEXT 작업이 실패면 FAILED, 그 밖에는 QUEUED
+	// (texts.md 2장 "상태 채우기"). 블로그 글 목록도 이것으로 채운다.
+	@Transactional(readOnly = true)
+	public Map<Long, TextProgress> statuses(Collection<Long> textIds) {
+		Map<Long, TextProgress> result = new HashMap<>();
+		if (textIds.isEmpty()) {
+			return result;
+		}
+		Map<Long, Long> firstCards = new HashMap<>();
+		for (Object[] row : cards.findFirstCardIdsByTextIds(textIds)) {
+			firstCards.put((Long) row[0], (Long) row[1]);
+		}
+		Set<Long> failed = new HashSet<>(jobs.findFailedTextIds(textIds));
+		for (Long textId : textIds) {
+			Long cardId = firstCards.get(textId);
+			TextStatus status = cardId != null ? TextStatus.DONE
+					: failed.contains(textId) ? TextStatus.FAILED : TextStatus.QUEUED;
+			result.put(textId, new TextProgress(cardId, status));
+		}
+		return result;
 	}
 
 	// 워커가 보낸 카드 한 장을 저장한다. 같은 jobId가 다시 오면(워커 재시도) 저장하지 않는다.
 	@Transactional
 	public void receive(long textId, TextResult result) {
-		List<TextRow> found = jdbc.query("""
-				select id, user_id, source, place, created_at from texts where id = ? for update
-				""", (rs, n) -> new TextRow(rs.getLong("id"), rs.getLong("user_id"), rs.getString("source"),
-				rs.getString("place"), rs.getObject("created_at", OffsetDateTime.class)), textId);
-		if (found.isEmpty()) {
-			throw notFound();
-		}
-		TextRow text = found.getFirst();
+		Text text = texts.findByIdForUpdate(textId).orElseThrow(TextService::notFound);
 		Job job = jobs.findById(result.jobId())
 			.filter(j -> "TEXT".equals(j.getJobType()))
 			.orElseThrow(() -> ApiException.invalid("jobId"));
@@ -145,32 +163,29 @@ public class TextService {
 		TextCard detected = result.cards().getFirst();
 		validate(detected);
 		// 장소는 글에 적은 장소다. 비어 있으면 녹음 카드처럼 비워 둔다.
-		Card card = Card.fromText(textId, text.userId(), detected.kind(), detected.summary(), text.place(),
+		Card card = Card.fromText(textId, text.getUserId(), detected.kind(), detected.summary(), text.getPlace(),
 				recordedAt(text));
 		detected.speakers().forEach(card::addSpeaker);
 		// 글 카드의 대사는 시간 값이 없다(texts.md 5장 결과).
 		detected.lines().forEach(l -> card.addLine(l.lineNo(), l.speaker(), l.text(), null, null));
 		cards.save(card);
 		job.complete();
-		if (WRITTEN.equals(text.source())) {
+		if (!text.isBlog()) {
 			// 직접 쓴 글은 카드가 생기면 푸시한다. 블로그 글은 보내지 않고 보관함 새 소식 점만 켠다(texts.md 2장).
-			push.notify(text.userId(), PushService.textCardsCreated(textId));
+			push.notify(text.getUserId(), PushService.textCardsCreated(textId));
 		}
 		else {
 			// 블로그 글은 카드가 생기면 본문을 지우고 링크만 남긴다(texts.md 2장 "글 본문 남기기").
-			jdbc.update("update texts set body = null where id = ?", textId);
+			text.clearBody();
 		}
 	}
 
 	// 글 카드의 날짜: 직접 쓴 글은 올린 시각, 블로그 글은 쓴 시각(pubDate, 없으면 가져온 시각)이다(texts.md 2장).
-	private OffsetDateTime recordedAt(TextRow text) {
-		if (!BLOG.equals(text.source())) {
-			return text.createdAt();
+	private OffsetDateTime recordedAt(Text text) {
+		if (!text.isBlog()) {
+			return text.getCreatedAt();
 		}
-		return jdbc.queryForObject("""
-				select coalesce(p.published_at, p.created_at) from texts t join blog_posts p on p.id = t.blog_post_id
-				where t.id = ?
-				""", OffsetDateTime.class, text.id());
+		return blogPosts.findById(text.getBlogPostId()).orElseThrow().writtenAt();
 	}
 
 	// 워커가 알린 글 작업 실패를 기록한다.
@@ -234,10 +249,6 @@ public class TextService {
 	// 글 없음 오류를 만든다.
 	static ApiException notFound() {
 		return new ApiException(ErrorCode.TEXT_NOT_FOUND);
-	}
-
-	// 카드를 받을 때 읽는 글 한 줄.
-	record TextRow(long id, long userId, String source, String place, OffsetDateTime createdAt) {
 	}
 
 }

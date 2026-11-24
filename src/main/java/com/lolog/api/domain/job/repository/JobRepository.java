@@ -3,6 +3,7 @@ package com.lolog.api.domain.job.repository;
 import com.lolog.api.domain.job.entity.Job;
 import jakarta.persistence.LockModeType;
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -47,5 +48,9 @@ public interface JobRepository extends JpaRepository<Job, Long> {
 	// 녹음 행을 먼저 잠그려고, 작업을 읽기 전에 녹음 ID만 꺼낸다.
 	@Query(value = "select p.recording_id from jobs j join recording_parts p on p.id = j.recording_part_id where j.id = :jobId", nativeQuery = true)
 	Optional<Long> findRecordingIdByJobId(@Param("jobId") Long jobId);
+
+	// 주어진 글 중 TEXT 작업이 실패한 글의 ID.
+	@Query("select distinct j.textId from Job j where j.textId in :textIds and j.status = 'FAILED'")
+	List<Long> findFailedTextIds(@Param("textIds") Collection<Long> textIds);
 
 }

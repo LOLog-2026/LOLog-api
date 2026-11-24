@@ -1,17 +1,16 @@
 package com.lolog.api.domain.blog.service;
 
+import com.lolog.api.domain.blog.entity.BlogSource;
 import com.lolog.api.domain.blog.platform.BlogPlatform;
 import com.lolog.api.domain.blog.platform.BlogPlatforms;
 import com.lolog.api.domain.blog.platform.Categories;
-import com.lolog.api.domain.blog.platform.Platform;
+import com.lolog.api.domain.blog.repository.BlogSourceRepository;
 import com.lolog.api.domain.blog.service.BlogFetcher.FetchException;
 import com.lolog.api.domain.blog.service.FeedParser.Feed;
 import java.net.URI;
 import java.util.List;
-import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.type.TypeReference;
@@ -24,16 +23,16 @@ public class BlogPoller {
 
 	private static final Logger log = LoggerFactory.getLogger(BlogPoller.class);
 
-	private final JdbcTemplate jdbc;
+	private final BlogSourceRepository sources;
 	private final BlogFetcher fetcher;
 	private final BlogService blogs;
 	private final ObjectMapper objectMapper;
 	private final BlogPlatforms platforms;
 
-	public BlogPoller(JdbcTemplate jdbc, BlogFetcher fetcher, BlogService blogs, ObjectMapper objectMapper,
+	public BlogPoller(BlogSourceRepository sources, BlogFetcher fetcher, BlogService blogs, ObjectMapper objectMapper,
 			BlogPlatforms platforms) {
 		this.platforms = platforms;
-		this.jdbc = jdbc;
+		this.sources = sources;
 		this.fetcher = fetcher;
 		this.blogs = blogs;
 		this.objectMapper = objectMapper;
@@ -43,7 +42,7 @@ public class BlogPoller {
 	@Scheduled(initialDelayString = "${lolog.blog.poll-initial-delay-ms:300000}",
 			fixedDelayString = "${lolog.blog.poll-delay-ms:1800000}")
 	void pollAll() {
-		List<Long> ids = jdbc.queryForList("select id from blog_sources order by id", Long.class);
+		List<Long> ids = sources.findAllIds();
 		int added = 0;
 		for (Long id : ids) {
 			added += poll(id);
@@ -55,27 +54,24 @@ public class BlogPoller {
 
 	// 블로그 하나를 읽는다. 그사이 연결을 끊었으면 넘어간다.
 	public int poll(long sourceId) {
-		List<Map<String, Object>> rows = jdbc.queryForList(
-				"select user_id, title, site_url, feed_url, platform, categories::text as categories from blog_sources where id = ?",
-				sourceId);
-		if (rows.isEmpty()) {
+		BlogSource source = sources.findById(sourceId).orElse(null);
+		if (source == null) {
 			return 0;
 		}
-		Map<String, Object> source = rows.getFirst();
 		try {
-			Feed feed = FeedParser.parse(fetcher.get((String) source.get("feed_url")).body());
+			Feed feed = FeedParser.parse(fetcher.get(source.getFeedUrl()).body());
 			if (feed == null) {
 				log.warn("블로그 {}의 피드를 읽지 못했습니다(RSS·Atom이 아님).", sourceId);
 				return 0;
 			}
-			List<String> categories = objectMapper.readValue((String) source.get("categories"),
+			List<String> categories = objectMapper.readValue(source.getCategories(),
 					new TypeReference<List<String>>() {
 					});
 			// 연결할 때 고른 플랫폼으로 읽는다. WordPress는 여기서 REST로 카테고리 목록을 받는다(트랜잭션 밖).
-			BlogPlatform platform = platforms.get(Platform.valueOf((String) source.get("platform")));
-			Categories rule = platform.categories(URI.create((String) source.get("site_url")), feed);
-			return blogs.importIfConnected(sourceId, ((Number) source.get("user_id")).longValue(),
-					(String) source.get("title"), categories, feed, platform, rule);
+			BlogPlatform platform = platforms.get(source.getPlatform());
+			Categories rule = platform.categories(URI.create(source.getSiteUrl()), feed);
+			return blogs.importIfConnected(sourceId, source.getUserId(), source.getTitle(), categories, feed, platform,
+					rule);
 		}
 		catch (FetchException e) {
 			log.warn("블로그 {}의 피드를 받지 못했습니다: {}", sourceId, e.getMessage());

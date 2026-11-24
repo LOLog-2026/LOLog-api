@@ -4,28 +4,32 @@ import com.lolog.api.domain.blog.dto.BlogDtos.Blog;
 import com.lolog.api.domain.blog.dto.BlogDtos.BlogCheck;
 import com.lolog.api.domain.blog.dto.BlogDtos.BlogPost;
 import com.lolog.api.domain.blog.dto.BlogDtos.BlogPostPage;
+import com.lolog.api.domain.blog.entity.BlogSource;
 import com.lolog.api.domain.blog.platform.BlogPlatform;
 import com.lolog.api.domain.blog.platform.BlogPlatforms;
 import com.lolog.api.domain.blog.platform.Categories;
 import com.lolog.api.domain.blog.platform.Platform;
+import com.lolog.api.domain.blog.repository.BlogPostRepository;
+import com.lolog.api.domain.blog.repository.BlogSourceRepository;
 import com.lolog.api.domain.blog.service.BlogFetcher.FetchException;
 import com.lolog.api.domain.blog.service.FeedLocator.Located;
 import com.lolog.api.domain.blog.service.FeedParser.Feed;
 import com.lolog.api.domain.blog.service.FeedParser.Item;
-import com.lolog.api.domain.text.dto.TextStatus;
+import com.lolog.api.domain.text.service.TextService.TextProgress;
 import com.lolog.api.domain.text.service.TextService;
 import com.lolog.api.global.error.ApiException;
 import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.web.PageRequestParams;
 import java.net.URI;
-import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -46,7 +50,8 @@ public class BlogService {
 	static final int MAX_CATEGORIES = 3;
 	static final int INITIAL_POSTS = 3;
 
-	private final JdbcTemplate jdbc;
+	private final BlogSourceRepository sources;
+	private final BlogPostRepository blogPosts;
 	private final FeedLocator locator;
 	private final TextService texts;
 	private final ObjectMapper objectMapper;
@@ -54,12 +59,14 @@ public class BlogService {
 	private final BlogFetcher fetcher;
 	private final BlogPlatforms platforms;
 
-	public BlogService(JdbcTemplate jdbc, FeedLocator locator, TextService texts, ObjectMapper objectMapper,
-			TransactionTemplate tx, BlogFetcher fetcher, BlogPlatforms platforms) {
+	public BlogService(BlogSourceRepository sources, BlogPostRepository blogPosts, FeedLocator locator,
+			TextService texts, ObjectMapper objectMapper, TransactionTemplate tx, BlogFetcher fetcher,
+			BlogPlatforms platforms) {
 		this.fetcher = fetcher;
 		this.platforms = platforms;
 		this.tx = tx;
-		this.jdbc = jdbc;
+		this.sources = sources;
+		this.blogPosts = blogPosts;
 		this.locator = locator;
 		this.texts = texts;
 		this.objectMapper = objectMapper;
@@ -96,9 +103,7 @@ public class BlogService {
 		// WordPress는 여기서 REST로 카테고리 목록을 받아 온다. 트랜잭션 밖에서 받는다.
 		Categories rule = located.platform().categories(URI.create(siteUrl), located.feed());
 		requireSelectable(rule, categories);
-		Boolean exists = jdbc.queryForObject("select exists (select 1 from blog_sources where user_id = ? and feed_url = ?)",
-				Boolean.class, userId, located.feedUrl());
-		if (Boolean.TRUE.equals(exists)) {
+		if (sources.existsByUserIdAndFeedUrl(userId, located.feedUrl())) {
 			throw exists();
 		}
 		String title = cut(located.feed().title(), MAX_BLOG_TITLE);
@@ -111,13 +116,11 @@ public class BlogService {
 		Platform platform = located.platform().platform();
 		long id;
 		try {
-			id = jdbc.queryForObject("""
-					insert into blog_sources (user_id, site_url, title, feed_url, platform, categories)
-					values (?, ?, ?, ?, ?, ?::jsonb) returning id
-					""", Long.class, userId, siteUrl, title, located.feedUrl(), platform.name(),
-					objectMapper.writeValueAsString(categories));
+			// 바로 넣어서(flush) 같은 피드를 동시에 연결하면 여기서 uk_blog_sources_user_id_feed_url에 걸리게 한다.
+			id = sources.saveAndFlush(new BlogSource(userId, siteUrl, title, located.feedUrl(), platform,
+					objectMapper.writeValueAsString(categories))).getId();
 		}
-		catch (DuplicateKeyException e) {
+		catch (DataIntegrityViolationException e) {
 			throw exists();
 		}
 		// 고른 카테고리마다 최근 글 3개(안 골랐으면 블로그 전체에서 3개)만 카드로 만든다.
@@ -128,15 +131,10 @@ public class BlogService {
 	// 내 블로그 목록을 돌려준다.
 	@Transactional(readOnly = true)
 	public List<Blog> list(long userId) {
-		return jdbc.query(
-				"select id, site_url, title, platform, categories::text from blog_sources where user_id = ? order by id",
-				(rs, n) -> new Blog(rs.getLong("id"), rs.getString("site_url"), rs.getString("title"),
-						read(rs.getString("categories")), Platform.valueOf(rs.getString("platform")).optimized()),
-				userId);
-	}
-
-	// 카테고리를 바꿀 때 읽는 블로그 정보.
-	private record Source(Platform platform, String siteUrl, String feedUrl, String title, List<String> categories) {
+		return sources.findAllByUserIdOrderById(userId).stream()
+			.map(s -> new Blog(s.getId(), s.getSiteUrl(), s.getTitle(), read(s.getCategories()),
+					s.getPlatform().optimized()))
+			.toList();
 	}
 
 	// 가져올 카테고리를 바꾼다. 새로 더한 카테고리마다 최근 글 3개를 바로 카드로 만든다(정함 11-14).
@@ -147,34 +145,22 @@ public class BlogService {
 			throw ApiException.invalid("categories");
 		}
 		List<String> categories = categories(requested);
-		List<Source> found = jdbc.query("""
-				select platform, site_url, feed_url, title, categories::text from blog_sources where id = ? and user_id = ?
-				""", (rs, n) -> new Source(Platform.valueOf(rs.getString("platform")), rs.getString("site_url"),
-				rs.getString("feed_url"), rs.getString("title"), read(rs.getString("categories"))), id, userId);
-		if (found.isEmpty()) {
-			throw notFound();
-		}
-		Source source = found.getFirst();
+		BlogSource source = sources.findByIdAndUserId(id, userId).orElseThrow(BlogService::notFound);
 		// 카테고리를 고를 수 없는지는 플랫폼만으로 정해진다(Medium·velog).
-		if (!source.platform().categorySelectable()) {
+		if (!source.getPlatform().categorySelectable()) {
 			requireSelectable(Categories.none(), categories);
 		}
-		List<String> added = added(source.categories(), categories);
-		BlogPlatform platform = platforms.get(source.platform());
-		Feed feed = added == null ? null : feed(source.feedUrl());
-		Categories rule = feed == null ? null : platform.categories(URI.create(source.siteUrl()), feed);
+		List<String> added = added(read(source.getCategories()), categories);
+		BlogPlatform platform = platforms.get(source.getPlatform());
+		Feed feed = added == null ? null : feed(source.getFeedUrl());
+		Categories rule = feed == null ? null : platform.categories(URI.create(source.getSiteUrl()), feed);
 		return tx.execute(status -> {
-			List<Long> locked = jdbc.queryForList("select id from blog_sources where id = ? and user_id = ? for update",
-					Long.class, id, userId);
-			if (locked.isEmpty()) {
-				throw notFound();
-			}
-			jdbc.update("update blog_sources set categories = ?::jsonb where id = ?",
-					objectMapper.writeValueAsString(categories), id);
+			BlogSource locked = sources.findByIdAndUserIdForUpdate(id, userId).orElseThrow(BlogService::notFound);
+			locked.changeCategories(objectMapper.writeValueAsString(categories));
 			if (feed != null) {
-				importPosts(id, userId, source.title(), categories, feed, platform, rule, added);
+				importPosts(id, userId, locked.getTitle(), categories, feed, platform, rule, added);
 			}
-			return new Blog(id, source.siteUrl(), source.title(), categories, source.platform().optimized());
+			return new Blog(id, locked.getSiteUrl(), locked.getTitle(), categories, locked.getPlatform().optimized());
 		});
 	}
 
@@ -208,32 +194,23 @@ public class BlogService {
 	// 연결 끊기: blog_sources 줄만 지운다. 가져온 글(blog_posts)은 source_id만 비워져 남고, 만든 카드도 남는다.
 	@Transactional
 	public void delete(long userId, long id) {
-		if (jdbc.update("delete from blog_sources where id = ? and user_id = ?", id, userId) == 0) {
-			throw notFound();
-		}
+		sources.delete(sources.findByIdAndUserId(id, userId).orElseThrow(BlogService::notFound));
 	}
 
 	// 가져온 글 목록. 최신 글(나중에 가져온 글)부터이고, 커서는 마지막 글의 ID다.
 	@Transactional(readOnly = true)
 	public BlogPostPage posts(long userId, long id, String cursor, Integer size) {
 		PageRequestParams params = PageRequestParams.of(cursor, size);
-		Boolean mine = jdbc.queryForObject("select exists (select 1 from blog_sources where id = ? and user_id = ?)",
-				Boolean.class, id, userId);
-		if (!Boolean.TRUE.equals(mine)) {
+		if (!sources.existsByIdAndUserId(id, userId)) {
 			throw notFound();
 		}
-		List<Row> rows = jdbc.query("""
-				select p.id, p.title, p.link, p.category, p.published_at, t.id as text_id,
-				       (select c.id from cards c where c.text_id = t.id order by c.id limit 1) as card_id,
-				       case when t.id is null then null else %s end as status
-				from blog_posts p left join texts t on t.blog_post_id = p.id
-				where p.source_id = ? and not p.skipped and (?::bigint is null or p.id < ?)
-				order by p.id desc limit ?
-				""".formatted(TextService.STATUS_SQL), (rs, n) -> new Row(rs.getLong("id"),
-				new BlogPost(rs.getString("title"), rs.getString("link"), rs.getString("category"),
-						rs.getObject("published_at", OffsetDateTime.class), rs.getObject("card_id", Long.class),
-						rs.getString("status") == null ? null : TextStatus.valueOf(rs.getString("status")))),
-				id, params.before(), params.before(), params.size() + 1);
+		var found = blogPosts.findPage(id, params.before(), Limit.of(params.size() + 1));
+		Map<Long, TextProgress> progress = texts.progressByBlogPosts(found.stream().map(p -> p.getId()).toList());
+		List<Row> rows = found.stream().map(p -> {
+			TextProgress text = progress.get(p.getId());
+			return new Row(p.getId(), new BlogPost(p.getTitle(), p.getLink(), p.getCategory(), p.getPublishedAt(),
+					text == null ? null : text.cardId(), text == null ? null : text.status()));
+		}).toList();
 		boolean more = rows.size() > params.size();
 		List<Row> shown = more ? rows.subList(0, params.size()) : rows;
 		return new BlogPostPage(shown.stream().map(Row::post).toList(),
@@ -277,24 +254,17 @@ public class BlogService {
 				continue;
 			}
 			if (recent != null && !recent.contains(item)) {
-				jdbc.update("""
-						insert into blog_posts (source_id, user_id, guid, skipped) values (?, ?, ?, true)
-						on conflict (user_id, guid) do nothing
-						""", sourceId, userId, item.guid());
+				blogPosts.insertSkipped(sourceId, userId, item.guid());
 				continue;
 			}
 			String title = item.title() == null ? "제목 없음" : cut(item.title(), MAX_TITLE);
 			// 연결·추가 때는 예전에 옛 글로 적어 둔 글(skipped)이 이번 최근 3개에 들면 가져온다. 주기적으로 읽을 때는 건드리지 않는다.
-			String conflict = initial == null ? "do nothing" : """
-					do update set source_id = excluded.source_id, title = excluded.title, link = excluded.link,
-					    category = excluded.category, published_at = excluded.published_at, blog_title = excluded.blog_title,
-					    skipped = false, created_at = current_timestamp
-					where blog_posts.skipped""";
-			List<Long> inserted = jdbc.queryForList("""
-					insert into blog_posts (source_id, user_id, guid, title, link, category, published_at, blog_title)
-					values (?, ?, ?, ?, ?, ?, ?, ?) on conflict (user_id, guid) %s returning id
-					""".formatted(conflict), Long.class, sourceId, userId, item.guid(), title, item.link(),
-					cut(category, MAX_POST_CATEGORY), item.publishedAt(), blogTitle);
+			String postCategory = cut(category, MAX_POST_CATEGORY);
+			Optional<Long> inserted = initial == null
+					? blogPosts.insertNew(sourceId, userId, item.guid(), title, item.link(), postCategory,
+							item.publishedAt(), blogTitle)
+					: blogPosts.insertOrRevive(sourceId, userId, item.guid(), title, item.link(), postCategory,
+							item.publishedAt(), blogTitle);
 			if (inserted.isEmpty()) {
 				continue;
 			}
@@ -307,11 +277,7 @@ public class BlogService {
 			if (body.isBlank()) {
 				body = title;
 			}
-			long textId = jdbc.queryForObject("""
-					insert into texts (user_id, source, blog_post_id, title, body, truncated) values (?, 'BLOG', ?, ?, ?, ?)
-					returning id
-					""", Long.class, userId, inserted.getFirst(), title, body, truncated);
-			texts.queue(textId, userId);
+			texts.createFromBlog(userId, inserted.get(), title, body, truncated);
 			added++;
 		}
 		return added;
@@ -321,8 +287,7 @@ public class BlogService {
 	@Transactional
 	public int importIfConnected(long sourceId, long userId, String blogTitle, List<String> categories, Feed feed,
 			BlogPlatform platform, Categories rule) {
-		List<Long> locked = jdbc.queryForList("select id from blog_sources where id = ? for update", Long.class, sourceId);
-		if (locked.isEmpty()) {
+		if (sources.findByIdForUpdate(sourceId).isEmpty()) {
 			return 0;
 		}
 		return importPosts(sourceId, userId, blogTitle, categories, feed, platform, rule, null);
