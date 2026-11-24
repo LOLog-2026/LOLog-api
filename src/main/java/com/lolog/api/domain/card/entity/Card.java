@@ -70,6 +70,13 @@ public class Card {
 	@Column(name = "video_count", nullable = false, insertable = false, updatable = false)
 	private int videoCount;
 
+	// 카드 구간 음성(V6). 음성이 없으면 둘 다 null. CardRepository의 조건 UPDATE로만 바꾼다(videoCount와 같은 까닭).
+	@Column(name = "audio_key", insertable = false, updatable = false)
+	private String audioKey;
+
+	@Column(name = "audio_duration_ms", insertable = false, updatable = false)
+	private Long audioDurationMs;
+
 	@OneToMany(mappedBy = "card", cascade = CascadeType.ALL, orphanRemoval = true)
 	@OrderBy("speakerKey")
 	private List<CardSpeaker> speakers = new ArrayList<>();

@@ -24,6 +24,11 @@ public interface RecordingRepository extends JpaRepository<Recording, Long> {
 	@Query("select r from Recording r where r.id = :id")
 	Optional<Recording> findByIdForUpdate(@Param("id") Long id);
 
+	// 내 녹음 행을 잠그고 찾는다.
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select r from Recording r where r.id = :id and r.userId = :userId")
+	Optional<Recording> findByIdAndUserIdForUpdate(@Param("id") Long id, @Param("userId") Long userId);
+
 	// 내 녹음 하나를 찾는다.
 	Optional<Recording> findByIdAndUserId(Long id, Long userId);
 

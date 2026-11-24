@@ -1,9 +1,11 @@
 package com.lolog.api.domain.audio.service;
 
+import com.lolog.api.domain.audio.repository.RecordingAudioFileRepository;
+import com.lolog.api.domain.recording.entity.Recording;
+import com.lolog.api.domain.recording.repository.RecordingRepository;
 import com.lolog.api.global.error.ApiException;
 import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.storage.ImageStorage;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,14 +17,17 @@ public class AudioUploadService {
 	// Nginx 본문 한도와 같게 맞춘다(audio.md 오류 코드 PAYLOAD_TOO_LARGE).
 	public static final long MAX_BYTES = 5L * 1024 * 1024;
 
-	private final JdbcTemplate jdbc;
+	private final RecordingRepository recordings;
 	private final ImageStorage storage;
 	private final CardAudioClipper clipper;
+	private final RecordingAudioFileRepository files;
 
-	public AudioUploadService(JdbcTemplate jdbc, ImageStorage storage, CardAudioClipper clipper) {
-		this.jdbc = jdbc;
+	public AudioUploadService(RecordingRepository recordings, ImageStorage storage, CardAudioClipper clipper,
+			RecordingAudioFileRepository files) {
+		this.recordings = recordings;
 		this.storage = storage;
 		this.clipper = clipper;
+		this.files = files;
 	}
 
 	// 음성 파일을 확인해 저장하고 카드 구간 자르기를 맡긴다.
@@ -50,24 +55,16 @@ public class AudioUploadService {
 			throw ApiException.invalid("file");
 		}
 		// 녹음 행을 잠가 같은 번호가 동시에 와도 차례로 덮어쓴다.
-		Boolean audioSaved = jdbc.query("select audio_saved from recordings where id = ? and user_id = ? for update",
-				(rs, n) -> rs.getBoolean("audio_saved"), recordingId, userId)
-			.stream()
-			.findFirst()
+		Recording recording = recordings.findByIdAndUserIdForUpdate(recordingId, userId)
 			.orElseThrow(() -> new ApiException(ErrorCode.RECORDING_NOT_FOUND));
-		if (!audioSaved) {
+		if (!recording.isAudioSaved()) {
 			throw new ApiException(ErrorCode.INVALID_REQUEST);
 		}
 
 		// 키가 번호마다 같아서, 파일을 올린 뒤 DB 저장이 실패해도 다시 올리면 덮어써진다.
 		String key = ImageStorage.recordingAudioKey(userId, recordingId, seq);
 		storage.putAac(key, file);
-		jdbc.update("""
-				insert into recording_audio_files (recording_id, seq, audio_key, start_ms, end_ms) values (?, ?, ?, ?, ?)
-				on conflict (recording_id, seq) do update
-				set audio_key = excluded.audio_key, start_ms = excluded.start_ms, end_ms = excluded.end_ms,
-				    updated_at = current_timestamp
-				""", recordingId, seq, key, startMs, endMs);
+		files.upsert(recordingId, seq, key, startMs, endMs);
 		clipper.clipRecordingLater(recordingId);
 	}
 

@@ -11,6 +11,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 // 카드 조회와 만화·영상 횟수 바꾸기.
 public interface CardRepository extends JpaRepository<Card, Long> {
@@ -53,6 +54,20 @@ public interface CardRepository extends JpaRepository<Card, Long> {
 	@Modifying(flushAutomatically = true, clearAutomatically = true)
 	@Query(value = "update cards set video_count = video_count - 1 where id = :id and video_count > 0", nativeQuery = true)
 	int decrementVideoCount(@Param("id") Long id);
+
+	// 녹음의 카드 중 아직 구간 음성이 없는 카드(id 순서).
+	@Query("select c.id from Card c where c.recordingId = :recordingId and c.audioKey is null order by c.id")
+	List<Long> findIdsWithoutAudio(@Param("recordingId") Long recordingId);
+
+	// 구간 음성이 아직 없을 때만 붙인다. 바뀐 줄이 0이면 그 사이 다른 쪽이 먼저 붙였거나 카드가 지워졌다.
+	// 자르기는 요청이 끝난 뒤 따로 돌아서 부르는 쪽에 트랜잭션이 없으므로 이 메서드가 트랜잭션을 연다.
+	@Transactional
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query(value = """
+			update cards set audio_key = :audioKey, audio_duration_ms = :durationMs, updated_at = current_timestamp
+			where id = :id and audio_key is null
+			""", nativeQuery = true)
+	int attachAudio(@Param("id") Long id, @Param("audioKey") String audioKey, @Param("durationMs") Long durationMs);
 
 	// 카드마다 대사 수를 센다.
 	@Query("select l.card.id, count(l) from CardLine l where l.card.id in :cardIds group by l.card.id")

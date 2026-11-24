@@ -1,11 +1,18 @@
 package com.lolog.api.domain.audio.service;
 
+import com.lolog.api.domain.card.entity.Card;
+import com.lolog.api.domain.card.repository.CardRepository;
+import com.lolog.api.domain.recording.entity.Recording;
+import com.lolog.api.domain.recording.repository.RecordingRepository;
 import com.lolog.api.global.storage.ImageStorage;
+import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
-import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
 
 // 카드의 음성 상태(replay.md 1장, db.md 4장 "카드 음성 상태").
@@ -14,11 +21,13 @@ import org.springframework.stereotype.Component;
 @Component
 public class CardAudioViews {
 
-	private final NamedParameterJdbcTemplate jdbc;
+	private final CardRepository cards;
+	private final RecordingRepository recordings;
 	private final ImageStorage storage;
 
-	public CardAudioViews(NamedParameterJdbcTemplate jdbc, ImageStorage storage) {
-		this.jdbc = jdbc;
+	public CardAudioViews(CardRepository cards, RecordingRepository recordings, ImageStorage storage) {
+		this.cards = cards;
+		this.recordings = recordings;
 		this.storage = storage;
 	}
 
@@ -39,31 +48,39 @@ public class CardAudioViews {
 
 	// 카드 상세에 넣을 음성 상태와 재생 주소를 돌려준다.
 	public CardAudio detail(long cardId) {
-		State state = states(java.util.List.of(cardId)).get(cardId);
+		State state = states(List.of(cardId)).get(cardId);
 		if (state == null || !"READY".equals(state.status())) {
 			return new CardAudio(state == null ? "NONE" : state.status(), null, null);
 		}
 		return new CardAudio("READY", storage.presignedUrl(state.key()).toString(), state.durationMs());
 	}
 
-	// 카드마다 음성 상태를 DB에서 한 번에 읽는다.
+	// 카드마다 음성 상태를 정한다. 카드와 그 녹음을 각각 한 번에 읽는다.
 	private Map<Long, State> states(Collection<Long> cardIds) {
 		Map<Long, State> result = new HashMap<>();
 		if (cardIds.isEmpty()) {
 			return result;
 		}
-		jdbc.query("""
-				select c.id, c.audio_key, c.audio_duration_ms,
-				       case when c.audio_key is not null then 'READY'
-				            when r.audio_saved and r.ended_at >= now() - make_interval(secs => :keep) then 'PENDING'
-				            else 'NONE' end as status
-				from cards c left join recordings r on r.id = c.recording_id
-				where c.id in (:ids)
-				""", new MapSqlParameterSource("ids", cardIds).addValue("keep", AudioRetentionJob.KEEP.toSeconds()),
-				rs -> {
-					result.put(rs.getLong("id"), new State(rs.getString("status"), rs.getString("audio_key"),
-							(Long) rs.getObject("audio_duration_ms")));
-				});
+		List<Card> found = cards.findAllById(cardIds);
+		List<Long> recordingIds = found.stream().map(Card::getRecordingId).filter(Objects::nonNull).distinct().toList();
+		Map<Long, Recording> byId = recordings.findAllById(recordingIds).stream()
+			.collect(Collectors.toMap(Recording::getId, Function.identity()));
+		OffsetDateTime keepFrom = OffsetDateTime.now().minus(AudioRetentionJob.KEEP);
+		for (Card card : found) {
+			Recording recording = card.getRecordingId() == null ? null : byId.get(card.getRecordingId());
+			String status;
+			if (card.getAudioKey() != null) {
+				status = "READY";
+			}
+			else if (recording != null && recording.isAudioSaved() && recording.getEndedAt() != null
+					&& !recording.getEndedAt().isBefore(keepFrom)) {
+				status = "PENDING";
+			}
+			else {
+				status = "NONE";
+			}
+			result.put(card.getId(), new State(status, card.getAudioKey(), card.getAudioDurationMs()));
+		}
 		return result;
 	}
 

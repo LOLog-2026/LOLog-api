@@ -23,4 +23,8 @@ public interface RecordingPartRepository extends JpaRepository<RecordingPart, Lo
 			""")
 	List<Long> findRecordingIdsWaitingTooLong(@Param("before") OffsetDateTime before);
 
+	// 마지막 묶음까지 받은 녹음인지 본다.
+	@Query("select count(p) > 0 from RecordingPart p where p.recording.id = :recordingId and p.last = true")
+	boolean existsLast(@Param("recordingId") Long recordingId);
+
 }

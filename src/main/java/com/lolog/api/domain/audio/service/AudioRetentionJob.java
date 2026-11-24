@@ -1,12 +1,13 @@
 package com.lolog.api.domain.audio.service;
 
+import com.lolog.api.domain.audio.repository.RecordingAudioFileRepository;
+import com.lolog.api.domain.audio.repository.RecordingAudioFileRepository.ExpiredRecording;
 import com.lolog.api.global.storage.ImageStorage;
 import com.lolog.api.global.util.SafeLog;
 import java.time.Duration;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -23,12 +24,13 @@ public class AudioRetentionJob {
 	// 한 번에 다시 자를 카드 수. 남은 카드는 다음 시간에 자른다.
 	private static final int RETRY_LIMIT = 500;
 
-	private final JdbcTemplate jdbc;
+	private final RecordingAudioFileRepository files;
 	private final ImageStorage storage;
 	private final CardAudioClipper clipper;
 
-	public AudioRetentionJob(JdbcTemplate jdbc, ImageStorage storage, CardAudioClipper clipper) {
-		this.jdbc = jdbc;
+	// 리포지토리, 저장소, 자르기를 받는다.
+	public AudioRetentionJob(RecordingAudioFileRepository files, ImageStorage storage, CardAudioClipper clipper) {
+		this.files = files;
 		this.storage = storage;
 		this.clipper = clipper;
 	}
@@ -48,28 +50,19 @@ public class AudioRetentionJob {
 
 	// 구간 음성이 없는 카드를 다시 자른다.
 	void retryClips() {
-		List<Long> cardIds = jdbc.queryForList("""
-				select c.id from cards c join recordings r on r.id = c.recording_id
-				where c.audio_key is null and r.audio_saved
-				  and exists (select 1 from recording_audio_files f where f.recording_id = r.id)
-				order by c.id desc limit ?
-				""", Long.class, RETRY_LIMIT);
+		List<Long> cardIds = files.findCardIdsToClip(RETRY_LIMIT);
 		cardIds.forEach(clipper::clipQuietly);
 	}
 
 	// 7일 지난 녹음의 전체 음성 파일을 지운다.
 	void deleteExpired() {
-		List<long[]> expired = jdbc.query("""
-				select r.id, r.user_id from recordings r
-				where r.ended_at < now() - make_interval(secs => ?)
-				  and exists (select 1 from recording_audio_files f where f.recording_id = r.id)
-				""", (rs, n) -> new long[] { rs.getLong("id"), rs.getLong("user_id") }, KEEP.toSeconds());
-		for (long[] recording : expired) {
-			long recordingId = recording[0];
+		List<ExpiredRecording> expired = files.findExpiredRecordings(KEEP.toSeconds());
+		for (ExpiredRecording recording : expired) {
+			long recordingId = recording.getId();
 			try {
 				// 저장소를 먼저 지운다. 실패하면 줄이 남아 다음 시간에 다시 지운다.
-				storage.deletePrefix(ImageStorage.recordingAudioPrefix(recording[1], recordingId));
-				jdbc.update("delete from recording_audio_files where recording_id = ?", recordingId);
+				storage.deletePrefix(ImageStorage.recordingAudioPrefix(recording.getUserId(), recordingId));
+				files.deleteAllByRecordingId(recordingId);
 			}
 			catch (Exception e) {
 				log.warn("녹음 {}의 음성 파일을 지우지 못했습니다.", recordingId, SafeLog.withoutMessages(e));
