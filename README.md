@@ -10,7 +10,7 @@ LOLog의 메인 백엔드예요. 앱이 올린 대화 글을 받아 Jetson AI �
 | --- | --- | --- |
 | 언어·프레임워크 | Java 21, Spring Boot 4.1 (Web MVC, Validation, Actuator) | REST API 서버 |
 | DB | PostgreSQL(배포 17, 로컬·테스트 latest), Spring Data JPA(Hibernate) | 회원 서비스 정보, 카드, 만화·쇼츠 기록, 친구, 방, 알림 |
-| DB 변경 관리 | Flyway (V1~V19) | 표 구조를 번호 붙은 SQL로 순서대로 적용 |
+| DB 변경 관리 | Flyway (V1~V20) | 표 구조를 번호 붙은 SQL로 순서대로 적용 |
 | 캐시·큐 | Redis(배포 7.4, 로컬 latest), Redis Streams | Jetson 작업 큐 3개, 컨슈머 그룹 `jetson-workers` |
 | 파일 저장 | MinIO(S3 호환), AWS SDK for Java v2 | 만화 PNG, 쇼츠 mp4, 음성, 캐릭터 그림. 앱에는 10분 서명 주소로 줌 |
 | 인증 | Spring Security OAuth2 Resource Server, JWT(HS256) | lolog-auth가 발급한 액세스 토큰을 서명만으로 확인 |
@@ -104,7 +104,7 @@ com.lolog.api
 
 ## DB
 
-- 표 설명은 마이그레이션 파일의 `COMMENT ON TABLE`에 있어요. `src/main/resources/db/migration/V1__init.sql` ~ `V19__sound_library.sql`.
+- 표 설명은 마이그레이션 파일의 `COMMENT ON TABLE`에 있어요. `src/main/resources/db/migration/V1__init.sql` ~ `V20__cards_created_at_clock.sql`.
 - 한 번 적용한 마이그레이션은 고치지 않고 다음 번호 파일을 더해요.
 - 회원 계정(이메일·비밀번호·소셜 계정)은 lolog-auth의 DB에 있고, 이 서버는 `user_id`만 가져요.
 - ERD는 [조직 README](https://github.com/LOLog-2026)의 `lolog-erd.png`를 보세요.
@@ -123,6 +123,7 @@ com.lolog.api
   - 새 줄만 넣는 쿼리(알림 넣기 등)는 이미 읽은 엔티티를 낡게 하지 않으니 `flushAutomatically`만 붙여요.
 - 다른 도메인의 표는 그 도메인의 리포지토리나 서비스를 거쳐요.
   - 예외: 여러 도메인의 표를 한 문장으로 봐야 하는 조회는 그 조회를 쓰는 도메인의 리포지토리에 native query로 둬요(예: `RecordingAudioFileRepository.findCardIdsToClip`).
+- 서로 비교해서 순서를 정하는 시각(알림·새 소식 본 시각·방 대화·읽은 시각·카드 생성 일시)은 DB 시계(`clock_timestamp()`)로 정해요. Java 시계와 DB 시계는 조금씩 어긋날 수 있어서, 섞어 비교하면 순서가 뒤집혀요.
 - 여러 표를 합쳐 보여 주는 화면용 목록 조회는 그 조회를 쓰는 도메인의 리포지토리에 JPQL 한 문장으로 두고, 결과는 화면에 필요한 칸만 담은 record로 받아요(`select new ...`). 표마다 따로 읽어 Java에서 합치면 DB 왕복이 늘어서예요. 쓰기는 지금처럼 엔티티로 해요.
 - SQL 문장 자체가 실행 중에 바뀌는 조회는 리포지토리 패키지의 `@Repository` 클래스에서만 `JdbcTemplate`을 써요(`InboxQueries`).
 - 서버 상태 확인(`HealthController`의 `select 1`)은 데이터를 다루지 않아 이 규칙에서 빼요.
