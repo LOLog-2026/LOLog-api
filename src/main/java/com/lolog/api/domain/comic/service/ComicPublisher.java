@@ -13,6 +13,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
@@ -37,6 +38,8 @@ public class ComicPublisher {
 		this.redis = redis;
 		this.objectMapper = objectMapper;
 		this.tx = new TransactionTemplate(transactionManager);
+		// 커밋 뒤에 불려도 끝난 트랜잭션에 끼지 않게 새 트랜잭션으로 넣음 표시를 저장한다.
+		this.tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
 	}
 
 	// lolog:comic의 payload 모양. API DTO 명세 4장 ComicMessage와 같다. 카드 내용은 워커가 /internal에서 받아 간다.

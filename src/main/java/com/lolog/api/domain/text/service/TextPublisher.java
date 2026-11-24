@@ -15,6 +15,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
@@ -39,6 +40,8 @@ public class TextPublisher {
 		this.redis = redis;
 		this.objectMapper = objectMapper;
 		this.tx = new TransactionTemplate(transactionManager);
+		// 커밋 뒤에 불려도 끝난 트랜잭션에 끼지 않게 새 트랜잭션으로 넣음 표시를 저장한다.
+		this.tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
 	}
 
 	// 실패해도 글은 이미 저장됐으므로 오류를 넘기지 않는다. 메시지에 글이 들어 있어 예외 메시지는 남기지 않는다(TR-12).
