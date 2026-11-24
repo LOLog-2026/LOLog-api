@@ -86,7 +86,7 @@ com.lolog.api
 | `friend`, `room` | 친구 코드·요청·차단, 방·초대·만화 올리기·좋아요·댓글 |
 | `inbox`, `notification` | 알림함(30일 보관), 기기 토큰, 푸시 내용 |
 | `admin` | 공지사항, 회원 정지, 의견 보기 |
-| `user` | 탈퇴 시 데이터 삭제 |
+| `user` | 회원 프로필(`user_profiles`)·정지, 탈퇴 시 데이터 삭제 |
 | `job` | 작업 상태 |
 | `health` | `GET /api/health` |
 
@@ -108,6 +108,24 @@ com.lolog.api
 - 한 번 적용한 마이그레이션은 고치지 않고 다음 번호 파일을 더해요.
 - 회원 계정(이메일·비밀번호·소셜 계정)은 lolog-auth의 DB에 있고, 이 서버는 `user_id`만 가져요.
 - ERD는 [조직 README](https://github.com/LOLog-2026)의 `lolog-erd.png`를 보세요.
+
+### DB 접근 규칙
+
+- 표마다 주인 도메인이 있고, 그 도메인의 `entity`에 엔티티를, `repository`에 리포지토리를 둬요.
+- 서비스는 `JdbcTemplate`을 쓰지 않아요. DB는 리포지토리로만 읽고 써요.
+- 쓰기는 엔티티로 해요. 상태를 바꾸는 일은 엔티티 메서드(`markRead()`, `changeCategories()` 등)로 드러내요.
+- 잠금 조회는 리포지토리 메서드(`@Lock(PESSIMISTIC_WRITE)`)로 두고, 그 행을 처음 읽을 때 잠가요. 여러 행을 잠그면 순서(`order by`)를 정해 교착을 막아요.
+- 여러 줄을 한 번에 지우거나 고치면 리포지토리의 JPQL(`@Modifying`)로 해요.
+- JPA로 쓰기 어려운 SQL은 리포지토리 안의 native query로만 둬요. `on conflict` upsert, 조건부 증감(`set x = x + 1 where x < 3`), `returning`, advisory lock, 실행 시각(`clock_timestamp()`)이 필요한 넣기가 여기에 들어가요.
+  - native query로만 바꾸는 열은 엔티티에서 `insertable = false, updatable = false`로 둬요. 엔티티를 저장할 때 옛 값으로 덮어쓰지 않게 하려는 거예요.
+- 리포지토리의 고치기·지우기 쿼리에는 `@Modifying(flushAutomatically = true, clearAutomatically = true)`를 붙여요. 쿼리 전에 바꾼 엔티티를 먼저 저장하고, 쿼리 뒤에 낡은 엔티티를 쓰지 않게 해요.
+  - 영속성 컨텍스트를 비우면 그 전에 읽은 엔티티는 떨어져 나가서, 그 뒤에 바꾼 값은 저장되지 않아요. 그래서 엔티티를 바꾸는 일은 이 쿼리보다 먼저 하거나 다시 읽어요.
+  - 새 줄만 넣는 쿼리(알림 넣기 등)는 이미 읽은 엔티티를 낡게 하지 않으니 `flushAutomatically`만 붙여요.
+- 다른 도메인의 표는 그 도메인의 리포지토리나 서비스를 거쳐요.
+  - 예외: 여러 도메인의 표를 한 문장으로 봐야 하는 조회는 그 조회를 쓰는 도메인의 리포지토리에 native query로 둬요(예: `RecordingAudioFileRepository.findCardIdsToClip`).
+- 여러 표를 합쳐 보여 주는 화면용 목록 조회는 그 조회를 쓰는 도메인의 리포지토리에 JPQL 한 문장으로 두고, 결과는 화면에 필요한 칸만 담은 record로 받아요(`select new ...`). 표마다 따로 읽어 Java에서 합치면 DB 왕복이 늘어서예요. 쓰기는 지금처럼 엔티티로 해요.
+- SQL 문장 자체가 실행 중에 바뀌는 조회는 리포지토리 패키지의 `@Repository` 클래스에서만 `JdbcTemplate`을 써요(`InboxQueries`).
+- 서버 상태 확인(`HealthController`의 `select 1`)은 데이터를 다루지 않아 이 규칙에서 빼요.
 
 ## 보안
 
