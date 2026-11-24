@@ -1,10 +1,10 @@
 package com.lolog.api.domain.character.service;
 
+import com.lolog.api.domain.character.repository.DefaultCharacterRepository;
 import com.lolog.api.global.error.ApiException;
 import com.lolog.api.global.storage.ImageStorage;
 import java.util.List;
 import java.util.Set;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,11 +16,12 @@ public class DefaultCharacterService {
 	private static final Set<String> AGE_GROUPS = Set.of("CHILD", "YOUNG", "MIDDLE");
 	private static final Set<String> GENDERS = Set.of("F", "M");
 
-	private final JdbcTemplate jdbc;
+	private final DefaultCharacterRepository repository;
 	private final ImageStorage storage;
 
-	public DefaultCharacterService(JdbcTemplate jdbc, ImageStorage storage) {
-		this.jdbc = jdbc;
+	// 리포지토리와 저장소를 받는다.
+	public DefaultCharacterService(DefaultCharacterRepository repository, ImageStorage storage) {
+		this.repository = repository;
 		this.storage = storage;
 	}
 
@@ -36,15 +37,11 @@ public class DefaultCharacterService {
 	// 기본 화자 목록을 정한 순서대로 돌려준다.
 	@Transactional(readOnly = true)
 	public DefaultCharacterList list() {
-		return new DefaultCharacterList(jdbc.query("""
-				select id, label, age_group, gender, glasses, thumb_key, voice_key from default_characters
-				order by sort_order, id
-				""", (rs, n) -> {
-			String voice = rs.getString("voice_key");
-			return new DefaultCharacterItem(rs.getString("id"), rs.getString("label"), rs.getString("age_group"),
-					rs.getString("gender"), rs.getBoolean("glasses"), storage.presignedUrl(rs.getString("thumb_key")).toString(),
-					voice == null ? null : storage.presignedUrl(voice).toString());
-		}));
+		return new DefaultCharacterList(repository.findAllByOrderBySortOrderAscIdAsc().stream()
+				.map(c -> new DefaultCharacterItem(c.getId(), c.getLabel(), c.getAgeGroup(), c.getGender(), c.isGlasses(),
+						storage.presignedUrl(c.getThumbKey()).toString(),
+						c.getVoiceKey() == null ? null : storage.presignedUrl(c.getVoiceKey()).toString()))
+				.toList());
 	}
 
 	// 기본 화자 하나를 넣거나 바꾼다(PUT /internal/characters/defaults/{id}, 스크립트용).
@@ -97,17 +94,14 @@ public class DefaultCharacterService {
 			voiceKey = ImageStorage.defaultCharacterVoiceKey(id);
 			storage.put(voiceKey, voice, "audio/wav");
 		}
-		jdbc.update("""
-				insert into default_characters (id, age_group, gender, glasses, label, appearance, image_key, thumb_key,
-				    voice_key, sort_order)
-				values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-				on conflict (id) do update set age_group = excluded.age_group, gender = excluded.gender,
-				    glasses = excluded.glasses, label = excluded.label, appearance = excluded.appearance,
-				    image_key = excluded.image_key, thumb_key = excluded.thumb_key,
-				    voice_key = coalesce(excluded.voice_key, default_characters.voice_key), sort_order = excluded.sort_order,
-				    updated_at = current_timestamp
-				""", id, ageGroup, gender, glasses, label.strip(), appearance.strip(), imageKey, thumbKey, voiceKey,
+		repository.upsert(id, ageGroup, gender, glasses, label.strip(), appearance.strip(), imageKey, thumbKey, voiceKey,
 				sortOrder);
+	}
+
+	// 목소리가 붙어 있는 기본 화자인지 본다(TTS 참조 음성으로 쓸 수 있는지).
+	@Transactional(readOnly = true)
+	public boolean hasVoice(String id) {
+		return repository.existsByIdAndVoiceKeyIsNotNull(id);
 	}
 
 	// RIFF....WAVE 머리말

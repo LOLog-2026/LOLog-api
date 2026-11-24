@@ -50,11 +50,13 @@ public class ProfileCharacterService {
 	private final CharacterDetacher detacher;
 	private final CharacterViews views;
 	private final VoiceCloneService voiceClones;
+	private final DefaultCharacterService defaultCharacters;
 
 	public ProfileCharacterService(JdbcTemplate jdbc, ImageStorage storage, ProfileService profiles, JobRepository jobs,
 			ComicPublisher publisher, PushService push, CharacterDetacher detacher, CharacterViews views,
-			VoiceCloneService voiceClones) {
+			VoiceCloneService voiceClones, DefaultCharacterService defaultCharacters) {
 		this.voiceClones = voiceClones;
+		this.defaultCharacters = defaultCharacters;
 		this.jdbc = jdbc;
 		this.storage = storage;
 		this.profiles = profiles;
@@ -231,10 +233,7 @@ public class ProfileCharacterService {
 			}
 		}
 		else if (voice != null) {
-			Boolean exists = jdbc.queryForObject(
-					"select exists (select 1 from default_characters where id = ? and voice_key is not null)", Boolean.class,
-					voice);
-			if (!Boolean.TRUE.equals(exists)) {
+			if (!defaultCharacters.hasVoice(voice)) {
 				throw new ApiException(ErrorCode.UNKNOWN_CHARACTER, "voice");
 			}
 		}

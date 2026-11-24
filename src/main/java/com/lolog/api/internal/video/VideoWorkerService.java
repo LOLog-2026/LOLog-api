@@ -4,6 +4,7 @@ import com.lolog.api.domain.card.entity.Card;
 import com.lolog.api.domain.card.repository.CardRepository;
 import com.lolog.api.domain.character.service.CharacterViews.Ref;
 import com.lolog.api.domain.character.service.CharacterViews;
+import com.lolog.api.domain.character.service.DefaultCharacterService;
 import com.lolog.api.domain.job.entity.Job;
 import com.lolog.api.domain.job.repository.JobRepository;
 import com.lolog.api.domain.notification.service.PushService;
@@ -47,10 +48,11 @@ public class VideoWorkerService {
 	private final TransactionTemplate tx;
 	private final VideoPublisher publisher;
 	private final PushService push;
+	private final DefaultCharacterService defaultCharacters;
 
 	public VideoWorkerService(JdbcTemplate jdbc, VideoRepository videos, CardRepository cards, JobRepository jobs,
 			CharacterViews characters, ImageStorage storage, ObjectMapper objectMapper, TransactionTemplate tx,
-			VideoPublisher publisher, PushService push) {
+			VideoPublisher publisher, PushService push, DefaultCharacterService defaultCharacters) {
 		this.jdbc = jdbc;
 		this.videos = videos;
 		this.cards = cards;
@@ -61,6 +63,7 @@ public class VideoWorkerService {
 		this.tx = tx;
 		this.publisher = publisher;
 		this.push = push;
+		this.defaultCharacters = defaultCharacters;
 	}
 
 	// 카드 내용. 부르면 VOICE가 된다. 카드는 목소리 단계가 끝날 때까지 지울 수 없지만(CARD_LOCKED), 없으면 404다.
@@ -264,9 +267,7 @@ public class VideoWorkerService {
 				return ready && allowed ? new Voice(voice, rs.getString("voice_clone_text")) : Voice.NONE;
 			}, userId).stream().findFirst().orElse(Voice.NONE);
 		}
-		Boolean has = jdbc.queryForObject("select exists (select 1 from default_characters where id = ? and voice_key is not null)",
-				Boolean.class, ref.id());
-		return Boolean.TRUE.equals(has) ? new Voice(ref.id(), null) : Voice.NONE;
+		return defaultCharacters.hasVoice(ref.id()) ? new Voice(ref.id(), null) : Voice.NONE;
 	}
 
 	// "default:young-f-02", "profile:42"

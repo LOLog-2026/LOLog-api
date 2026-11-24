@@ -1,5 +1,7 @@
 package com.lolog.api.domain.character.service;
 
+import com.lolog.api.domain.character.entity.DefaultCharacter;
+import com.lolog.api.domain.character.repository.DefaultCharacterRepository;
 import com.lolog.api.global.error.ApiException;
 import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.storage.ImageStorage;
@@ -24,10 +26,12 @@ public class CharacterViews {
 
 	private final NamedParameterJdbcTemplate jdbc;
 	private final ImageStorage storage;
+	private final DefaultCharacterRepository defaults;
 
-	public CharacterViews(NamedParameterJdbcTemplate jdbc, ImageStorage storage) {
+	public CharacterViews(NamedParameterJdbcTemplate jdbc, ImageStorage storage, DefaultCharacterRepository defaults) {
 		this.jdbc = jdbc;
 		this.storage = storage;
+		this.defaults = defaults;
 	}
 
 	// 카드에 붙인 그림을 가리키는 값
@@ -85,11 +89,9 @@ public class CharacterViews {
 		Map<Ref, SpeakerCharacter> result = new HashMap<>();
 		Set<String> defaults = ids(refs, DEFAULT);
 		if (!defaults.isEmpty()) {
-			jdbc.query("select id, label, thumb_key from default_characters where id in (:ids)", Map.of("ids", defaults),
-					rs -> {
-						result.put(new Ref(DEFAULT, rs.getString("id")), new SpeakerCharacter(DEFAULT,
-								rs.getString("id"), rs.getString("label"), url(rs.getString("thumb_key"))));
-					});
+			for (DefaultCharacter c : this.defaults.findAllById(defaults)) {
+				result.put(new Ref(DEFAULT, c.getId()), new SpeakerCharacter(DEFAULT, c.getId(), c.getLabel(), url(c.getThumbKey())));
+			}
 		}
 		Set<Long> profiles = userIds(refs);
 		if (!profiles.isEmpty()) {
@@ -110,12 +112,10 @@ public class CharacterViews {
 		Map<Ref, SourceCharacter> result = new HashMap<>();
 		Set<String> defaults = ids(refs, DEFAULT);
 		if (!defaults.isEmpty()) {
-			jdbc.query("select id, appearance, image_key from default_characters where id in (:ids)",
-					Map.of("ids", defaults), rs -> {
-						String id = rs.getString("id");
-						result.put(new Ref(DEFAULT, id),
-								new SourceCharacter("default:" + id, rs.getString("appearance"), url(rs.getString("image_key"))));
-					});
+			for (DefaultCharacter c : this.defaults.findAllById(defaults)) {
+				result.put(new Ref(DEFAULT, c.getId()),
+						new SourceCharacter("default:" + c.getId(), c.getAppearance(), url(c.getImageKey())));
+			}
 		}
 		Set<Long> profiles = userIds(refs);
 		if (!profiles.isEmpty()) {
@@ -140,9 +140,7 @@ public class CharacterViews {
 	// 쓸 수 있는 그림이 없는 프로필 캐릭터(처음 만드는 중, 처음 만들기 실패, 지움, 만든 적 없음) → 409 CHARACTER_NOT_READY.
 	public void checkAttachable(long owner, Ref ref, String field) {
 		if (DEFAULT.equals(ref.type())) {
-			Boolean exists = jdbc.queryForObject("select exists (select 1 from default_characters where id = :id)",
-					Map.of("id", ref.id()), Boolean.class);
-			if (!Boolean.TRUE.equals(exists)) {
+			if (!defaults.existsById(ref.id())) {
 				throw unknown(field);
 			}
 			return;
