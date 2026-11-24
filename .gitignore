@@ -47,3 +47,6 @@ build/
 *.opus
 *.amr
 *.3gp
+
+# 효과음 수집·ONNX 스크립트용 Python 가상 환경(README "효과음·배경음 벡터 검색")
+.venv/
