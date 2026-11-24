@@ -1,5 +1,7 @@
 package com.lolog.api.domain.sound.service;
 
+import com.lolog.api.domain.sound.entity.Sound;
+import com.lolog.api.domain.sound.repository.SoundRepository;
 import com.lolog.api.global.error.ApiException;
 import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.storage.ImageStorage;
@@ -9,7 +11,6 @@ import java.util.Set;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -31,11 +32,12 @@ public class SoundService {
 	// 영어 소문자·숫자·_ 1~30자(sounds.md 5장)
 	private static final Pattern QUERY = Pattern.compile("[a-z0-9_]{1,30}");
 
-	private final JdbcTemplate jdbc;
+	private final SoundRepository repository;
 	private final ImageStorage storage;
 
-	public SoundService(JdbcTemplate jdbc, ImageStorage storage) {
-		this.jdbc = jdbc;
+	// 리포지토리와 저장소를 받는다.
+	public SoundService(SoundRepository repository, ImageStorage storage) {
+		this.repository = repository;
 		this.storage = storage;
 	}
 
@@ -86,15 +88,9 @@ public class SoundService {
 			throw ApiException.invalid("license");
 		}
 		// object_key는 id로 정해지니 넣은 뒤에 채운다(그 전에는 빈 값).
-		long id = jdbc.queryForObject("""
-				insert into sound_library (kind, query, title, object_key, duration_ms, freesound_id, source_url, license)
-				values (?, ?, ?, '', ?, ?, ?, 'CC0')
-				on conflict (freesound_id) do update set kind = excluded.kind, query = excluded.query, title = excluded.title,
-				    duration_ms = excluded.duration_ms, source_url = excluded.source_url
-				returning id
-				""", Long.class, k, q, t, durationMs, freesoundId, source);
+		long id = repository.upsert(freesoundId, k, q, t, durationMs, source);
 		String key = ImageStorage.soundKey(id);
-		jdbc.update("update sound_library set object_key = ? where id = ?", key, id);
+		repository.findById(id).orElseThrow().assignObjectKey(key);
 		storage.put(key, file, "audio/ogg");
 		return new SoundSaved(id);
 	}
@@ -102,10 +98,10 @@ public class SoundService {
 	// 어울리지 않는 소리 빼기. 파일도 지운다. 없어도 된다.
 	@Transactional
 	public void delete(long freesoundId) {
-		List<String> keys = jdbc.queryForList("delete from sound_library where freesound_id = ? returning object_key",
-				String.class, freesoundId);
-		if (!keys.isEmpty()) {
-			String key = keys.getFirst();
+		Sound sound = repository.findByFreesoundId(freesoundId).orElse(null);
+		if (sound != null) {
+			String key = sound.getObjectKey();
+			repository.delete(sound);
 			afterCommit(() -> {
 				try {
 					storage.delete(key);
@@ -122,10 +118,10 @@ public class SoundService {
 	public SoundList list(String kind, String query) {
 		String k = kind(kind);
 		String q = query(query);
-		return new SoundList(jdbc.query("""
-				select id, kind, duration_ms, object_key from sound_library where kind = ? and query = ? order by id
-				""", (rs, n) -> new SoundItem(rs.getLong("id"), rs.getString("kind"), rs.getInt("duration_ms"),
-				storage.presignedUrl(rs.getString("object_key")).toString()), k, q));
+		return new SoundList(repository.findByKindAndQueryOrderById(k, q).stream()
+				.map(s -> new SoundItem(s.getId(), s.getKind(), s.getDurationMs(),
+						storage.presignedUrl(s.getObjectKey()).toString()))
+				.toList());
 	}
 
 	// SFX·BGM만 받는다.
