@@ -147,6 +147,16 @@ class TextApiTests {
 	}
 
 	@Test
+	void 커밋_뒤_큐에_넣은_작업은_넣음으로_저장된다() throws Exception {
+		long user = USERS.incrementAndGet();
+		long textId = write(user);
+
+		assertThat(messages(textId)).hasSize(1);
+		// 넣음(attempts)이 저장되지 않으면 1분 뒤 다시 넣기가 같은 작업을 또 넣는다(#103).
+		assertThat(jdbc.queryForObject("select attempts from jobs where text_id = ?", Integer.class, textId)).isEqualTo(1);
+	}
+
+	@Test
 	void 글을_올리면_큐에_kind_text로_들어간다() throws Exception {
 		long user = USERS.incrementAndGet();
 		long textId = write(user);
