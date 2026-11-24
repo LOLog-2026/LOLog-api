@@ -1,5 +1,6 @@
 package com.lolog.api.domain.user.service;
 
+import com.lolog.api.domain.notification.service.DeviceTokenService;
 import com.lolog.api.domain.room.service.RoomService;
 import com.lolog.api.global.storage.ImageStorage;
 import java.util.List;
@@ -15,11 +16,13 @@ public class UserDataService {
 	private final JdbcTemplate jdbc;
 	private final ImageStorage storage;
 	private final TransactionTemplate tx;
+	private final DeviceTokenService deviceTokens;
 
-	public UserDataService(JdbcTemplate jdbc, ImageStorage storage, TransactionTemplate tx) {
+	public UserDataService(JdbcTemplate jdbc, ImageStorage storage, TransactionTemplate tx, DeviceTokenService deviceTokens) {
 		this.jdbc = jdbc;
 		this.storage = storage;
 		this.tx = tx;
+		this.deviceTokens = deviceTokens;
 	}
 
 	// 회원 한 명의 데이터를 지운다.
@@ -38,7 +41,7 @@ public class UserDataService {
 			jdbc.update("delete from blog_posts where user_id = ?", userId);
 			jdbc.update("delete from blog_sources where user_id = ?", userId);
 			jdbc.update("delete from recordings where user_id = ?", userId);
-			jdbc.update("delete from device_tokens where user_id = ?", userId);
+			deviceTokens.removeAll(userId);
 			// 알림 목록과 읽음·새 소식 기록(inbox.md 6장)
 			jdbc.update("delete from notifications where user_id = ?", userId);
 			jdbc.update("delete from notice_reads where user_id = ?", userId);
