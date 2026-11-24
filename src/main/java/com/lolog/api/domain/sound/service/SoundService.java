@@ -94,12 +94,7 @@ public class SoundService {
 	// 어울리지 않는 소리 빼기. 파일도 지운다. 없어도 된다.
 	@Transactional
 	public void delete(long freesoundId) {
-		Sound sound = repository.findByFreesoundId(freesoundId).orElse(null);
-		if (sound != null) {
-			String key = sound.getObjectKey();
-			repository.delete(sound);
-			deletions.schedule(key);
-		}
+		repository.deleteByFreesoundIdReturningKey(freesoundId).ifPresent(deletions::schedule);
 	}
 
 	// 그 검색어로 모은 소리 목록(id 순서). 없으면 빈 목록이다(워커는 그 장면을 소리 없이 만든다).

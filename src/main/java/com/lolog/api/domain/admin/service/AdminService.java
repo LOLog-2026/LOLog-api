@@ -60,7 +60,10 @@ public class AdminService {
 		com.lolog.api.domain.inbox.entity.Notice notice = findNotice(id);
 		String t = title == null ? notice.getTitle() : title(title);
 		String b = body == null ? notice.getBody() : body(body);
-		notice.edit(t, b);
+		// 제목·본문을 하나라도 보냈을 때만 고친다(둘 다 빼면 그대로).
+		if (title != null || body != null) {
+			notice.edit(t, b);
+		}
 		// 바뀐 수정 일시를 응답에 담으려고 먼저 반영한다.
 		notices.flush();
 		return notice(notice);
@@ -69,7 +72,9 @@ public class AdminService {
 	// 읽음 기록은 외래 키로 함께 지워진다.
 	@Transactional
 	public void deleteNotice(long id) {
-		notices.delete(findNotice(id));
+		if (notices.deleteNotice(id) == 0) {
+			throw noticeNotFound();
+		}
 	}
 
 	// ---- 회원 ----
@@ -92,7 +97,7 @@ public class AdminService {
 	// 관리자가 먼저 풀었을 때. 기한이 지나 풀릴 때는 부르지 않는다(기한으로 판단).
 	@Transactional
 	public void unsuspend(long userId) {
-		suspensions.findById(userId).ifPresent(suspensions::delete);
+		suspensions.deleteAllByUserId(userId);
 	}
 
 	// ---- 오류 신고·의견 ----

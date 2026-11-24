@@ -3,7 +3,6 @@ package com.lolog.api.domain.notification.repository;
 import com.lolog.api.domain.notification.entity.DeviceToken;
 import java.util.Collection;
 import java.util.List;
-import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -21,8 +20,10 @@ public interface DeviceTokenRepository extends JpaRepository<DeviceToken, Long> 
 			""", nativeQuery = true)
 	void upsert(@Param("userId") Long userId, @Param("token") String token);
 
-	// 이 사용자의 토큰 하나를 찾는다.
-	Optional<DeviceToken> findByTokenAndUserId(String token, Long userId);
+	// 이 사용자의 토큰일 때만 지운다. 한 문장이라 같은 토큰을 동시에 지워도 오류가 나지 않는다.
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query("delete from DeviceToken t where t.token = :token and t.userId = :userId")
+	int deleteMine(@Param("token") String token, @Param("userId") Long userId);
 
 	// 사용자의 모든 폰 토큰(등록한 순서).
 	@Query("select t.token from DeviceToken t where t.userId = :userId order by t.id")

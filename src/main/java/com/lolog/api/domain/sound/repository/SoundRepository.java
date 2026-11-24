@@ -22,10 +22,10 @@ public interface SoundRepository extends JpaRepository<Sound, Long> {
 	Long upsert(@Param("freesoundId") Long freesoundId, @Param("kind") String kind, @Param("query") String query,
 			@Param("title") String title, @Param("durationMs") Integer durationMs, @Param("sourceUrl") String sourceUrl);
 
-	// Freesound ID로 소리 하나를 찾는다.
-	Optional<Sound> findByFreesoundId(Long freesoundId);
-
 	// 그 검색어로 모은 소리 목록(id 순서).
 	List<Sound> findByKindAndQueryOrderById(String kind, String query);
 
+	// 소리 하나를 지우고 그 파일 키를 돌려준다. 없으면 비어 있다. 한 문장이라 동시에 빼도 오류가 나지 않는다.
+	@Query(value = "delete from sound_library where freesound_id = :freesoundId returning object_key", nativeQuery = true)
+	Optional<String> deleteByFreesoundIdReturningKey(@Param("freesoundId") Long freesoundId);
 }

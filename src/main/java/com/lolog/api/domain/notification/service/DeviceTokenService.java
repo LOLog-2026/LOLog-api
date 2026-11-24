@@ -26,7 +26,7 @@ public class DeviceTokenService {
 	// 이 사용자의 토큰일 때만 지운다. 없거나 다른 사용자의 토큰이면 아무것도 하지 않는다.
 	@Transactional
 	public void remove(long userId, String token) {
-		repository.findByTokenAndUserId(token, userId).ifPresent(repository::delete);
+		repository.deleteMine(token, userId);
 	}
 
 	// 사용자의 모든 폰 토큰을 돌려준다.

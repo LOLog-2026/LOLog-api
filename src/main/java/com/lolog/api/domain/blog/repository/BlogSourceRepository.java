@@ -44,4 +44,8 @@ public interface BlogSourceRepository extends JpaRepository<BlogSource, Long> {
 	@Query("delete from BlogSource s where s.userId = :userId")
 	int deleteAllByUserId(@Param("userId") Long userId);
 
+	// 내 블로그 하나를 지운다. 지운 줄 수를 돌려준다(0이면 없거나 남의 블로그). 한 문장이라 동시에 끊어도 오류가 나지 않는다.
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query("delete from BlogSource s where s.id = :id and s.userId = :userId")
+	int deleteMine(@Param("id") Long id, @Param("userId") Long userId);
 }
