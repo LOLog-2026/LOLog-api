@@ -82,6 +82,24 @@
 			<artifactId>jsoup</artifactId>
 			<version>1.18.3</version>
 		</dependency>
+		<!-- 효과음·배경음 검색에서 콘티 설명 글을 CLAP 글 벡터로 바꾼다(sounds.md 5장). ONNX로 바꾼 모델을 돌리고, 글을 토큰으로 자른다. -->
+		<dependency>
+			<groupId>com.microsoft.onnxruntime</groupId>
+			<artifactId>onnxruntime</artifactId>
+			<version>1.31.1</version>
+		</dependency>
+		<dependency>
+			<groupId>ai.djl.huggingface</groupId>
+			<artifactId>tokenizers</artifactId>
+			<version>0.40.0</version>
+		</dependency>
+		<!-- DJL이 commons-compress 1.27.1을 commons-lang3 없이 끌고 와서, 같은 라이브러리를 쓰는 Testcontainers가 commons-lang3를 찾지 못한다.
+		     Testcontainers와 같은 버전을 직접 적어 commons-lang3도 함께 받게 한다. -->
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-compress</artifactId>
+			<version>1.28.0</version>
+		</dependency>
 		<dependency>
 			<groupId>org.flywaydb</groupId>
 			<artifactId>flyway-database-postgresql</artifactId>

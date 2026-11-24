@@ -6,6 +6,7 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.testcontainers.utility.DockerImageName;
 
 // 실제 PostgreSQL에 Flyway 마이그레이션까지 적용해 컨텍스트를 띄운다. Docker가 켜져 있어야 한다.
 @SpringBootTest
@@ -15,7 +16,7 @@ class LologApiApplicationTests {
 	// compose.yaml과 같은 이미지를 쓴다.
 	@Container
 	@ServiceConnection
-	static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:latest");
+	static PostgreSQLContainer postgres = new PostgreSQLContainer(DockerImageName.parse("pgvector/pgvector:pg17").asCompatibleSubstituteFor("postgres"));
 
 	@Test
 	void contextLoads() {
