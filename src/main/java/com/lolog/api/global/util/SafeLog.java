@@ -9,10 +9,12 @@ public final class SafeLog {
 	private SafeLog() {
 	}
 
+	// 메시지를 뺀 예외 복사본을 돌려준다.
 	public static RuntimeException withoutMessages(Throwable e) {
 		return copy(e, 0);
 	}
 
+	// 원인 예외까지 메시지 없이 하나씩 복사한다.
 	private static RuntimeException copy(Throwable e, int depth) {
 		Throwable cause = e.getCause();
 		RuntimeException copy = new RuntimeException(e.getClass().getName(),

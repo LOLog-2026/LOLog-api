@@ -1,6 +1,14 @@
 package com.lolog.api.domain.audio.service;
 
+import com.lolog.api.domain.audio.repository.RecordingAudioFileRepository;
+import com.lolog.api.domain.card.entity.Card;
+import com.lolog.api.domain.card.repository.CardRepository;
+import com.lolog.api.domain.recording.entity.Recording;
+import com.lolog.api.domain.recording.repository.RecordingPartRepository;
+import com.lolog.api.domain.recording.repository.RecordingRepository;
 import com.lolog.api.global.storage.ImageStorage;
+import com.lolog.api.global.storage.StorageDeletions;
+import com.lolog.api.global.transaction.AfterCommit;
 import com.lolog.api.global.util.SafeLog;
 import java.io.ByteArrayOutputStream;
 import java.util.List;
@@ -9,10 +17,7 @@ import java.util.concurrent.Executors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.DisposableBean;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 // 카드 구간 음성을 전체 녹음 파일에서 잘라 따로 둔다(audio.md 4장). 전체 파일은 7일 뒤 지워지기 때문이다.
 // 카드가 생겼을 때와 음성 파일이 올라왔을 때 모두 부르고, 둘 다 갖춰진 쪽에서 잘린다.
@@ -27,49 +32,47 @@ public class CardAudioClipper implements DisposableBean {
 	// 파일 경계가 앱 계산 오차로 조금 어긋나도 이어진 것으로 본다(조각 하나 길이).
 	private static final long GAP_TOLERANCE_MS = 64;
 
-	private final JdbcTemplate jdbc;
+	private final CardRepository cards;
+	private final RecordingRepository recordings;
+	private final RecordingPartRepository parts;
+	private final RecordingAudioFileRepository audioFiles;
 	private final ImageStorage storage;
+	private final StorageDeletions deletions;
 	// 응답을 붙잡지 않게 따로 자른다. 빈으로 두지 않는다(Spring 기본 작업 실행기를 대신하지 않게).
 	private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
-	public CardAudioClipper(JdbcTemplate jdbc, ImageStorage storage) {
-		this.jdbc = jdbc;
+	public CardAudioClipper(CardRepository cards, RecordingRepository recordings, RecordingPartRepository parts,
+			RecordingAudioFileRepository audioFiles, ImageStorage storage, StorageDeletions deletions) {
+		this.cards = cards;
+		this.recordings = recordings;
+		this.parts = parts;
+		this.audioFiles = audioFiles;
 		this.storage = storage;
+		this.deletions = deletions;
 	}
 
+	// 서버가 꺼질 때 자르기 작업 실행기를 닫는다.
 	@Override
 	public void destroy() {
 		executor.close();
 	}
 
-	private record CardRow(long id, long userId, Long recordingId, long startMs, long endMs, String audioKey) {
-	}
-
+	// 녹음 음성 파일 하나의 키와 구간.
 	private record AudioFile(int seq, String key, long startMs, long endMs) {
 	}
 
 	// 녹음의 카드 중 아직 음성이 없는 카드를 모두 자른다. 트랜잭션 안에서 부르면 커밋된 뒤에 시작한다.
 	public void clipRecordingLater(long recordingId) {
-		Runnable task = () -> executor.execute(() -> clipRecording(recordingId));
-		if (TransactionSynchronizationManager.isSynchronizationActive()) {
-			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-				@Override
-				public void afterCommit() {
-					task.run();
-				}
-			});
-		}
-		else {
-			task.run();
-		}
+		AfterCommit.run(() -> executor.execute(() -> clipRecording(recordingId)));
 	}
 
+	// 녹음의 카드 중 음성이 없는 카드를 바로 자른다.
 	void clipRecording(long recordingId) {
-		List<Long> cardIds = jdbc.queryForList(
-				"select id from cards where recording_id = ? and audio_key is null order by id", Long.class, recordingId);
+		List<Long> cardIds = cards.findIdsWithoutAudio(recordingId);
 		cardIds.forEach(this::clipQuietly);
 	}
 
+	// 카드 하나를 자르고, 실패하면 로그만 남긴다.
 	void clipQuietly(long cardId) {
 		try {
 			clip(cardId);
@@ -81,34 +84,25 @@ public class CardAudioClipper implements DisposableBean {
 
 	// 잘랐으면 true. 음성 저장을 끈 녹음이거나, 구간을 덮는 파일이 아직 다 오지 않았거나, 이미 잘랐으면 false.
 	boolean clip(long cardId) {
-		CardRow card = jdbc.query(
-				"select id, user_id, recording_id, start_ms, end_ms, audio_key from cards where id = ?",
-				(rs, n) -> new CardRow(rs.getLong("id"), rs.getLong("user_id"), (Long) rs.getObject("recording_id"),
-						rs.getLong("start_ms"), rs.getLong("end_ms"), rs.getString("audio_key")),
-				cardId).stream().findFirst().orElse(null);
-		if (card == null || card.audioKey() != null || card.recordingId() == null) {
+		Card card = cards.findById(cardId).orElse(null);
+		if (card == null || card.getAudioKey() != null || card.getRecordingId() == null) {
 			return false;
 		}
-		Boolean audioSaved = jdbc.query("select audio_saved from recordings where id = ?",
-				(rs, n) -> rs.getBoolean("audio_saved"), card.recordingId()).stream().findFirst().orElse(false);
+		boolean audioSaved = recordings.findById(card.getRecordingId()).map(Recording::isAudioSaved).orElse(false);
 		if (!audioSaved) {
 			return false;
 		}
-		List<AudioFile> files = jdbc.query("""
-				select seq, audio_key, start_ms, end_ms from recording_audio_files
-				where recording_id = ? order by start_ms, seq
-				""", (rs, n) -> new AudioFile(rs.getInt("seq"), rs.getString("audio_key"), rs.getLong("start_ms"),
-				rs.getLong("end_ms")), card.recordingId());
+		List<AudioFile> files = audioFiles.findByRecordingIdOrderByStartMsAscSeqAsc(card.getRecordingId()).stream()
+			.map(f -> new AudioFile(f.getSeq(), f.getAudioKey(), f.getStartMs(), f.getEndMs()))
+			.toList();
 		if (files.isEmpty()) {
 			return false;
 		}
 
-		long from = Math.max(0, card.startMs() - MARGIN_MS);
-		long to = card.endMs() + MARGIN_MS;
+		long from = Math.max(0, card.getStartMs() - MARGIN_MS);
+		long to = card.getEndMs() + MARGIN_MS;
 		// 마지막 묶음까지 받은 녹음이면 뒤 여유가 녹음 끝을 넘지 않게 줄인다. 아니면 뒤 파일이 올 때까지 기다린다.
-		boolean closed = Boolean.TRUE.equals(jdbc.queryForObject(
-				"select exists (select 1 from recording_parts where recording_id = ? and is_last)", Boolean.class,
-				card.recordingId()));
+		boolean closed = parts.existsLast(card.getRecordingId());
 		if (closed) {
 			to = Math.min(to, files.stream().mapToLong(AudioFile::endMs).max().orElseThrow());
 		}
@@ -143,16 +137,13 @@ public class CardAudioClipper implements DisposableBean {
 			return false;
 		}
 
-		String key = ImageStorage.cardAudioKey(card.userId(), card.id());
+		String key = ImageStorage.cardAudioKey(card.getUserId(), card.getId());
 		storage.putAac(key, clip.toByteArray());
-		int updated = jdbc.update("""
-				update cards set audio_key = ?, audio_duration_ms = ?, updated_at = current_timestamp
-				where id = ? and audio_key is null
-				""", key, Math.round(durationUs / 1000.0), card.id());
+		int updated = cards.attachAudio(card.getId(), key, Math.round(durationUs / 1000.0));
 		// 그 사이 카드가 지워졌으면(탈퇴 포함) 올린 파일도 지운다. 다른 쪽이 먼저 잘랐으면 같은 키라 그대로 둔다.
-		if (updated == 0 && !Boolean.TRUE.equals(
-				jdbc.queryForObject("select exists (select 1 from cards where id = ?)", Boolean.class, card.id()))) {
-			storage.delete(key);
+		// 카드가 없어 다시 자르기가 이 카드를 찾지 않으니, 못 지우면 지울 줄로 남겨 다시 지운다.
+		if (updated == 0 && !cards.existsById(card.getId())) {
+			deletions.schedule(key);
 			return false;
 		}
 		return updated > 0;

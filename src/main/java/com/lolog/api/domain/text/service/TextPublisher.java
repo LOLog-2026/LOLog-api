@@ -2,16 +2,16 @@ package com.lolog.api.domain.text.service;
 
 import com.lolog.api.domain.job.entity.Job;
 import com.lolog.api.domain.job.repository.JobRepository;
+import com.lolog.api.domain.text.entity.Text;
+import com.lolog.api.domain.text.repository.TextRepository;
 import com.lolog.api.global.util.SafeLog;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.connection.stream.StreamRecords;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -27,15 +27,15 @@ public class TextPublisher {
 	private static final Logger log = LoggerFactory.getLogger(TextPublisher.class);
 
 	private final JobRepository jobs;
-	private final JdbcTemplate jdbc;
+	private final TextRepository texts;
 	private final StringRedisTemplate redis;
 	private final ObjectMapper objectMapper;
 	private final TransactionTemplate tx;
 
-	public TextPublisher(JobRepository jobs, JdbcTemplate jdbc, StringRedisTemplate redis, ObjectMapper objectMapper,
+	public TextPublisher(JobRepository jobs, TextRepository texts, StringRedisTemplate redis, ObjectMapper objectMapper,
 			PlatformTransactionManager transactionManager) {
 		this.jobs = jobs;
-		this.jdbc = jdbc;
+		this.texts = texts;
 		this.redis = redis;
 		this.objectMapper = objectMapper;
 		this.tx = new TransactionTemplate(transactionManager);
@@ -51,11 +51,13 @@ public class TextPublisher {
 		}
 	}
 
+	// 큐에 넣지 못한 글 작업을 다시 넣는다.
 	@Scheduled(fixedDelayString = "${lolog.detect.republish-delay-ms:60000}")
 	void republishPending() {
 		jobs.findUnpublishedIds("TEXT", OffsetDateTime.now().minusMinutes(1)).forEach(this::publishQuietly);
 	}
 
+	// 작업 하나를 메시지로 만들어 스트림에 넣는다.
 	private void publish(Long jobId) {
 		tx.executeWithoutResult(status -> {
 			Job job = jobs.findById(jobId).orElse(null);
@@ -63,24 +65,22 @@ public class TextPublisher {
 			if (job == null || job.getAttempts() > 0) {
 				return;
 			}
-			List<Map<String, Object>> rows = jdbc.queryForList(
-					"select title, body, place, situation from texts where id = ?", job.getTextId());
-			if (rows.isEmpty()) {
+			Text text = texts.findById(job.getTextId()).orElse(null);
+			if (text == null) {
 				return;
 			}
-			Map<String, Object> text = rows.getFirst();
 			// place·situation은 비면 메시지에서 뺀다.
 			Map<String, Object> message = new LinkedHashMap<>();
 			message.put("jobId", job.getId());
 			message.put("kind", "text");
 			message.put("textId", job.getTextId());
-			message.put("title", text.get("title"));
-			message.put("body", text.get("body"));
-			if (text.get("place") != null) {
-				message.put("place", text.get("place"));
+			message.put("title", text.getTitle());
+			message.put("body", text.getBody());
+			if (text.getPlace() != null) {
+				message.put("place", text.getPlace());
 			}
-			if (text.get("situation") != null) {
-				message.put("situation", text.get("situation"));
+			if (text.getSituation() != null) {
+				message.put("situation", text.getSituation());
 			}
 			redis.opsForStream().add(StreamRecords.string(
 					Map.of("payload", objectMapper.writeValueAsString(message))).withStreamKey(STREAM));

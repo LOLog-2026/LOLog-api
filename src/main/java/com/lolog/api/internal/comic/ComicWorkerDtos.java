@@ -9,6 +9,7 @@ public final class ComicWorkerDtos {
 	private ComicWorkerDtos() {
 	}
 
+	// GET /internal/comics/{id}/source 응답이다.
 	public record ComicSource(Long comicId, Long cardId, String kind, String summary, String place,
 			List<Speaker> speakers, List<Line> lines) {
 	}

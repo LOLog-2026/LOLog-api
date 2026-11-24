@@ -36,11 +36,13 @@ public class CharacterController {
 		this.currentUser = currentUser;
 	}
 
+	// 기본 화자 목록을 돌려준다.
 	@GetMapping("/api/characters/defaults")
 	public DefaultCharacterList defaults() {
 		return defaults.list();
 	}
 
+	// 사진을 올려 프로필 캐릭터를 만들거나 다시 만든다.
 	@PutMapping("/api/me/profile/character")
 	@ResponseStatus(HttpStatus.ACCEPTED)
 	public ProfileCharacterResponse upload(@RequestPart("photo") MultipartFile photo) throws IOException {
@@ -54,6 +56,7 @@ public class CharacterController {
 		profileCharacters.chooseVoice(currentUser.currentUserId(), request.voice());
 	}
 
+	// 목소리 고르기 요청.
 	public record VoiceRequest(String voice) {
 	}
 
@@ -80,9 +83,11 @@ public class CharacterController {
 		voiceClones.share(currentUser.currentUserId(), request.shareWithFriends());
 	}
 
+	// 친구 쇼츠 동의 바꾸기 요청.
 	public record ShareRequest(Boolean shareWithFriends) {
 	}
 
+	// 내 프로필 캐릭터를 지운다.
 	@DeleteMapping("/api/me/profile/character")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void delete() {

@@ -19,6 +19,7 @@ public class WorkerController {
 		this.detectResults = detectResults;
 	}
 
+	// 묶음 하나의 감지 결과를 받는다.
 	@PostMapping("/internal/recordings/{id}/cards")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void cards(@PathVariable Long id, @Valid @RequestBody DetectResult result) {

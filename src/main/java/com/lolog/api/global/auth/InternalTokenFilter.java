@@ -1,5 +1,6 @@
 package com.lolog.api.global.auth;
 
+import com.lolog.api.global.error.ErrorCode;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -17,10 +18,12 @@ class InternalTokenFilter extends OncePerRequestFilter {
 
 	private final byte[] expected;
 
+	// 비교할 내부 토큰 값을 받는다.
 	InternalTokenFilter(String token) {
 		this.expected = token.getBytes(StandardCharsets.UTF_8);
 	}
 
+	// 헤더의 토큰이 맞을 때만 다음 필터로 넘긴다.
 	@Override
 	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
 			throws ServletException, IOException {
@@ -29,7 +32,7 @@ class InternalTokenFilter extends OncePerRequestFilter {
 		boolean ok = expected.length > 0 && actual != null
 				&& MessageDigest.isEqual(expected, actual.getBytes(StandardCharsets.UTF_8));
 		if (!ok) {
-			UnauthorizedWriter.write(response);
+			UnauthorizedWriter.write(response, ErrorCode.UNAUTHORIZED);
 			return;
 		}
 		chain.doFilter(request, response);

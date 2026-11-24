@@ -10,7 +10,7 @@ LOLog의 메인 백엔드예요. 앱이 올린 대화 글을 받아 Jetson AI �
 | --- | --- | --- |
 | 언어·프레임워크 | Java 21, Spring Boot 4.1 (Web MVC, Validation, Actuator) | REST API 서버 |
 | DB | PostgreSQL(배포 17, 로컬·테스트 latest), Spring Data JPA(Hibernate) | 회원 서비스 정보, 카드, 만화·쇼츠 기록, 친구, 방, 알림 |
-| DB 변경 관리 | Flyway (V1~V19) | 표 구조를 번호 붙은 SQL로 순서대로 적용 |
+| DB 변경 관리 | Flyway (V1~V22) | 표 구조를 번호 붙은 SQL로 순서대로 적용 |
 | 캐시·큐 | Redis(배포 7.4, 로컬 latest), Redis Streams | Jetson 작업 큐 3개, 컨슈머 그룹 `jetson-workers` |
 | 파일 저장 | MinIO(S3 호환), AWS SDK for Java v2 | 만화 PNG, 쇼츠 mp4, 음성, 캐릭터 그림. 앱에는 10분 서명 주소로 줌 |
 | 인증 | Spring Security OAuth2 Resource Server, JWT(HS256) | lolog-auth가 발급한 액세스 토큰을 서명만으로 확인 |
@@ -65,9 +65,9 @@ com.lolog.api
 | `auth` | JWT 확인, `X-Internal-Token` 확인, 관리자 확인(`AdminGuard`) |
 | `error` | 공통 오류 응답 |
 | `web` | 업로드 크기 제한, 목록 쪽 나누기 |
-| `storage` | MinIO 업로드·삭제·서명 주소 |
+| `storage` | MinIO 업로드·삭제·서명 주소, 지울 파일 목록(`StorageDeletions`) |
 | `push` | FCM으로 보내기 |
-| `transaction` | 커밋 뒤에 할 일(저장소 파일 지우기 등) |
+| `transaction` | 커밋 뒤에 할 일(`AfterCommit`) |
 | `util` | 로그에 대화 글을 남기지 않기(`SafeLog`) |
 
 ### `domain`
@@ -86,7 +86,7 @@ com.lolog.api
 | `friend`, `room` | 친구 코드·요청·차단, 방·초대·만화 올리기·좋아요·댓글 |
 | `inbox`, `notification` | 알림함(30일 보관), 기기 토큰, 푸시 내용 |
 | `admin` | 공지사항, 회원 정지, 의견 보기 |
-| `user` | 탈퇴 시 데이터 삭제 |
+| `user` | 회원 프로필(`user_profiles`)·정지, 탈퇴 시 데이터 삭제 |
 | `job` | 작업 상태 |
 | `health` | `GET /api/health` |
 
@@ -104,10 +104,38 @@ com.lolog.api
 
 ## DB
 
-- 표 설명은 마이그레이션 파일의 `COMMENT ON TABLE`에 있어요. `src/main/resources/db/migration/V1__init.sql` ~ `V19__sound_library.sql`.
+- 표 설명은 마이그레이션 파일의 `COMMENT ON TABLE`에 있어요. `src/main/resources/db/migration/V1__init.sql` ~ `V22__notices_created_at_clock.sql`.
 - 한 번 적용한 마이그레이션은 고치지 않고 다음 번호 파일을 더해요.
 - 회원 계정(이메일·비밀번호·소셜 계정)은 lolog-auth의 DB에 있고, 이 서버는 `user_id`만 가져요.
 - ERD는 [조직 README](https://github.com/LOLog-2026)의 `lolog-erd.png`를 보세요.
+
+### DB 접근 규칙
+
+- 표마다 주인 도메인이 있고, 그 도메인의 `entity`에 엔티티를, `repository`에 리포지토리를 둬요.
+- 서비스는 `JdbcTemplate`을 쓰지 않아요. DB는 리포지토리로만 읽고 써요.
+- 쓰기는 엔티티로 해요. 상태를 바꾸는 일은 엔티티 메서드(`markRead()`, `changeCategories()` 등)로 드러내요.
+- 잠금 조회는 리포지토리 메서드(`@Lock(PESSIMISTIC_WRITE)`)로 두고, 그 행을 처음 읽을 때 잠가요. 여러 행을 잠그면 순서(`order by`)를 정해 교착을 막아요.
+- 여러 줄을 한 번에 지우거나 고치면 리포지토리의 JPQL(`@Modifying`)로 해요.
+- JPA로 쓰기 어려운 SQL은 리포지토리 안의 native query로만 둬요. `on conflict` upsert, 조건부 증감(`set x = x + 1 where x < 3`), `returning`, advisory lock, 실행 시각(`clock_timestamp()`)이 필요한 넣기가 여기에 들어가요.
+  - native query로만 바꾸는 열은 엔티티에서 `insertable = false, updatable = false`로 둬요. 엔티티를 저장할 때 옛 값으로 덮어쓰지 않게 하려는 거예요.
+- 리포지토리의 고치기·지우기 쿼리에는 `@Modifying(flushAutomatically = true, clearAutomatically = true)`를 붙여요. 쿼리 전에 바꾼 엔티티를 먼저 저장하고, 쿼리 뒤에 낡은 엔티티를 쓰지 않게 해요.
+  - 영속성 컨텍스트를 비우면 그 전에 읽은 엔티티는 떨어져 나가서, 그 뒤에 바꾼 값은 저장되지 않아요. 그래서 엔티티를 바꾸는 일은 이 쿼리보다 먼저 하거나 다시 읽어요.
+  - 새 줄만 넣는 쿼리(알림 넣기 등)는 이미 읽은 엔티티를 낡게 하지 않으니 `flushAutomatically`만 붙여요.
+- 다른 도메인의 표는 그 도메인의 리포지토리나 서비스를 거쳐요.
+  - 예외: 여러 도메인의 표를 한 문장으로 봐야 하는 조회는 그 조회를 쓰는 도메인의 리포지토리에 native query로 둬요(예: `RecordingAudioFileRepository.findCardIdsToClip`).
+- 서로 비교해서 순서를 정하는 시각(알림·새 소식 본 시각·방 대화·읽은 시각·카드 생성 일시)은 DB 시계(`clock_timestamp()`)로 정해요. Java 시계와 DB 시계는 조금씩 어긋날 수 있어서, 섞어 비교하면 순서가 뒤집혀요.
+- 여러 표를 합쳐 보여 주는 화면용 목록 조회는 그 조회를 쓰는 도메인의 리포지토리에 JPQL 한 문장으로 두고, 결과는 화면에 필요한 칸만 담은 record로 받아요(`select new ...`). 표마다 따로 읽어 Java에서 합치면 DB 왕복이 늘어서예요. 쓰기는 지금처럼 엔티티로 해요.
+- SQL 문장 자체가 실행 중에 바뀌는 조회는 리포지토리 패키지의 `@Repository` 클래스에서만 `JdbcTemplate`을 써요(`InboxQueries`).
+- 서버 상태 확인(`HealthController`의 `select 1`)은 데이터를 다루지 않아 이 규칙에서 빼요.
+
+### 커밋 뒤에 할 일
+
+- 큐에 넣기, 푸시, 구간 음성 자르기처럼 커밋된 뒤에 할 일은 `AfterCommit.run`으로 맡겨요. 트랜잭션 동기화를 직접 쓰는 곳은 `AfterCommit` 하나예요.
+- 커밋 뒤 할 일이 실패해도 요청은 실패로 돌리지 않고 로그만 남겨요. 데이터는 이미 저장됐고, 500을 주면 앱이 다시 보내 같은 일이 두 번 생겨서예요.
+- 그래서 꼭 해야 하는 일은 다시 하는 길을 둬요. 큐에 넣기는 1분마다 못 넣은 작업을 다시 넣고(`republishPending`), 구간 음성은 한 시간마다 다시 잘라요(`AudioRetentionJob`). 푸시는 다시 보내지 않아요(앱이 조회로 상태를 알아요).
+- 저장소 파일 지우기는 `StorageDeletions.schedule`(키 하나)·`schedulePrefix`(그 아래 전체)로 해요. 데이터를 바꾸는 트랜잭션 안에서 `storage_deletions`에 줄을 넣어 그 변경과 함께 커밋·되돌림되고, 커밋 뒤에 바로 지운 다음 줄을 빼요. 못 지운 줄은 10분마다 다시 지워요(`lolog.storage.deletion-retry-delay-ms`).
+- 정해진 키(프로필 사진, 내 목소리 녹음 등)에 파일을 다시 올릴 때는 올리기 전에 `StorageDeletions.cancel`로 그 키의 남은 지우기를 빼요. 예전 지우기가 새 파일을 지우지 않게 하려는 거예요.
+- 탈퇴(`users/{userId}/` 지우기)와 7일 지난 녹음 지우기는 이 목록을 쓰지 않고 바로 지워요. 탈퇴는 실패하면 오류를 돌려 lolog-auth가 다시 부르고, 녹음은 줄이 남아 다음 시간에 다시 지워요.
 
 ## 보안
 

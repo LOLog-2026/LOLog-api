@@ -13,9 +13,11 @@ public final class RoomDtos {
 	public record RoomCreateRequest(String name, List<Long> memberIds) {
 	}
 
+	// 만화 올리기 요청.
 	public record PostCreateRequest(Long comicId) {
 	}
 
+	// 방 대화에 글 남기기 요청. postId가 있으면 그 만화에 단 댓글이다.
 	public record RoomCommentRequest(String text, Long postId) {
 	}
 
@@ -34,10 +36,12 @@ public final class RoomDtos {
 	public record RoomMember(Long userId, String nickname, String thumbnailUrl, boolean isMe, boolean isOwner,
 			boolean left, String friendState, boolean suspended) {
 
+		// 나간 멤버 자리를 만든다.
 		public static RoomMember leftMember() {
 			return new RoomMember(null, null, null, false, false, true, null, false);
 		}
 
+		// 방장 여부만 바꾼 사본을 돌려준다.
 		public RoomMember owner(boolean isOwner) {
 			return new RoomMember(userId, nickname, thumbnailUrl, isMe, isOwner, left, friendState, suspended);
 		}
@@ -53,6 +57,7 @@ public final class RoomDtos {
 			RoomActivity lastActivity, int unread, OffsetDateTime createdAt) {
 	}
 
+	// 방 ID와 이름만 담은 짧은 모양.
 	public record RoomRef(Long id, String name) {
 	}
 
@@ -62,9 +67,11 @@ public final class RoomDtos {
 			OffsetDateTime createdAt) {
 	}
 
+	// 초대 목록 응답.
 	public record InviteList(List<RoomInvite> invites) {
 	}
 
+	// 방 목록 응답.
 	public record RoomList(List<RoomItem> rooms) {
 	}
 
@@ -73,9 +80,11 @@ public final class RoomDtos {
 			OffsetDateTime postedAt, int likeCount, boolean likedByMe, int commentCount, boolean hidden) {
 	}
 
+	// 올린 만화 목록 응답.
 	public record PostList(List<RoomPost> posts) {
 	}
 
+	// 대화 줄에 붙는 만화 요약.
 	public record RoomPostSummary(Long id, String title, String imageUrl) {
 	}
 

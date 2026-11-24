@@ -4,15 +4,19 @@ import com.lolog.api.domain.card.entity.Card;
 import com.lolog.api.domain.card.repository.CardRepository;
 import com.lolog.api.domain.character.service.CharacterViews.Ref;
 import com.lolog.api.domain.character.service.CharacterViews;
+import com.lolog.api.domain.character.service.DefaultCharacterService;
 import com.lolog.api.domain.job.entity.Job;
 import com.lolog.api.domain.job.repository.JobRepository;
 import com.lolog.api.domain.notification.service.PushService;
+import com.lolog.api.domain.user.entity.UserProfile;
+import com.lolog.api.domain.user.repository.UserProfileRepository;
 import com.lolog.api.domain.video.entity.Video;
 import com.lolog.api.domain.video.repository.VideoRepository;
 import com.lolog.api.domain.video.service.VideoPublisher;
 import com.lolog.api.global.error.ApiException;
+import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.storage.ImageStorage;
-import com.lolog.api.global.transaction.AfterCommit;
+import com.lolog.api.global.storage.StorageDeletions;
 import com.lolog.api.internal.comic.ComicWorkerDtos.Line;
 import com.lolog.api.internal.video.VideoWorkerDtos.SourceCharacter;
 import com.lolog.api.internal.video.VideoWorkerDtos.Speaker;
@@ -21,8 +25,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
@@ -37,30 +39,34 @@ public class VideoWorkerService {
 
 	static final long MAX_BYTES = 20L * 1024 * 1024;
 
-	private final JdbcTemplate jdbc;
+	private final UserProfileRepository profiles;
 	private final VideoRepository videos;
 	private final CardRepository cards;
 	private final JobRepository jobs;
 	private final CharacterViews characters;
 	private final ImageStorage storage;
+	private final StorageDeletions deletions;
 	private final ObjectMapper objectMapper;
 	private final TransactionTemplate tx;
 	private final VideoPublisher publisher;
 	private final PushService push;
+	private final DefaultCharacterService defaultCharacters;
 
-	public VideoWorkerService(JdbcTemplate jdbc, VideoRepository videos, CardRepository cards, JobRepository jobs,
-			CharacterViews characters, ImageStorage storage, ObjectMapper objectMapper, TransactionTemplate tx,
-			VideoPublisher publisher, PushService push) {
-		this.jdbc = jdbc;
+	public VideoWorkerService(UserProfileRepository profiles, VideoRepository videos, CardRepository cards, JobRepository jobs,
+			CharacterViews characters, ImageStorage storage, StorageDeletions deletions, ObjectMapper objectMapper, TransactionTemplate tx,
+			VideoPublisher publisher, PushService push, DefaultCharacterService defaultCharacters) {
+		this.profiles = profiles;
 		this.videos = videos;
 		this.cards = cards;
 		this.jobs = jobs;
 		this.characters = characters;
 		this.storage = storage;
+		this.deletions = deletions;
 		this.objectMapper = objectMapper;
 		this.tx = tx;
 		this.publisher = publisher;
 		this.push = push;
+		this.defaultCharacters = defaultCharacters;
 	}
 
 	// 카드 내용. 부르면 VOICE가 된다. 카드는 목소리 단계가 끝날 때까지 지울 수 없지만(CARD_LOCKED), 없으면 404다.
@@ -94,17 +100,17 @@ public class VideoWorkerService {
 				return;
 			}
 			if (body == null || !body.isObject()) {
-				throw ApiException.invalid(null, "콘티는 JSON 객체여야 합니다.");
+				throw ApiException.invalid(null);
 			}
 			if (!body.path("version").isIntegralNumber() || body.path("version").asLong() != 1) {
-				throw ApiException.invalid("version", "콘티 version은 1이어야 합니다.");
+				throw ApiException.invalid("version");
 			}
 			if (!body.path("videoId").isIntegralNumber() || body.path("videoId").asLong() != videoId) {
-				throw ApiException.invalid("videoId", "주소의 영상과 videoId가 다릅니다.");
+				throw ApiException.invalid("videoId");
 			}
 			if (!body.path("cardId").isIntegralNumber() || video.getCardId() == null
 					|| body.path("cardId").asLong() != video.getCardId()) {
-				throw ApiException.invalid("cardId", "영상의 카드와 cardId가 다릅니다.");
+				throw ApiException.invalid("cardId");
 			}
 			video.saveStoryboard(objectMapper.writeValueAsString(body));
 		});
@@ -153,7 +159,7 @@ public class VideoWorkerService {
 		checkSize(wav);
 		if (wav.length < 12 || wav[0] != 'R' || wav[1] != 'I' || wav[2] != 'F' || wav[3] != 'F' || wav[8] != 'W'
 				|| wav[9] != 'A' || wav[10] != 'V' || wav[11] != 'E') {
-			throw ApiException.invalid("file", "wav 파일이 아닙니다.");
+			throw ApiException.invalid("file");
 		}
 		String key = ImageStorage.videoAudioKey(found.getUserId(), videoId);
 		storage.put(key, wav, "audio/wav");
@@ -163,7 +169,7 @@ public class VideoWorkerService {
 				return null;
 			}
 			if (!video.hasStoryboard()) {
-				throw ApiException.invalid(null, "콘티를 먼저 보내 주세요.");
+				throw ApiException.invalid(null);
 			}
 			if (!video.attachAudio(key)) {
 				return null;
@@ -176,6 +182,7 @@ public class VideoWorkerService {
 		}
 	}
 
+	// 저장한 대사 음성을 꺼낸다. 아직 없으면 404다.
 	public byte[] audio(long videoId) {
 		String key = running(videoId).getAudioKey();
 		if (key == null) {
@@ -193,14 +200,14 @@ public class VideoWorkerService {
 		checkSize(mp4);
 		checkSize(thumbnail);
 		if (mp4.length < 12 || mp4[4] != 'f' || mp4[5] != 't' || mp4[6] != 'y' || mp4[7] != 'p') {
-			throw ApiException.invalid("file", "mp4 파일이 아닙니다.");
+			throw ApiException.invalid("file");
 		}
 		if (thumbnail.length < 3 || (thumbnail[0] & 0xFF) != 0xFF || (thumbnail[1] & 0xFF) != 0xD8
 				|| (thumbnail[2] & 0xFF) != 0xFF) {
-			throw ApiException.invalid("thumbnail", "JPEG 파일이 아닙니다.");
+			throw ApiException.invalid("thumbnail");
 		}
 		if (durationMs == null || durationMs <= 0) {
-			throw ApiException.invalid("durationMs", "durationMs는 0보다 커야 합니다.");
+			throw ApiException.invalid("durationMs");
 		}
 		String videoKey = ImageStorage.videoKey(found.getUserId(), videoId);
 		String thumbKey = ImageStorage.videoThumbKey(found.getUserId(), videoId);
@@ -216,13 +223,14 @@ public class VideoWorkerService {
 			completeJob(videoId, "VIDEO_DRAW");
 			push.notify(video.getUserId(), PushService.videoDone(videoId, video.getCardId()));
 			if (audioKey != null) {
-				AfterCommit.run(() -> storage.delete(audioKey));
+				deletions.schedule(audioKey);
 			}
 		});
 	}
 
 	// ---- 안에서 쓰는 것 ----
 
+	// 화자마다 그림과 목소리를 모은다.
 	private Map<Ref, SourceCharacter> sourceCharacters(long owner, List<Ref> refs) {
 		Map<Ref, SourceCharacter> result = new HashMap<>();
 		if (refs.isEmpty()) {
@@ -245,25 +253,21 @@ public class VideoWorkerService {
 
 	}
 
+	// 화자에 붙일 목소리를 찾는다.
 	private Voice voice(long owner, Ref ref) {
 		if (CharacterViews.PROFILE.equals(ref.type())) {
 			long userId = Long.parseLong(ref.id());
-			return jdbc.query("""
-					select character_voice, voice_clone_status, voice_clone_share_friends, voice_clone_text
-					from user_profiles where user_id = ?
-					""", (rs, n) -> {
-				String voice = rs.getString("character_voice");
-				if (!"self".equals(voice)) {
+			return profiles.findById(userId).map(p -> {
+				String voice = p.getCharacterVoice();
+				if (!UserProfile.SELF_VOICE.equals(voice)) {
 					return new Voice(voice, null);
 				}
-				boolean ready = "READY".equals(rs.getString("voice_clone_status"));
-				boolean allowed = userId == owner || rs.getBoolean("voice_clone_share_friends");
-				return ready && allowed ? new Voice(voice, rs.getString("voice_clone_text")) : Voice.NONE;
-			}, userId).stream().findFirst().orElse(Voice.NONE);
+				boolean ready = UserProfile.CHARACTER_READY.equals(p.getVoiceCloneStatus());
+				boolean allowed = userId == owner || p.isVoiceCloneShareFriends();
+				return ready && allowed ? new Voice(voice, p.getVoiceCloneText()) : Voice.NONE;
+			}).orElse(Voice.NONE);
 		}
-		Boolean has = jdbc.queryForObject("select exists (select 1 from default_characters where id = ? and voice_key is not null)",
-				Boolean.class, ref.id());
-		return Boolean.TRUE.equals(has) ? new Voice(ref.id(), null) : Voice.NONE;
+		return defaultCharacters.hasVoice(ref.id()) ? new Voice(ref.id(), null) : Voice.NONE;
 	}
 
 	// "default:young-f-02", "profile:42"
@@ -280,36 +284,40 @@ public class VideoWorkerService {
 		return null;
 	}
 
+	// 영상의 그 단계 작업을 DONE으로 바꾼다.
 	private void completeJob(long videoId, String type) {
-		jdbc.update("update jobs set status = 'DONE', updated_at = current_timestamp where video_id = ? and job_type = ? "
-				+ "and status not in ('DONE', 'FAILED')", videoId, type);
+		jobs.completeVideoStep(videoId, type);
 	}
 
+	// 영상을 찾는다. 없으면 404다.
 	private Video find(long videoId) {
 		return videos.findById(videoId).orElseThrow(VideoWorkerService::notFound);
 	}
 
+	// 영상을 잠그고 찾는다.
 	private Video lock(long videoId) {
 		return videos.findByIdForUpdate(videoId).orElseThrow(VideoWorkerService::notFound);
 	}
 
+	// 만드는 중인 영상만 잠그고 찾는다.
 	private Video lockRunning(long videoId) {
 		return videos.findByIdForUpdate(videoId).filter(Video::isInProgress).orElseThrow(VideoWorkerService::notFound);
 	}
 
+	// 만드는 중인 영상만 찾는다.
 	private Video running(long videoId) {
 		return videos.findById(videoId).filter(Video::isInProgress).orElseThrow(VideoWorkerService::notFound);
 	}
 
 	// 영상이 없거나 이미 끝났을 때(DONE·FAILED). 앱 쪽 404와 같은 코드·문구다.
 	private static ApiException notFound() {
-		return new ApiException(HttpStatus.NOT_FOUND, "VIDEO_NOT_FOUND", "영상을 찾을 수 없습니다.");
+		return new ApiException(ErrorCode.VIDEO_NOT_FOUND);
 	}
 
 	// multipart 한도(파일 20MB)가 먼저 막지만, 설정이 바뀌어도 넘지 않게 여기서도 본다.
 	private static void checkSize(byte[] bytes) {
 		if (bytes.length > MAX_BYTES) {
-			throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE", "파일이 너무 큽니다.");
+			throw new ApiException(ErrorCode.PAYLOAD_TOO_LARGE);
 		}
 	}
 

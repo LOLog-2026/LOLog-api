@@ -277,7 +277,7 @@ class BlogApiTests {
 			.andExpect(jsonPath("$.optimized").value(true));
 		json(post("/api/blogs"), user, Map.of("url", feedOf(path), "categories", List.of("data-engineering")))
 			.andExpect(status().isBadRequest())
-			.andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+			.andExpect(jsonPath("$.code").value("CATEGORY_NOT_SELECTABLE"))
 			.andExpect(jsonPath("$.field").value("categories"));
 
 		long blogId = read(json(post("/api/blogs"), user, Map.of("url", feedOf(path), "categories", List.of()))
@@ -287,6 +287,7 @@ class BlogApiTests {
 		assertThat(category("m1", user)).isNull();
 		json(patch("/api/blogs/" + blogId), user, Map.of("categories", List.of("data-engineering")))
 			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("CATEGORY_NOT_SELECTABLE"))
 			.andExpect(jsonPath("$.field").value("categories"));
 		json(patch("/api/blogs/" + blogId), user, Map.of("categories", List.of()))
 			.andExpect(status().isOk())
@@ -530,6 +531,7 @@ class BlogApiTests {
 		long user = USERS.incrementAndGet();
 		json(post("/api/blogs"), user, Map.of("url", feedOf(path), "categories", List.of("a", "b", "c", "d")))
 			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
 			.andExpect(jsonPath("$.field").value("categories"));
 		long blogId = read(json(post("/api/blogs"), user, Map.of("url", feedOf(path), "categories", List.of()))
 			.andExpect(status().isCreated())).get("id").asLong();

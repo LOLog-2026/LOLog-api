@@ -1,10 +1,10 @@
 package com.lolog.api.domain.character.service;
 
+import com.lolog.api.domain.character.repository.DefaultCharacterRepository;
 import com.lolog.api.global.error.ApiException;
 import com.lolog.api.global.storage.ImageStorage;
 import java.util.List;
 import java.util.Set;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,11 +16,12 @@ public class DefaultCharacterService {
 	private static final Set<String> AGE_GROUPS = Set.of("CHILD", "YOUNG", "MIDDLE");
 	private static final Set<String> GENDERS = Set.of("F", "M");
 
-	private final JdbcTemplate jdbc;
+	private final DefaultCharacterRepository repository;
 	private final ImageStorage storage;
 
-	public DefaultCharacterService(JdbcTemplate jdbc, ImageStorage storage) {
-		this.jdbc = jdbc;
+	// 리포지토리와 저장소를 받는다.
+	public DefaultCharacterService(DefaultCharacterRepository repository, ImageStorage storage) {
+		this.repository = repository;
 		this.storage = storage;
 	}
 
@@ -29,20 +30,18 @@ public class DefaultCharacterService {
 			String thumbnailUrl, String voiceUrl) {
 	}
 
+	// 기본 화자 목록 응답.
 	public record DefaultCharacterList(List<DefaultCharacterItem> characters) {
 	}
 
+	// 기본 화자 목록을 정한 순서대로 돌려준다.
 	@Transactional(readOnly = true)
 	public DefaultCharacterList list() {
-		return new DefaultCharacterList(jdbc.query("""
-				select id, label, age_group, gender, glasses, thumb_key, voice_key from default_characters
-				order by sort_order, id
-				""", (rs, n) -> {
-			String voice = rs.getString("voice_key");
-			return new DefaultCharacterItem(rs.getString("id"), rs.getString("label"), rs.getString("age_group"),
-					rs.getString("gender"), rs.getBoolean("glasses"), storage.presignedUrl(rs.getString("thumb_key")).toString(),
-					voice == null ? null : storage.presignedUrl(voice).toString());
-		}));
+		return new DefaultCharacterList(repository.findAllByOrderBySortOrderAscIdAsc().stream()
+				.map(c -> new DefaultCharacterItem(c.getId(), c.getLabel(), c.getAgeGroup(), c.getGender(), c.isGlasses(),
+						storage.presignedUrl(c.getThumbKey()).toString(),
+						c.getVoiceKey() == null ? null : storage.presignedUrl(c.getVoiceKey()).toString()))
+				.toList());
 	}
 
 	// 기본 화자 하나를 넣거나 바꾼다(PUT /internal/characters/defaults/{id}, 스크립트용).
@@ -52,35 +51,35 @@ public class DefaultCharacterService {
 	public void upsert(String id, byte[] image, byte[] thumbnail, byte[] voice, String ageGroup, String gender,
 			Boolean glasses, String label, String appearance, Integer sortOrder) {
 		if (id == null || !id.matches("[a-z0-9-]{1,20}")) {
-			throw ApiException.invalid("id", "id는 영어 소문자·숫자·-로 20자까지예요.");
+			throw ApiException.invalid("id");
 		}
 		if (!AGE_GROUPS.contains(ageGroup)) {
-			throw ApiException.invalid("ageGroup", "ageGroup은 CHILD, YOUNG, MIDDLE 중 하나예요.");
+			throw ApiException.invalid("ageGroup");
 		}
 		if (!GENDERS.contains(gender)) {
-			throw ApiException.invalid("gender", "gender는 F, M 중 하나예요.");
+			throw ApiException.invalid("gender");
 		}
 		if (glasses == null) {
-			throw ApiException.invalid("glasses", "glasses가 필요해요.");
+			throw ApiException.invalid("glasses");
 		}
 		if (label == null || label.isBlank() || label.length() > 50) {
-			throw ApiException.invalid("label", "label은 1~50자예요.");
+			throw ApiException.invalid("label");
 		}
 		if (appearance == null || appearance.isBlank() || appearance.length() > 200) {
-			throw ApiException.invalid("appearance", "appearance는 1~200자예요.");
+			throw ApiException.invalid("appearance");
 		}
 		if (sortOrder == null) {
-			throw ApiException.invalid("sortOrder", "sortOrder가 필요해요.");
+			throw ApiException.invalid("sortOrder");
 		}
 		// 그림은 PNG 768×768, 줄인 그림은 WebP다(characters.md /internal 표). 크기가 틀린 그림이 목록에 오르지 않게 본다.
 		if (image != null && !isPng(image, 768, 768)) {
-			throw ApiException.invalid("image", "image는 768×768 PNG여야 해요.");
+			throw ApiException.invalid("image");
 		}
 		if (thumbnail != null && !isWebp(thumbnail)) {
-			throw ApiException.invalid("thumbnail", "thumbnail은 WebP 파일이어야 해요.");
+			throw ApiException.invalid("thumbnail");
 		}
 		if (voice != null && !isWav(voice)) {
-			throw ApiException.invalid("voice", "voice는 wav 파일이어야 해요.");
+			throw ApiException.invalid("voice");
 		}
 		String imageKey = ImageStorage.defaultCharacterKey(id);
 		String thumbKey = ImageStorage.defaultCharacterThumbKey(id);
@@ -95,17 +94,14 @@ public class DefaultCharacterService {
 			voiceKey = ImageStorage.defaultCharacterVoiceKey(id);
 			storage.put(voiceKey, voice, "audio/wav");
 		}
-		jdbc.update("""
-				insert into default_characters (id, age_group, gender, glasses, label, appearance, image_key, thumb_key,
-				    voice_key, sort_order)
-				values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-				on conflict (id) do update set age_group = excluded.age_group, gender = excluded.gender,
-				    glasses = excluded.glasses, label = excluded.label, appearance = excluded.appearance,
-				    image_key = excluded.image_key, thumb_key = excluded.thumb_key,
-				    voice_key = coalesce(excluded.voice_key, default_characters.voice_key), sort_order = excluded.sort_order,
-				    updated_at = current_timestamp
-				""", id, ageGroup, gender, glasses, label.strip(), appearance.strip(), imageKey, thumbKey, voiceKey,
+		repository.upsert(id, ageGroup, gender, glasses, label.strip(), appearance.strip(), imageKey, thumbKey, voiceKey,
 				sortOrder);
+	}
+
+	// 목소리가 붙어 있는 기본 화자인지 본다(TTS 참조 음성으로 쓸 수 있는지).
+	@Transactional(readOnly = true)
+	public boolean hasVoice(String id) {
+		return repository.existsByIdAndVoiceKeyIsNotNull(id);
 	}
 
 	// RIFF....WAVE 머리말
@@ -125,10 +121,12 @@ public class DefaultCharacterService {
 				&& b[10] == 'B' && b[11] == 'P';
 	}
 
+	// 4바이트를 큰 수 먼저(big-endian) int로 읽는다.
 	private static int readInt(byte[] b, int at) {
 		return ((b[at] & 0xFF) << 24) | ((b[at + 1] & 0xFF) << 16) | ((b[at + 2] & 0xFF) << 8) | (b[at + 3] & 0xFF);
 	}
 
+	// wav 머리말(RIFF....WAVE)인지 본다.
 	static boolean isWav(byte[] bytes) {
 		return bytes.length >= 12 && bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F'
 				&& bytes[8] == 'W' && bytes[9] == 'A' && bytes[10] == 'V' && bytes[11] == 'E';

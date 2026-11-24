@@ -1,6 +1,6 @@
 package com.lolog.api.domain.character.service;
 
-import org.springframework.jdbc.core.JdbcTemplate;
+import com.lolog.api.domain.card.repository.CardRepository;
 import org.springframework.stereotype.Component;
 
 // 카드 화자에 붙은 프로필 캐릭터를 뺀다(characters.md 3장, db.md 4장 "캐릭터가 빠질 때").
@@ -9,28 +9,20 @@ import org.springframework.stereotype.Component;
 @Component
 public class CharacterDetacher {
 
-	private final JdbcTemplate jdbc;
+	private final CardRepository cards;
 
-	public CharacterDetacher(JdbcTemplate jdbc) {
-		this.jdbc = jdbc;
+	public CharacterDetacher(CardRepository cards) {
+		this.cards = cards;
 	}
 
 	// 캐릭터 지우기·탈퇴: 모든 카드에서 그 사람의 캐릭터를 뺀다.
 	public void detachEverywhere(long userId) {
-		jdbc.update("""
-				update card_speakers set character_type = null, character_id = null, updated_at = current_timestamp
-				where character_type = 'PROFILE' and character_id = ?
-				""", String.valueOf(userId));
+		cards.detachProfileCharacter(String.valueOf(userId));
 	}
 
 	// 친구 끊기·차단: 두 사람이 서로의 카드에서 빠진다. 본인 카드에 붙인 본인 캐릭터는 그대로다.
 	public void detachBetween(long a, long b) {
-		jdbc.update("""
-				update card_speakers s set character_type = null, character_id = null, updated_at = current_timestamp
-				from cards c
-				where s.card_id = c.id and s.character_type = 'PROFILE'
-				  and ((c.user_id = ? and s.character_id = ?) or (c.user_id = ? and s.character_id = ?))
-				""", a, String.valueOf(b), b, String.valueOf(a));
+		cards.detachProfileCharactersBetween(a, String.valueOf(a), b, String.valueOf(b));
 	}
 
 }

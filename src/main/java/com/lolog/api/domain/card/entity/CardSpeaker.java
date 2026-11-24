@@ -16,6 +16,7 @@ import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+// 카드의 화자 하나. 이름과 붙인 그림을 갖는다.
 @Entity
 @Table(name = "card_speakers")
 @Getter
@@ -53,11 +54,13 @@ public class CardSpeaker {
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
 
+	// 그림을 붙이거나, type이 null이면 뗀다.
 	public void setCharacter(String type, String id) {
 		this.characterType = type;
 		this.characterId = type == null ? null : id;
 	}
 
+	// Card.addSpeaker에서만 만든다.
 	CardSpeaker(Card card, String speakerKey) {
 		this.card = card;
 		this.speakerKey = speakerKey;

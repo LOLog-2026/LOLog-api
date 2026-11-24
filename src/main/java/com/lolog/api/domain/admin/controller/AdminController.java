@@ -33,6 +33,7 @@ public class AdminController {
 		this.currentUser = currentUser;
 	}
 
+	// 공지사항을 만든다.
 	@PostMapping("/api/admin/notices")
 	@ResponseStatus(HttpStatus.CREATED)
 	public Notice createNotice(@RequestBody NoticeRequest request) {
@@ -40,12 +41,14 @@ public class AdminController {
 		return admin.createNotice(request.title(), request.body());
 	}
 
+	// 공지사항을 고친다.
 	@PatchMapping("/api/admin/notices/{id}")
 	public Notice updateNotice(@PathVariable Long id, @RequestBody NoticeRequest request) {
 		currentUser.requireAdmin();
 		return admin.updateNotice(id, request.title(), request.body());
 	}
 
+	// 공지사항을 지운다.
 	@DeleteMapping("/api/admin/notices/{id}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void deleteNotice(@PathVariable Long id) {
@@ -53,12 +56,14 @@ public class AdminController {
 		admin.deleteNotice(id);
 	}
 
+	// 회원의 닉네임과 친구 코드를 돌려준다.
 	@GetMapping("/api/admin/users/{id}")
 	public AdminUser user(@PathVariable Long id) {
 		currentUser.requireAdmin();
 		return admin.user(id);
 	}
 
+	// 오류 신고·의견 목록을 페이지로 돌려준다.
 	@GetMapping("/api/admin/feedback")
 	public FeedbackPage feedback(@RequestParam(required = false) String status,
 			@RequestParam(required = false) String cursor) {
@@ -66,12 +71,14 @@ public class AdminController {
 		return admin.feedbackList(status, cursor);
 	}
 
+	// 오류 신고·의견의 처리 상태를 바꾼다.
 	@PatchMapping("/api/admin/feedback/{id}")
 	public FeedbackItem markFeedback(@PathVariable Long id, @RequestBody FeedbackStatusRequest request) {
 		currentUser.requireAdmin();
 		return admin.markFeedback(id, request.status());
 	}
 
+	// 로그인한 회원이 오류 신고·의견을 보낸다.
 	@PostMapping("/api/feedback")
 	@ResponseStatus(HttpStatus.CREATED)
 	public FeedbackItem sendFeedback(@RequestBody FeedbackRequest request) {

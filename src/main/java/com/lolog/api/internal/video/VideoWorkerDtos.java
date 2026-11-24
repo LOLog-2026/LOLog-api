@@ -14,6 +14,7 @@ public final class VideoWorkerDtos {
 			List<Speaker> speakers, List<Line> lines) {
 	}
 
+	// 카드의 화자. character는 붙인 그림과 목소리다.
 	public record Speaker(String key, String name, SourceCharacter character) {
 	}
 

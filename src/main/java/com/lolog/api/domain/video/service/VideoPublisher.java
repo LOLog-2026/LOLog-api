@@ -40,12 +40,15 @@ public class VideoPublisher {
 		this.tx = new TransactionTemplate(transactionManager);
 	}
 
+	// 3호에 보내는 목소리 단계 메시지.
 	record VoiceMessage(Long jobId, Long videoId, Long cardId) {
 	}
 
+	// 2호에 보내는 그림 단계 메시지.
 	record DrawMessage(Long jobId, String kind, Long videoId, Long cardId) {
 	}
 
+	// 실패해도 오류를 넘기지 않는다. 못 넣은 작업은 다시 넣기에서 넣는다.
 	public void publishQuietly(Long jobId) {
 		try {
 			publish(jobId);
@@ -55,6 +58,7 @@ public class VideoPublisher {
 		}
 	}
 
+	// 큐에 넣지 못한 영상 작업을 다시 넣는다.
 	@Scheduled(fixedDelayString = "${lolog.detect.republish-delay-ms:60000}")
 	void republishPending() {
 		OffsetDateTime before = OffsetDateTime.now().minusMinutes(1);
@@ -62,6 +66,7 @@ public class VideoPublisher {
 		jobs.findUnpublishedIds("VIDEO_DRAW", before).forEach(this::publishQuietly);
 	}
 
+	// 작업 단계에 맞는 스트림에 메시지를 넣는다.
 	private void publish(Long jobId) {
 		tx.executeWithoutResult(status -> {
 			Job job = jobs.findById(jobId).orElseThrow();

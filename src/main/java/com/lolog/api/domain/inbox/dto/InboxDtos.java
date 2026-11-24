@@ -10,6 +10,7 @@ public final class InboxDtos {
 	private InboxDtos() {
 	}
 
+	// 공지사항 내용.
 	public record NoticeContent(String title, String body) {
 	}
 
@@ -22,12 +23,15 @@ public final class InboxDtos {
 			NotificationContent notification) {
 	}
 
+	// 알림 목록 한 페이지와 다음 커서.
 	public record InboxPage(List<InboxItem> items, String nextCursor) {
 	}
 
+	// 안 읽은 알림·공지사항이 있는지.
 	public record Unread(boolean hasUnread) {
 	}
 
+	// 기능 화면마다 새 소식 점을 켤지.
 	public record Badges(boolean cards, boolean comics, boolean profileCharacter, boolean friends, boolean rooms,
 			boolean inbox) {
 	}

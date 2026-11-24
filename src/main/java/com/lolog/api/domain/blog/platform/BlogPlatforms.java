@@ -31,6 +31,7 @@ public class BlogPlatforms {
 			.orElse(byUrl);
 	}
 
+	// 저장한 플랫폼 이름으로 구현을 찾는다.
 	public BlogPlatform get(Platform platform) {
 		return platforms.stream().filter(p -> p.platform() == platform).findFirst().orElseThrow();
 	}

@@ -9,16 +9,17 @@ public record PageRequestParams(Long before, int size) {
 	public static final int DEFAULT_SIZE = 20;
 	public static final int MAX_SIZE = 50;
 
+	// cursor와 size를 검사해 목록 조회 조건으로 바꾼다.
 	public static PageRequestParams of(String cursor, Integer size) {
 		int limit = size == null ? DEFAULT_SIZE : size;
 		if (limit < 1 || limit > MAX_SIZE) {
-			throw ApiException.invalid("size", "size는 1~50입니다.");
+			throw ApiException.invalid("size");
 		}
 		if (cursor == null) {
 			return new PageRequestParams(null, limit);
 		}
 		if (!cursor.matches("\\d{1,18}")) {
-			throw ApiException.invalid("cursor", "cursor가 올바르지 않습니다.");
+			throw ApiException.invalid("cursor");
 		}
 		return new PageRequestParams(Long.parseLong(cursor), limit);
 	}

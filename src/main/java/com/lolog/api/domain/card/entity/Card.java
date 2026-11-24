@@ -15,7 +15,7 @@ import java.util.List;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.Generated;
 import org.hibernate.annotations.UpdateTimestamp;
 
 // 감지한 이야기 하나. 화자와 대사는 함께 저장하고 함께 지운다.
@@ -70,6 +70,13 @@ public class Card {
 	@Column(name = "video_count", nullable = false, insertable = false, updatable = false)
 	private int videoCount;
 
+	// 카드 구간 음성(V6). 음성이 없으면 둘 다 null. CardRepository의 조건 UPDATE로만 바꾼다(videoCount와 같은 까닭).
+	@Column(name = "audio_key", insertable = false, updatable = false)
+	private String audioKey;
+
+	@Column(name = "audio_duration_ms", insertable = false, updatable = false)
+	private Long audioDurationMs;
+
 	@OneToMany(mappedBy = "card", cascade = CascadeType.ALL, orphanRemoval = true)
 	@OrderBy("speakerKey")
 	private List<CardSpeaker> speakers = new ArrayList<>();
@@ -78,14 +85,16 @@ public class Card {
 	@OrderBy("lineNo")
 	private List<CardLine> lines = new ArrayList<>();
 
-	@CreationTimestamp
-	@Column(name = "created_at", nullable = false, updatable = false)
+	// DB 시계(clock_timestamp, V20)로 넣고, 넣은 뒤 다시 읽는다. 보관함 새 소식 본 시각(badge_reads.seen_at)과 같은 시계로 비교하려는 것이다.
+	@Generated
+	@Column(name = "created_at", nullable = false, insertable = false, updatable = false)
 	private OffsetDateTime createdAt;
 
 	@UpdateTimestamp
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
 
+	// 녹음으로 만든 카드.
 	public Card(Long recordingId, Long userId, String kind, String summary, long startMs, long endMs,
 			OffsetDateTime recordedAt) {
 		this.recordingId = recordingId;
@@ -115,6 +124,7 @@ public class Card {
 		speakers.add(new CardSpeaker(this, key));
 	}
 
+	// 대사를 한 줄 더한다.
 	public void addLine(int lineNo, String speakerKey, String text, Long startMs, Long endMs) {
 		lines.add(new CardLine(this, lineNo, speakerKey, text, startMs, endMs));
 	}

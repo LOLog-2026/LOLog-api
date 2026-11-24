@@ -2,6 +2,8 @@ package com.lolog.api.domain.character.service;
 
 import com.lolog.api.domain.job.entity.Job;
 import com.lolog.api.domain.job.repository.JobRepository;
+import com.lolog.api.domain.user.entity.UserProfile;
+import com.lolog.api.domain.user.repository.UserProfileRepository;
 import java.time.OffsetDateTime;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -9,7 +11,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.connection.stream.StreamRecords;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -32,12 +33,12 @@ public class VoiceClonePublisher {
 	private final StringRedisTemplate redis;
 	private final ObjectMapper objectMapper;
 	private final TransactionTemplate tx;
-	private final JdbcTemplate jdbc;
+	private final UserProfileRepository profiles;
 
 	public VoiceClonePublisher(@Value("${lolog.voice-clone.queue-enabled:false}") boolean enabled, JobRepository jobs,
 			StringRedisTemplate redis, ObjectMapper objectMapper, PlatformTransactionManager transactionManager,
-			JdbcTemplate jdbc) {
-		this.jdbc = jdbc;
+			UserProfileRepository profiles) {
+		this.profiles = profiles;
 		this.enabled = enabled;
 		this.jobs = jobs;
 		this.redis = redis;
@@ -45,13 +46,16 @@ public class VoiceClonePublisher {
 		this.tx = new TransactionTemplate(transactionManager);
 	}
 
+	// 큐에 넣는 내 목소리 작업 메시지.
 	record VoiceCloneMessage(Long jobId, String kind, Long userId, String text) {
 	}
 
+	// 큐에 넣기를 켰는지 알려 준다.
 	public boolean enabled() {
 		return enabled;
 	}
 
+	// 작업을 큐에 넣는다. 실패하면 로그만 남기고 다음에 다시 넣는다.
 	public void publishQuietly(Long jobId) {
 		if (!enabled) {
 			return;
@@ -64,6 +68,7 @@ public class VoiceClonePublisher {
 		}
 	}
 
+	// 아직 큐에 못 넣은 작업을 1분마다 다시 넣는다.
 	@Scheduled(fixedDelayString = "${lolog.detect.republish-delay-ms:60000}")
 	void republishPending() {
 		if (enabled) {
@@ -71,14 +76,14 @@ public class VoiceClonePublisher {
 		}
 	}
 
+	// 작업을 한 번만 큐에 넣고 넣었다고 표시한다.
 	private void publish(Long jobId) {
 		tx.executeWithoutResult(status -> {
 			Job job = jobs.findById(jobId).orElseThrow();
 			if (job.getAttempts() > 0 || job.isFinished()) {
 				return;
 			}
-			String text = jdbc.queryForList("select voice_clone_text from user_profiles where user_id = ?", String.class,
-					job.getUserId()).stream().findFirst().orElse(null);
+			String text = profiles.findById(job.getUserId()).map(UserProfile::getVoiceCloneText).orElse(null);
 			VoiceCloneMessage message = new VoiceCloneMessage(job.getId(), "voice_clone", job.getUserId(), text);
 			redis.opsForStream().add(StreamRecords.string(
 					Map.of("payload", objectMapper.writeValueAsString(message))).withStreamKey(STREAM));

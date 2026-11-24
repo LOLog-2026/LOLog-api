@@ -10,6 +10,7 @@ import java.util.Locale;
 // 구현은 Spring이 @Order 순서로 BlogPlatforms에 넣어 주고, 맨 마지막은 늘 맞는 OtherPlatform이다.
 public interface BlogPlatform {
 
+	// 이 구현이 맡은 플랫폼
 	Platform platform();
 
 	// 사용자가 넣은 주소가 이 플랫폼 주소인가
@@ -35,10 +36,12 @@ public interface BlogPlatform {
 		return Categories.plain();
 	}
 
+	// 주소의 호스트를 소문자로 돌려준다. 없으면 빈 글자.
 	static String host(URI uri) {
 		return uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
 	}
 
+	// 피드의 generator를 소문자로 돌려준다. 없으면 빈 글자.
 	static String generator(Feed feed) {
 		return feed.generator() == null ? "" : feed.generator().toLowerCase(Locale.ROOT);
 	}

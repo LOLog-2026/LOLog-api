@@ -10,6 +10,7 @@ public final class BlogDtos {
 	private BlogDtos() {
 	}
 
+	// 링크 확인 요청.
 	public record BlogCheckRequest(String url) {
 	}
 
@@ -17,9 +18,11 @@ public final class BlogDtos {
 	public record BlogCheck(String feedUrl, List<String> categories, boolean optimized) {
 	}
 
+	// 블로그 연결 요청.
 	public record BlogCreateRequest(String url, List<String> categories) {
 	}
 
+	// 카테고리 바꾸기 요청.
 	public record BlogUpdateRequest(List<String> categories) {
 	}
 
@@ -27,6 +30,7 @@ public final class BlogDtos {
 	public record Blog(Long id, String siteUrl, String title, List<String> categories, boolean optimized) {
 	}
 
+	// 내 블로그 목록 응답.
 	public record BlogList(List<Blog> blogs) {
 	}
 
@@ -35,6 +39,7 @@ public final class BlogDtos {
 			TextStatus status) {
 	}
 
+	// 가져온 글 목록 한 페이지.
 	public record BlogPostPage(List<BlogPost> posts, String nextCursor) {
 	}
 

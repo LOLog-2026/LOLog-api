@@ -20,6 +20,7 @@ public class JobWorkerController {
 		this.jobFails = jobFails;
 	}
 
+	// 작업이 실패했다고 받는다.
 	@PostMapping("/internal/jobs/{id}/fail")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void fail(@PathVariable Long id, @Valid @RequestBody JobFailRequest request) {

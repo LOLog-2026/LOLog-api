@@ -6,14 +6,13 @@ import com.lolog.api.domain.comic.entity.Comic;
 import com.lolog.api.domain.comic.entity.ComicStatus;
 import com.lolog.api.domain.comic.repository.ComicRepository;
 import com.lolog.api.global.error.ApiException;
+import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.storage.ImageStorage;
+import com.lolog.api.global.storage.StorageDeletions;
 import com.lolog.api.global.web.PageRequestParams;
 import com.lolog.api.global.web.PageSort;
 import java.util.List;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Limit;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -21,18 +20,21 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public class ComicQueryService {
 
-	private static final Logger log = LoggerFactory.getLogger(ComicQueryService.class);
-
 	private final ComicRepository comics;
 	private final ImageStorage storage;
+	private final StorageDeletions deletions;
 	private final TransactionTemplate tx;
 
-	public ComicQueryService(ComicRepository comics, ImageStorage storage, TransactionTemplate tx) {
+	// 만화 저장소와 이미지 저장소를 받는다.
+	public ComicQueryService(ComicRepository comics, ImageStorage storage, StorageDeletions deletions,
+			TransactionTemplate tx) {
 		this.comics = comics;
 		this.storage = storage;
+		this.deletions = deletions;
 		this.tx = tx;
 	}
 
+	// 내 만화 목록을 정렬해 페이지로 돌려준다.
 	public ComicPage list(long userId, String cursor, Integer size, String sort) {
 		PageSort order = PageSort.of(sort);
 		PageRequestParams params = PageRequestParams.of(cursor, size);
@@ -45,6 +47,7 @@ public class ComicQueryService {
 				more ? String.valueOf(shown.getLast().getId()) : null);
 	}
 
+	// 내 만화 하나를 돌려준다.
 	public ComicResponse detail(long userId, long id) {
 		return toResponse(comics.findByIdAndUserId(id, userId).orElseThrow(ComicQueryService::notFound));
 	}
@@ -52,20 +55,15 @@ public class ComicQueryService {
 	// 만드는 중인 만화도 지울 수 있다. 작업(jobs)은 DB가 함께 지우고(ON DELETE CASCADE), 워커의 다음 요청은 404가 된다.
 	// 만들기 횟수(comic_count)는 그대로다(지운 만화도 셈). LOLog-docs PR #27
 	public void delete(long userId, long id) {
-		Comic comic = tx.execute(status -> {
+		tx.executeWithoutResult(status -> {
 			Comic found = comics.findByIdAndUserIdForUpdate(id, userId).orElseThrow(ComicQueryService::notFound);
 			comics.delete(found);
-			return found;
+			// 커밋 뒤에 이미지를 지운다. image_key가 없어도 올라가 있을 수 있어(#6에서 올린 뒤 실패) 정해진 키로 지운다.
+			deletions.schedule(ImageStorage.comicKey(found.getUserId(), found.getId()));
 		});
-		// DB에서 지운 뒤 이미지를 지운다. image_key가 없어도 올라가 있을 수 있어(#6에서 올린 뒤 실패) 정해진 키로 지운다.
-		try {
-			storage.delete(ImageStorage.comicKey(comic.getUserId(), comic.getId()));
-		}
-		catch (RuntimeException e) {
-			log.error("만화 이미지를 지우지 못했습니다. comicId={}", comic.getId(), e);
-		}
 	}
 
+	// 만화를 앱 응답 모양으로 바꾼다.
 	private ComicResponse toResponse(Comic comic) {
 		String url = comic.getStatus() == ComicStatus.DONE && comic.getImageKey() != null
 				? storage.presignedUrl(comic.getImageKey()).toString() : null;
@@ -75,8 +73,9 @@ public class ComicQueryService {
 				comic.getCreatedAt());
 	}
 
+	// 만화를 찾지 못했다는 오류를 만든다.
 	private static ApiException notFound() {
-		return new ApiException(HttpStatus.NOT_FOUND, "COMIC_NOT_FOUND", "만화를 찾을 수 없습니다.");
+		return new ApiException(ErrorCode.COMIC_NOT_FOUND);
 	}
 
 }

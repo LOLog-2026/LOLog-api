@@ -18,11 +18,13 @@ public class AdminGuard implements HandlerInterceptor, WebMvcConfigurer {
 		this.currentUser = currentUser;
 	}
 
+	// 관리자 주소에만 이 검사를 건다.
 	@Override
 	public void addInterceptors(InterceptorRegistry registry) {
 		registry.addInterceptor(this).addPathPatterns("/api/admin/**");
 	}
 
+	// 관리자가 아니면 컨트롤러로 가기 전에 막는다.
 	@Override
 	public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
 		currentUser.requireAdmin();

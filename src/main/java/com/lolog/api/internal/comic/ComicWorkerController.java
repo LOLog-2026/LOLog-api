@@ -26,11 +26,13 @@ public class ComicWorkerController {
 		this.service = service;
 	}
 
+	// 만화를 만들 카드 내용을 준다.
 	@GetMapping("/source")
 	public ComicSource source(@PathVariable Long id) {
 		return service.source(id);
 	}
 
+	// 워커가 만든 콘티를 받는다.
 	@PostMapping("/storyboard")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void storyboard(@PathVariable Long id, @RequestBody JsonNode body) {

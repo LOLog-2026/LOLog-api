@@ -1,6 +1,7 @@
 package com.lolog.api.global.auth;
 
 import com.lolog.api.global.error.ApiException;
+import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.util.SafeLog;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -17,7 +18,6 @@ import org.springframework.core.annotation.Order;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -54,6 +54,7 @@ public class JwtAuthConfig {
 	static final String SUSPENDED_KEY = "lolog:auth:suspended:";
 	private static final Duration CLOCK_SKEW = Duration.ofSeconds(30);
 
+	// /api 요청을 액세스 토큰으로 확인하는 필터 체인을 만든다.
 	@Bean
 	@Order(2)
 	SecurityFilterChain apiSecurityFilterChain(HttpSecurity http, JwtDecoder decoder) throws Exception {
@@ -67,19 +68,20 @@ public class JwtAuthConfig {
 				// 검사기는 모두 돌고 오류를 모은다. 만료된 토큰은 Redis와 관계없이 TOKEN_EXPIRED로 답해 앱이 갱신하게 한다.
 				.authenticationEntryPoint((request, response, e) -> {
 					if (hasError(e, EXPIRED)) {
-						UnauthorizedWriter.write(response, true);
+						UnauthorizedWriter.write(response, ErrorCode.TOKEN_EXPIRED);
 					}
 					else if (hasError(e, UNAVAILABLE)) {
-						UnauthorizedWriter.writeInternalError(response);
+						UnauthorizedWriter.write(response, ErrorCode.INTERNAL_ERROR);
 					}
 					else {
-						UnauthorizedWriter.write(response, false);
+						UnauthorizedWriter.write(response, ErrorCode.UNAUTHORIZED);
 					}
 				}))
-			.exceptionHandling(e -> e.authenticationEntryPoint((request, response, ex) -> UnauthorizedWriter.write(response)))
+			.exceptionHandling(e -> e.authenticationEntryPoint((request, response, ex) -> UnauthorizedWriter.write(response, ErrorCode.UNAUTHORIZED)))
 			.build();
 	}
 
+	// 토큰 서명과 만료·클레임·탈퇴 여부를 검사하는 디코더를 만든다.
 	@Bean
 	JwtDecoder jwtDecoder(@Value("${lolog.auth.jwt-secret}") String secret, StringRedisTemplate redis) {
 		byte[] bytes = secret.getBytes(StandardCharsets.UTF_8);
@@ -102,15 +104,17 @@ public class JwtAuthConfig {
 				return Long.parseLong(jwt().getSubject());
 			}
 
+			// role 클레임이 ADMIN이면 관리자다.
 			@Override
 			public boolean isAdmin() {
 				return "ADMIN".equals(jwt().getClaimAsString("role"));
 			}
 
+			// 지금 요청의 인증 정보에서 토큰을 꺼낸다.
 			private Jwt jwt() {
 				Authentication auth = SecurityContextHolder.getContext().getAuthentication();
 				if (auth == null || !(auth.getPrincipal() instanceof Jwt jwt)) {
-					throw new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "인증이 필요합니다.");
+					throw new ApiException(ErrorCode.UNAUTHORIZED);
 				}
 				return jwt;
 			}
@@ -129,6 +133,7 @@ public class JwtAuthConfig {
 		return OAuth2TokenValidatorResult.success();
 	}
 
+	// 액세스 토큰인지, sub가 회원 ID인지, iat가 있는지 본다.
 	private static OAuth2TokenValidatorResult checkClaims(Jwt jwt) {
 		if (!"access".equals(jwt.getClaimAsString("typ"))) {
 			return invalid("invalid_token", "액세스 토큰이 아닙니다.");
@@ -163,10 +168,12 @@ public class JwtAuthConfig {
 		}
 	}
 
+	// 검사 실패 결과를 만든다.
 	private static OAuth2TokenValidatorResult invalid(String code, String description) {
 		return OAuth2TokenValidatorResult.failure(new OAuth2Error(code, description, null));
 	}
 
+	// 인증 예외 안에 이 오류 코드가 있는지 본다.
 	private static boolean hasError(Throwable e, String code) {
 		for (Throwable t = e; t != null; t = t.getCause()) {
 			if (t instanceof JwtValidationException v && v.getErrors().stream().anyMatch(err -> code.equals(err.getErrorCode()))) {

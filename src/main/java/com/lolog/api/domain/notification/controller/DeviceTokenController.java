@@ -25,17 +25,20 @@ public class DeviceTokenController {
 	private final DeviceTokenService tokens;
 	private final CurrentUserProvider currentUser;
 
+	// 토큰 서비스와 현재 사용자 정보를 받는다.
 	public DeviceTokenController(DeviceTokenService tokens, CurrentUserProvider currentUser) {
 		this.tokens = tokens;
 		this.currentUser = currentUser;
 	}
 
+	// 이 폰의 FCM 토큰을 등록한다.
 	@PutMapping
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void register(@Valid @RequestBody FcmTokenRequest request) {
 		tokens.register(currentUser.currentUserId(), request.token());
 	}
 
+	// 이 폰의 FCM 토큰을 지운다.
 	@DeleteMapping
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void remove(@Valid @RequestBody FcmTokenRequest request) {

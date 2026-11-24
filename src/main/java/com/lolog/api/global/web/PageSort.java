@@ -11,6 +11,7 @@ public enum PageSort {
 	// 오래된순(id 오름차순)
 	OLDEST;
 
+	// 쿼리 sort 값을 정렬로 바꾼다. 모르는 값이면 400이다.
 	public static PageSort of(String sort) {
 		if (sort == null) {
 			return LATEST;
@@ -18,7 +19,7 @@ public enum PageSort {
 		return switch (sort) {
 			case "latest" -> LATEST;
 			case "oldest" -> OLDEST;
-			default -> throw ApiException.invalid("sort", "sort는 latest, oldest 중 하나입니다.");
+			default -> throw ApiException.invalid("sort");
 		};
 	}
 

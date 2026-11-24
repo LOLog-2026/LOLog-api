@@ -16,6 +16,7 @@ import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+// 카드의 대사 한 줄.
 @Entity
 @Table(name = "card_lines")
 @Getter
@@ -56,6 +57,7 @@ public class CardLine {
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
 
+	// Card.addLine에서만 만든다.
 	CardLine(Card card, int lineNo, String speakerKey, String text, Long startMs, Long endMs) {
 		this.card = card;
 		this.lineNo = lineNo;

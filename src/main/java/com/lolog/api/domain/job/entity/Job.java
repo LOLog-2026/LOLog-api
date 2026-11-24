@@ -62,11 +62,13 @@ public class Job {
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
 
+	// 녹음 묶음 하나의 감지 작업을 만든다.
 	public Job(Long recordingPartId, Long userId) {
 		this.recordingPartId = recordingPartId;
 		this.userId = userId;
 	}
 
+	// 만화 작업을 만든다.
 	public static Job comic(Long comicId, Long userId) {
 		Job job = new Job();
 		job.jobType = "COMIC";
@@ -84,6 +86,7 @@ public class Job {
 		return job;
 	}
 
+	// 글을 카드로 만드는 작업을 만든다.
 	public static Job text(Long textId, Long userId) {
 		Job job = new Job();
 		job.jobType = "TEXT";
@@ -100,6 +103,7 @@ public class Job {
 		return job;
 	}
 
+	// 프로필 캐릭터 작업을 만든다.
 	public static Job avatar(Long userId) {
 		Job job = new Job();
 		job.jobType = "AVATAR";
@@ -107,10 +111,12 @@ public class Job {
 		return job;
 	}
 
+	// 큐에 넣었다고 센다.
 	public void markPublished() {
 		attempts++;
 	}
 
+	// 감지 작업인지 본다.
 	public boolean isDetect() {
 		return "DETECT".equals(jobType);
 	}
@@ -120,10 +126,12 @@ public class Job {
 		return "DONE".equals(status) || "FAILED".equals(status);
 	}
 
+	// 성공으로 끝낸다.
 	public void complete() {
 		status = "DONE";
 	}
 
+	// 실패로 끝내고 이유를 남긴다.
 	public void fail(String reason) {
 		status = "FAILED";
 		failReason = reason;

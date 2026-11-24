@@ -15,13 +15,13 @@ import com.lolog.api.domain.recording.repository.RecordingRepository;
 import com.lolog.api.domain.recording.service.DetectPublisher;
 import com.lolog.api.domain.recording.service.RecordingService;
 import com.lolog.api.global.error.ApiException;
+import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.internal.recording.WorkerDtos.DetectResult;
 import com.lolog.api.internal.recording.WorkerDtos.DetectedCard;
 import com.lolog.api.internal.recording.WorkerDtos.DetectedLine;
 import java.time.OffsetDateTime;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -61,18 +61,19 @@ public class DetectResultService {
 		this.latePartMinutes = latePartMinutes;
 	}
 
+	// 감지 결과를 카드로 저장하고 다음 묶음을 큐에 넣는다.
 	public void receive(long recordingId, DetectResult result) {
 		List<Long> next = tx.execute(status -> {
 			Recording recording = recordings.findByIdForUpdate(recordingId)
-				.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "RECORDING_NOT_FOUND", "녹음을 찾을 수 없습니다."));
+				.orElseThrow(() -> new ApiException(ErrorCode.RECORDING_NOT_FOUND));
 			Job job = jobs.findById(result.jobId()).filter(Job::isDetect)
-				.orElseThrow(() -> ApiException.invalid("jobId", "감지 작업을 찾을 수 없습니다."));
+				.orElseThrow(() -> ApiException.invalid("jobId"));
 			RecordingPart part = parts.findById(job.getRecordingPartId()).orElseThrow();
 			if (!part.getRecording().getId().equals(recordingId)) {
-				throw ApiException.invalid("jobId", "이 녹음의 감지 작업이 아닙니다.");
+				throw ApiException.invalid("jobId");
 			}
 			if (!part.getPartNo().equals(result.partNo())) {
-				throw ApiException.invalid("partNo", "작업의 묶음 번호와 다릅니다.");
+				throw ApiException.invalid("partNo");
 			}
 			// 같은 jobId가 다시 오면(워커 재시도) 저장하지 않는다.
 			if (job.isFinished()) {
@@ -103,10 +104,11 @@ public class DetectResultService {
 		next.forEach(publisher::publishQuietly);
 	}
 
+	// 감지 작업 실패를 기록하고 다음 묶음을 큐에 넣는다.
 	public void fail(long jobId, String reason) {
 		List<Long> next = tx.execute(status -> {
 			Long recordingId = jobs.findRecordingIdByJobId(jobId)
-				.orElseThrow(() -> ApiException.invalid(null, "감지 작업을 찾을 수 없습니다."));
+				.orElseThrow(() -> ApiException.invalid(null));
 			Recording recording = recordings.findByIdForUpdate(recordingId).orElseThrow();
 			Job job = jobs.findById(jobId).orElseThrow();
 			if (job.isFinished()) {
@@ -124,6 +126,7 @@ public class DetectResultService {
 		next.forEach(publisher::publishQuietly);
 	}
 
+	// 늦게 온 묶음이 있는지 주기적으로 확인한다.
 	@Scheduled(fixedDelayString = "${lolog.detect.late-check-delay-ms:60000}")
 	void dispatchLateCarries() {
 		dispatchLateCarries(OffsetDateTime.now().minusMinutes(latePartMinutes));
@@ -160,20 +163,20 @@ public class DetectResultService {
 			DetectedCard card = detected.get(i);
 			String at = "cards[" + i + "]";
 			if (card.endMs() <= card.startMs()) {
-				throw ApiException.invalid(at + ".endMs", "카드의 끝은 시작보다 뒤여야 합니다.");
+				throw ApiException.invalid(at + ".endMs");
 			}
 			for (int k = 0; k < card.speakers().size(); k++) {
 				if (!card.speakers().get(k).equals("화자" + (k + 1))) {
-					throw ApiException.invalid(at + ".speakers[" + k + "]", "화자는 화자1부터 빠짐없이 써야 합니다.");
+					throw ApiException.invalid(at + ".speakers[" + k + "]");
 				}
 			}
 			for (int j = 0; j < card.lines().size(); j++) {
 				DetectedLine line = card.lines().get(j);
 				if (line.lineNo() != j + 1) {
-					throw ApiException.invalid(at + ".lines[" + j + "].lineNo", "대사 번호는 1부터 차례로 써야 합니다.");
+					throw ApiException.invalid(at + ".lines[" + j + "].lineNo");
 				}
 				if (!card.speakers().contains(line.speaker())) {
-					throw ApiException.invalid(at + ".lines[" + j + "].speaker", "speakers에 없는 화자입니다.");
+					throw ApiException.invalid(at + ".lines[" + j + "].speaker");
 				}
 			}
 		}
@@ -189,6 +192,7 @@ public class DetectResultService {
 			.toList();
 	}
 
+	// 감지한 카드를 저장할 Card로 바꾼다.
 	private Card toCard(Recording recording, DetectedCard detected) {
 		Card card = new Card(recording.getId(), recording.getUserId(), detected.kind(), detected.summary(),
 				detected.startMs(), detected.endMs(), recording.getStartedAt().plusNanos(detected.startMs() * 1_000_000));

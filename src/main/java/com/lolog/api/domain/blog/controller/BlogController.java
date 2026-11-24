@@ -32,34 +32,40 @@ public class BlogController {
 		this.currentUser = currentUser;
 	}
 
+	// 블로그 주소를 확인하고 고를 수 있는 카테고리를 돌려준다.
 	@PostMapping("/api/blogs/check")
 	public BlogCheck check(@RequestBody BlogCheckRequest request) {
 		currentUser.currentUserId();
 		return blogs.check(request.url());
 	}
 
+	// 블로그를 연결한다.
 	@PostMapping("/api/blogs")
 	@ResponseStatus(HttpStatus.CREATED)
 	public Blog create(@RequestBody BlogCreateRequest request) {
 		return blogs.create(currentUser.currentUserId(), request.url(), request.categories());
 	}
 
+	// 내 블로그 목록을 돌려준다.
 	@GetMapping("/api/blogs")
 	public BlogList list() {
 		return new BlogList(blogs.list(currentUser.currentUserId()));
 	}
 
+	// 가져올 카테고리를 바꾼다.
 	@PatchMapping("/api/blogs/{id}")
 	public Blog update(@PathVariable Long id, @RequestBody BlogUpdateRequest request) {
 		return blogs.update(currentUser.currentUserId(), id, request.categories());
 	}
 
+	// 블로그 연결을 끊는다.
 	@DeleteMapping("/api/blogs/{id}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void delete(@PathVariable Long id) {
 		blogs.delete(currentUser.currentUserId(), id);
 	}
 
+	// 블로그에서 가져온 글 목록을 페이지로 돌려준다.
 	@GetMapping("/api/blogs/{id}/posts")
 	public BlogPostPage posts(@PathVariable Long id, @RequestParam(required = false) String cursor,
 			@RequestParam(required = false) Integer size) {

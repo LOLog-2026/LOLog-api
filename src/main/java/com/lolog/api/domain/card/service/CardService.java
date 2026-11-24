@@ -20,10 +20,12 @@ import com.lolog.api.domain.character.service.CharacterViews.SpeakerCharacter;
 import com.lolog.api.domain.character.service.CharacterViews;
 import com.lolog.api.domain.comic.entity.ComicStatus;
 import com.lolog.api.domain.comic.repository.ComicRepository;
+import com.lolog.api.domain.text.service.TextService;
+import com.lolog.api.domain.text.service.TextService.TextOrigin;
 import com.lolog.api.domain.video.service.VideoService;
 import com.lolog.api.global.error.ApiException;
-import com.lolog.api.global.storage.ImageStorage;
-import com.lolog.api.global.util.SafeLog;
+import com.lolog.api.global.error.ErrorCode;
+import com.lolog.api.global.storage.StorageDeletions;
 import com.lolog.api.global.web.PageRequestParams;
 import com.lolog.api.global.web.PageSort;
 import jakarta.persistence.EntityManager;
@@ -35,16 +37,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Limit;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+// 카드 목록·상세·고치기·지우기를 맡는다.
 @Service
 public class CardService {
 
@@ -55,29 +52,28 @@ public class CardService {
 	static final int MAX_SPEAKERS = 4;
 	static final String SPEAKER_PREFIX = "화자";
 
-	private static final Logger log = LoggerFactory.getLogger(CardService.class);
-
 	private final CardRepository cards;
 	private final ComicRepository comics;
-	private final JdbcTemplate jdbc;
-	private final ImageStorage storage;
+	private final TextService texts;
+	private final StorageDeletions deletions;
 	private final CharacterViews characters;
 	private final CardAudioViews audio;
 	private final EntityManager entityManager;
 	private final VideoService videos;
 
-	public CardService(CardRepository cards, ComicRepository comics, JdbcTemplate jdbc, ImageStorage storage,
+	public CardService(CardRepository cards, ComicRepository comics, TextService texts, StorageDeletions deletions,
 			CharacterViews characters, CardAudioViews audio, EntityManager entityManager, VideoService videos) {
 		this.videos = videos;
 		this.entityManager = entityManager;
 		this.audio = audio;
 		this.cards = cards;
 		this.comics = comics;
-		this.jdbc = jdbc;
-		this.storage = storage;
+		this.texts = texts;
+		this.deletions = deletions;
 		this.characters = characters;
 	}
 
+	// 내 카드 목록을 최신순 또는 오래된순으로 돌려준다.
 	@Transactional(readOnly = true)
 	public CardPage list(long userId, String cursor, Integer size, String sort) {
 		PageSort order = PageSort.of(sort);
@@ -93,7 +89,7 @@ public class CardService {
 		Map<Long, Long> comicCounts = ids.isEmpty() ? Map.of() : toMap(comics.countNotFailedByCardIds(ids));
 		// 들을 수 있는 카드 구간 음성이 있으면 true(replay.md 4장)
 		Map<Long, Boolean> hasAudio = audio.ready(ids);
-		Map<Long, TextOrigin> origins = origins(shown.stream().map(Card::getTextId).filter(t -> t != null).toList());
+		Map<Long, TextOrigin> origins = texts.origins(shown.stream().map(Card::getTextId).filter(t -> t != null).toList());
 		List<CardSummary> items = shown.stream()
 			.map(c -> new CardSummary(c.getId(), c.getKind(), c.getSummary(), c.getRecordedAt(), c.getStartMs(),
 					c.getEndMs(), c.getPlace(), Math.toIntExact(lineCounts.getOrDefault(c.getId(), 0L)),
@@ -103,6 +99,7 @@ public class CardService {
 		return new CardPage(items, more ? String.valueOf(shown.getLast().getId()) : null);
 	}
 
+	// 카드 하나의 상세를 돌려준다.
 	@Transactional(readOnly = true)
 	public CardDetail detail(long userId, long id) {
 		return toDetail(find(userId, id));
@@ -114,7 +111,7 @@ public class CardService {
 	public CardDetail update(long userId, long id, CardUpdateRequest request) {
 		if (request.getSpeakers().isEmpty() && request.getRemoveSpeakers().isEmpty() && request.getLines().isEmpty()
 				&& !request.isPlaceSent()) {
-			throw ApiException.invalid(null, "바꿀 내용이 없습니다.");
+			throw ApiException.invalid(null);
 		}
 		Card card = findLocked(userId, id);
 		Map<String, CardSpeaker> speakers = card.getSpeakers().stream()
@@ -138,7 +135,7 @@ public class CardService {
 			SpeakerUpdate update = request.getSpeakers().get(i);
 			String at = "speakers[" + i + "]";
 			if (!seenKeys.add(update.getKey())) {
-				throw ApiException.invalid(at + ".key", "같은 화자를 두 번 보냈습니다.");
+				throw ApiException.invalid(at + ".key");
 			}
 			boolean isNew = !speakers.containsKey(update.getKey());
 			if (isNew && !allowedNew.contains(update.getKey())) {
@@ -146,7 +143,7 @@ public class CardService {
 			}
 			// 새 화자는 이름·그림 없이 만들어도 된다.
 			if (!isNew && !update.isNameSent() && !update.isCharacterSent()) {
-				throw ApiException.invalid(at, "name이나 character가 필요합니다. 지우려면 null을 보내세요.");
+				throw ApiException.invalid(at);
 			}
 			if (update.isNameSent()) {
 				checkText(update.getName(), MAX_NAME, at + ".name");
@@ -154,10 +151,10 @@ public class CardService {
 			if (update.isCharacterSent() && update.getCharacter() != null) {
 				CharacterRef ref = update.getCharacter();
 				if (!CharacterViews.DEFAULT.equals(ref.type()) && !CharacterViews.PROFILE.equals(ref.type())) {
-					throw ApiException.invalid(at + ".character.type", "type은 DEFAULT 또는 PROFILE이에요.");
+					throw ApiException.invalid(at + ".character.type");
 				}
 				if (ref.id() == null || ref.id().isBlank()) {
-					throw ApiException.invalid(at + ".character.id", "id가 필요합니다.");
+					throw ApiException.invalid(at + ".character.id");
 				}
 				characters.checkAttachable(userId, new Ref(ref.type(), ref.id()), at + ".character");
 			}
@@ -168,13 +165,13 @@ public class CardService {
 			String key = request.getRemoveSpeakers().get(i);
 			String at = "removeSpeakers[" + i + "]";
 			if (!removeKeys.add(key)) {
-				throw ApiException.invalid(at, "같은 화자를 두 번 보냈습니다.");
+				throw ApiException.invalid(at);
 			}
 			if (!speakers.containsKey(key)) {
 				throw unknownSpeaker(at);
 			}
 			if (seenKeys.contains(key)) {
-				throw ApiException.invalid(at, "speakers에도 있는 화자는 뺄 수 없습니다.");
+				throw ApiException.invalid(at);
 			}
 		}
 
@@ -183,10 +180,10 @@ public class CardService {
 			LineUpdate update = request.getLines().get(j);
 			String at = "lines[" + j + "]";
 			if (!seenIds.add(update.id())) {
-				throw ApiException.invalid(at + ".id", "같은 대사를 두 번 보냈습니다.");
+				throw ApiException.invalid(at + ".id");
 			}
 			if (!lines.containsKey(update.id())) {
-				throw ApiException.invalid(at + ".id", "이 카드의 대사가 아닙니다.");
+				throw ApiException.invalid(at + ".id");
 			}
 			// 같은 요청에서 만드는 새 화자의 key도 쓸 수 있다.
 			if (update.speaker() != null && !speakers.containsKey(update.speaker())
@@ -211,20 +208,20 @@ public class CardService {
 		for (int i = 0; i < request.getSpeakers().size(); i++) {
 			String key = request.getSpeakers().get(i).getKey();
 			if (newKeys.contains(key) && !speakerOfLine.containsValue(key)) {
-				throw ApiException.invalid("speakers[" + i + "]", "새 화자에게 줄 대사가 없습니다.");
+				throw ApiException.invalid("speakers[" + i + "]");
 			}
 		}
 		int countAfter = speakers.size() + newKeys.size() - removeKeys.size();
 		if (countAfter < 1) {
-			throw ApiException.invalid("removeSpeakers", "화자가 한 명은 남아야 합니다.");
+			throw ApiException.invalid("removeSpeakers");
 		}
 		if (countAfter > MAX_SPEAKERS) {
-			throw new ApiException(HttpStatus.CONFLICT, "SPEAKER_LIMIT", "화자는 4명까지예요.");
+			throw new ApiException(ErrorCode.SPEAKER_LIMIT);
 		}
 		// 빼는 화자에게 대사가 남아 있으면 뺄 수 없다(대사 변경을 적용한 뒤 기준).
 		for (int i = 0; i < request.getRemoveSpeakers().size(); i++) {
 			if (speakerOfLine.containsValue(request.getRemoveSpeakers().get(i))) {
-				throw new ApiException(HttpStatus.CONFLICT, "SPEAKER_HAS_LINES", "대사가 남아 있는 화자는 뺄 수 없어요.");
+				throw new ApiException(ErrorCode.SPEAKER_HAS_LINES);
 			}
 		}
 		checkNoDuplicateCharacter(card, request.getSpeakers(), removeKeys);
@@ -269,21 +266,19 @@ public class CardService {
 	// 남은 화자의 key를 화자1부터 빠짐없이 다시 매긴다. 이름·그림과 그 화자의 대사가 따라간다.
 	// 작은 번호부터 바꾸면 바꿀 자리는 늘 비어 있다(앞 화자는 이미 더 작은 번호로 옮겼고, 뒤 화자는 더 큰 번호다).
 	private void renumberSpeakers(long cardId) {
-		List<String> remaining = jdbc.queryForList("select speaker_key from card_speakers where card_id = ?", String.class,
-				cardId).stream().sorted(Comparator.comparingInt(CardService::speakerNumber)).toList();
+		List<String> remaining = cards.findSpeakerKeys(cardId).stream().sorted(Comparator.comparingInt(CardService::speakerNumber)).toList();
 		for (int i = 0; i < remaining.size(); i++) {
 			String from = remaining.get(i);
 			String to = SPEAKER_PREFIX + (i + 1);
 			if (from.equals(to)) {
 				continue;
 			}
-			jdbc.update("update card_speakers set speaker_key = ?, updated_at = current_timestamp "
-					+ "where card_id = ? and speaker_key = ?", to, cardId, from);
-			jdbc.update("update card_lines set speaker_key = ?, updated_at = current_timestamp "
-					+ "where card_id = ? and speaker_key = ?", to, cardId, from);
+			cards.renameSpeaker(cardId, from, to);
+			cards.renameLineSpeaker(cardId, from, to);
 		}
 	}
 
+	// "화자3"에서 번호 3을 꺼낸다.
 	private static int speakerNumber(String key) {
 		return Integer.parseInt(key.substring(SPEAKER_PREFIX.length()));
 	}
@@ -293,29 +288,20 @@ public class CardService {
 	public void delete(long userId, long id) {
 		Card card = findLocked(userId, id);
 		// 카드 구간 음성도 같이 지운다(audio.md 5장). 행을 잠근 뒤 읽어서, 자르는 중인 쪽과 엇갈리지 않는다.
-		String audioKey = jdbc.queryForObject("select audio_key from cards where id = ?", String.class, card.getId());
+		String audioKey = card.getAudioKey();
 		Long textId = card.getTextId();
 		cards.delete(card);
 		// 글 카드면 그 글도 지운다(texts.md 2장). 블로그 글 줄(blog_posts)은 같은 글을 다시 가져오지 않게 남는다.
 		if (textId != null) {
 			entityManager.flush();
-			jdbc.update("delete from texts where id = ?", textId);
+			texts.delete(textId);
 		}
 		if (audioKey != null) {
-			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-				@Override
-				public void afterCommit() {
-					try {
-						storage.delete(audioKey);
-					}
-					catch (Exception e) {
-						log.warn("지운 카드 {}의 구간 음성 파일을 지우지 못했습니다.", id, SafeLog.withoutMessages(e));
-					}
-				}
-			});
+			deletions.schedule(audioKey);
 		}
 	}
 
+	// 내 카드를 찾는다. 없으면 CARD_NOT_FOUND.
 	private Card find(long userId, long id) {
 		return cards.findByIdAndUserId(id, userId).orElseThrow(CardService::notFound);
 	}
@@ -324,11 +310,11 @@ public class CardService {
 	private Card findLocked(long userId, long id) {
 		Card card = cards.findByIdAndUserIdForUpdate(id, userId).orElseThrow(CardService::notFound);
 		if (comics.existsByCardIdAndStatusIn(card.getId(), ComicStatus.IN_PROGRESS)) {
-			throw new ApiException(HttpStatus.CONFLICT, "CARD_LOCKED", "만화를 만드는 중인 카드입니다.");
+			throw new ApiException(ErrorCode.CARD_LOCKED);
 		}
 		// 영상은 3호가 카드 내용을 받아 목소리를 만드는 동안(QUEUED·VOICE)만 막는다. 그림 단계는 카드를 보지 않는다.
 		if (videos.hasRunningBeforeDrawing(card.getId())) {
-			throw new ApiException(HttpStatus.CONFLICT, "CARD_LOCKED", "영상을 만드는 중인 카드입니다.");
+			throw new ApiException(ErrorCode.CARD_LOCKED);
 		}
 		return card;
 	}
@@ -356,12 +342,12 @@ public class CardService {
 		for (int i = 0; i < updates.size(); i++) {
 			Ref ref = after.get(updates.get(i).getKey());
 			if (ref != null && updates.get(i).isCharacterSent() && after.values().stream().filter(ref::equals).count() > 1) {
-				throw new ApiException(HttpStatus.BAD_REQUEST, "DUPLICATE_CHARACTER", "한 카드에서 같은 그림을 두 화자에 붙일 수 없어요.",
-						"speakers[" + i + "].character");
+				throw new ApiException(ErrorCode.DUPLICATE_CHARACTER, "speakers[" + i + "].character");
 			}
 		}
 	}
 
+	// 카드를 상세 응답으로 바꾼다.
 	private CardDetail toDetail(Card card) {
 		List<Ref> refs = card.getSpeakers().stream()
 			.filter(s -> s.getCharacterType() != null)
@@ -378,28 +364,13 @@ public class CardService {
 		List<ComicRef> comicRefs = comics.findByCardIdOrderByIdDesc(card.getId()).stream()
 			.map(m -> new ComicRef(m.getId(), m.getStatus()))
 			.toList();
-		Map<Long, TextOrigin> origins = card.getTextId() == null ? Map.of() : origins(List.of(card.getTextId()));
+		Map<Long, TextOrigin> origins = card.getTextId() == null ? Map.of() : texts.origins(List.of(card.getTextId()));
 		TextOrigin origin = card.getTextId() == null ? null : origins.get(card.getTextId());
 		return new CardDetail(card.getId(), card.getRecordingId(), card.getKind(), card.getSummary(), card.getPlace(),
 				card.getRecordedAt(), card.getStartMs(), card.getEndMs(), speakers, lines, comicRefs,
 				MAX_COMICS - card.getComicCount(), videos.refs(card.getId()), videos.remaining(card.getId()),
 				audio.detail(card.getId()),
 				source(card, origins), card.getTextId(), origin != null && origin.truncated(), card.getCreatedAt());
-	}
-
-	// 글 카드의 출처와 잘림. 녹음 카드인지 글 카드인지는 text_id로, 직접 쓴 글인지 블로그 글인지는 texts.source로 안다(texts.md 7장).
-	private record TextOrigin(String source, boolean truncated) {
-	}
-
-	private Map<Long, TextOrigin> origins(List<Long> textIds) {
-		if (textIds.isEmpty()) {
-			return Map.of();
-		}
-		Map<Long, TextOrigin> result = new HashMap<>();
-		jdbc.query("select id, source, truncated from texts where id = any(?)", rs -> {
-			result.put(rs.getLong("id"), new TextOrigin(rs.getString("source"), rs.getBoolean("truncated")));
-		}, (Object) textIds.toArray(Long[]::new));
-		return result;
 	}
 
 	// 녹음 카드는 녹음을 지워 recording_id가 비어도 RECORDING이다(글 카드는 늘 text_id가 있다).
@@ -415,24 +386,28 @@ public class CardService {
 		}
 		String trimmed = value.strip();
 		if (trimmed.isEmpty() || trimmed.codePointCount(0, trimmed.length()) > max) {
-			throw ApiException.invalid(field, "1~" + max + "자로 써야 합니다.");
+			throw ApiException.invalid(field);
 		}
 	}
 
+	// null은 그대로, 아니면 앞뒤 공백을 뺀다.
 	private static String trimOrNull(String value) {
 		return value == null ? null : value.strip();
 	}
 
+	// [카드 ID, 개수] 줄을 Map으로 바꾼다.
 	private static Map<Long, Long> toMap(List<Object[]> rows) {
 		return rows.stream().collect(Collectors.toMap(r -> (Long) r[0], r -> (Long) r[1]));
 	}
 
+	// CARD_NOT_FOUND 예외를 만든다.
 	private static ApiException notFound() {
-		return new ApiException(HttpStatus.NOT_FOUND, "CARD_NOT_FOUND", "카드를 찾을 수 없습니다.");
+		return new ApiException(ErrorCode.CARD_NOT_FOUND);
 	}
 
+	// UNKNOWN_SPEAKER 예외를 만든다.
 	private static ApiException unknownSpeaker(String field) {
-		return new ApiException(HttpStatus.BAD_REQUEST, "UNKNOWN_SPEAKER", "카드에 없는 화자입니다.", field);
+		return new ApiException(ErrorCode.UNKNOWN_SPEAKER, field);
 	}
 
 }

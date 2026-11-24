@@ -13,15 +13,15 @@ import com.lolog.api.domain.video.entity.Video;
 import com.lolog.api.domain.video.entity.VideoStatus;
 import com.lolog.api.domain.video.repository.VideoRepository;
 import com.lolog.api.global.error.ApiException;
+import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.storage.ImageStorage;
-import com.lolog.api.global.transaction.AfterCommit;
+import com.lolog.api.global.storage.StorageDeletions;
 import com.lolog.api.global.web.PageRequestParams;
 import com.lolog.api.global.web.PageSort;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Limit;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -38,16 +38,18 @@ public class VideoService {
 	private final JobRepository jobs;
 	private final VideoPublisher publisher;
 	private final ImageStorage storage;
+	private final StorageDeletions deletions;
 	private final PushService push;
 	private final TransactionTemplate tx;
 
 	public VideoService(VideoRepository videos, CardRepository cards, JobRepository jobs, VideoPublisher publisher,
-			ImageStorage storage, PushService push, TransactionTemplate tx) {
+			ImageStorage storage, StorageDeletions deletions, PushService push, TransactionTemplate tx) {
 		this.videos = videos;
 		this.cards = cards;
 		this.jobs = jobs;
 		this.publisher = publisher;
 		this.storage = storage;
+		this.deletions = deletions;
 		this.push = push;
 		this.tx = tx;
 	}
@@ -58,12 +60,12 @@ public class VideoService {
 		Long jobId = tx.execute(status -> {
 			// 카드 행을 잠가, 같은 카드의 요청·고치기·지우기가 한 번에 하나씩 일어나게 한다.
 			Card card = cards.findByIdAndUserIdForUpdate(cardId, userId)
-				.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CARD_NOT_FOUND", "카드를 찾을 수 없습니다."));
+				.orElseThrow(() -> new ApiException(ErrorCode.CARD_NOT_FOUND));
 			if (videos.existsByCardIdAndStatusIn(card.getId(), VideoStatus.IN_PROGRESS)) {
 				throw inProgress();
 			}
 			if (cards.incrementVideoCount(card.getId()) == 0) {
-				throw new ApiException(HttpStatus.CONFLICT, "VIDEO_LIMIT", "이 카드로는 영상을 더 만들 수 없습니다.");
+				throw new ApiException(ErrorCode.VIDEO_LIMIT);
 			}
 			Video video;
 			try {
@@ -97,6 +99,7 @@ public class VideoService {
 		return new VideoPage(items, next);
 	}
 
+	// 내 영상 하나를 돌려준다.
 	@Transactional(readOnly = true)
 	public VideoResponse get(long userId, long videoId) {
 		return videos.findByIdAndUserId(videoId, userId).map(this::response).orElseThrow(VideoService::notFound);
@@ -107,7 +110,7 @@ public class VideoService {
 	public void delete(long userId, long videoId) {
 		Video video = videos.findByIdAndUserId(videoId, userId).orElseThrow(VideoService::notFound);
 		videos.delete(video);
-		AfterCommit.run(() -> storage.deletePrefix(ImageStorage.videoPrefix(userId, videoId)));
+		deletions.schedulePrefix(ImageStorage.videoPrefix(userId, videoId));
 	}
 
 	// 카드 자세히의 videos[]. 최근 것이 앞.
@@ -125,6 +128,7 @@ public class VideoService {
 		return Math.max(0, MAX_VIDEOS - used);
 	}
 
+	// 카드 내용을 아직 쓰는 영상 작업이 있는지 본다.
 	public boolean hasRunningBeforeDrawing(long cardId) {
 		return videos.existsByCardIdAndStatusIn(cardId, VideoStatus.BEFORE_DRAWING);
 	}
@@ -133,7 +137,7 @@ public class VideoService {
 	public void fail(long jobId, String reason) {
 		tx.executeWithoutResult(status -> {
 			Long videoId = jobs.findVideoIdById(jobId)
-				.orElseThrow(() -> ApiException.invalid(null, "작업을 찾을 수 없습니다."));
+				.orElseThrow(() -> ApiException.invalid(null));
 			// 잠금 순서는 영상 → 작업(VideoWorkerService와 같음)
 			Video video = videos.findByIdForUpdate(videoId).orElse(null);
 			Job job = jobs.findByIdForUpdate(jobId).orElseThrow();
@@ -151,11 +155,12 @@ public class VideoService {
 			}
 			push.notify(video.getUserId(), PushService.videoFailed(video.getId(), video.getCardId()));
 			if (audioKey != null) {
-				AfterCommit.run(() -> storage.delete(audioKey));
+				deletions.schedule(audioKey);
 			}
 		});
 	}
 
+	// 영상을 응답 모양으로 바꾼다. 파일 주소는 DONE일 때만 준다.
 	private VideoResponse response(Video video) {
 		boolean done = video.getStatus() == VideoStatus.DONE;
 		String summary = video.getCardSummary();
@@ -164,16 +169,19 @@ public class VideoService {
 				done ? video.getDurationMs() : null, video.getCreatedAt());
 	}
 
+	// 저장소 키를 서명 주소로 바꾼다.
 	private String url(String key) {
 		return key == null ? null : storage.presignedUrl(key).toString();
 	}
 
+	// 영상 없음 오류를 만든다.
 	private static ApiException notFound() {
-		return new ApiException(HttpStatus.NOT_FOUND, "VIDEO_NOT_FOUND", "영상을 찾을 수 없습니다.");
+		return new ApiException(ErrorCode.VIDEO_NOT_FOUND);
 	}
 
+	// 이미 만드는 중 오류를 만든다.
 	private static ApiException inProgress() {
-		return new ApiException(HttpStatus.CONFLICT, "VIDEO_IN_PROGRESS", "이 카드로 만드는 중인 영상이 있습니다.");
+		return new ApiException(ErrorCode.VIDEO_IN_PROGRESS);
 	}
 
 }

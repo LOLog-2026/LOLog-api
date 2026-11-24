@@ -2,6 +2,7 @@ package com.lolog.api.domain.comic.entity;
 
 import java.util.Set;
 
+// 만화 만들기 진행 상태.
 public enum ComicStatus {
 
 	QUEUED, STORYBOARD, DRAWING, DONE, FAILED;

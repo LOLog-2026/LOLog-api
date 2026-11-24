@@ -16,6 +16,7 @@ public final class WorkerDtos {
 	private WorkerDtos() {
 	}
 
+	// 묶음 하나의 감지 결과다.
 	public record DetectResult(
 			@NotNull Long jobId,
 			@NotNull @Min(1) Integer partNo,
@@ -23,6 +24,7 @@ public final class WorkerDtos {
 			@PositiveOrZero Long carryFromMs) {
 	}
 
+	// 감지한 카드 하나다.
 	public record DetectedCard(
 			@NotNull @Pattern(regexp = "^(웃김|황당|추억)$") String kind,
 			@NotBlank @Size(max = 30) String summary,
@@ -32,6 +34,7 @@ public final class WorkerDtos {
 			@NotEmpty List<@Valid @NotNull DetectedLine> lines) {
 	}
 
+	// 카드의 대사 한 줄이다.
 	public record DetectedLine(
 			@NotNull @Min(1) Integer lineNo,
 			@NotNull String speaker,

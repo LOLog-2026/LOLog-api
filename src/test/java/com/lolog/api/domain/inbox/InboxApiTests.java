@@ -80,6 +80,9 @@ class InboxApiTests {
 	@Autowired
 	ObjectMapper objectMapper;
 
+	@Autowired
+	NotificationCleanupJob cleanupJob;
+
 	private long user(String nickname) throws Exception {
 		long id = USERS.incrementAndGet();
 		call(patch("/api/me/profile").contentType(MediaType.APPLICATION_JSON).content("{\"nickname\":\"" + nickname + "\"}"),
@@ -107,6 +110,13 @@ class InboxApiTests {
 	private void notification(long userId, String type, String at) {
 		jdbc.update("insert into notifications (user_id, type, data, created_at) values (?, ?, '{}'::jsonb, ?::timestamptz)",
 				userId, type, at);
+	}
+
+	// 지금 생긴 알림. 서버처럼 DB 시계(clock_timestamp)로 시각을 넣어, 같은 DB 시계로 남는 새 소식 확인 시각과 바로 비교되게 한다.
+	// 테스트 쪽 Java 시계로 넣으면 컨테이너 시계와 어긋나 새 소식 점 확인이 가끔 틀린다.
+	private void notificationNow(long userId, String type) {
+		jdbc.update("insert into notifications (user_id, type, data, created_at) values (?, ?, '{}'::jsonb, clock_timestamp())",
+				userId, type);
 	}
 
 	@Test
@@ -180,7 +190,7 @@ class InboxApiTests {
 		call(get("/api/inbox").param("cursor", "nope"), me).andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.field").value("cursor"));
 
-		new NotificationCleanupJob(jdbc).run();
+		cleanupJob.run();
 		assertThat(jdbc.queryForObject("select count(*) from notifications where user_id = ?", Long.class, me)).isEqualTo(25);
 	}
 
@@ -194,9 +204,9 @@ class InboxApiTests {
 			.andExpect(jsonPath("$.rooms").value(false))
 			.andExpect(jsonPath("$.inbox").value(false));
 
-		notification(me, "CARDS_CREATED", OffsetDateTime.now().toString());
-		notification(me, "COMIC_FAILED", OffsetDateTime.now().toString());
-		notification(me, "ROOM_DISBANDED", OffsetDateTime.now().toString());
+		notificationNow(me, "CARDS_CREATED");
+		notificationNow(me, "COMIC_FAILED");
+		notificationNow(me, "ROOM_DISBANDED");
 		call(post("/api/friend-requests").contentType(MediaType.APPLICATION_JSON)
 			.content("{\"friendCode\":\"" + code(me) + "\"}"), friend).andExpect(status().isCreated());
 		call(get("/api/me/badges"), me).andExpect(jsonPath("$.cards").value(true))
@@ -221,7 +231,7 @@ class InboxApiTests {
 		// 카드 영상 푸시는 컨텐츠(comics) 점에 들어간다
 		call(post("/api/me/badges/comics/read"), me).andExpect(status().isNoContent());
 		call(get("/api/me/badges"), me).andExpect(jsonPath("$.comics").value(false));
-		notification(me, "VIDEO_DONE", OffsetDateTime.now().plusSeconds(1).toString());
+		notificationNow(me, "VIDEO_DONE");
 		call(get("/api/me/badges"), me).andExpect(jsonPath("$.comics").value(true));
 	}
 

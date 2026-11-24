@@ -13,6 +13,7 @@ import com.lolog.api.domain.recording.entity.RecordingStatus;
 import com.lolog.api.domain.recording.repository.RecordingPartRepository;
 import com.lolog.api.domain.recording.repository.RecordingRepository;
 import com.lolog.api.global.error.ApiException;
+import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.web.PageRequestParams;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -22,12 +23,12 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Limit;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
+// 녹음 묶음 받기, 녹음 조회, 묶음 감지 작업 넣기.
 @Service
 public class RecordingService {
 
@@ -40,6 +41,7 @@ public class RecordingService {
 	private final ObjectMapper objectMapper;
 	private final TransactionTemplate tx;
 
+	// 녹음 처리에 필요한 저장소와 도구를 받는다.
 	public RecordingService(RecordingRepository recordings, RecordingPartRepository parts, JobRepository jobs,
 			DetectPublisher publisher, ObjectMapper objectMapper, TransactionTemplate tx) {
 		this.recordings = recordings;
@@ -50,6 +52,7 @@ public class RecordingService {
 		this.tx = tx;
 	}
 
+	// 녹음 묶음을 확인해 저장하고 감지 작업을 큐에 넣는다.
 	public UploadResponse upload(long userId, UploadRequest request) {
 		validate(request);
 		Saved saved;
@@ -64,12 +67,14 @@ public class RecordingService {
 		return saved.response();
 	}
 
+	// 내 녹음 하나의 상태와 카드 수를 돌려준다.
 	public StatusResponse status(long userId, long id) {
 		Recording recording = recordings.findByIdAndUserId(id, userId)
-			.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "RECORDING_NOT_FOUND", "녹음을 찾을 수 없습니다."));
+			.orElseThrow(() -> new ApiException(ErrorCode.RECORDING_NOT_FOUND));
 		return new StatusResponse(recording.getId(), recording.getStatus(), Math.toIntExact(recordings.countCards(id)));
 	}
 
+	// 내 녹음 목록을 상태로 걸러 페이지로 돌려준다.
 	@Transactional(readOnly = true)
 	public RecordingPage list(long userId, String cursor, Integer size, String status) {
 		PageRequestParams params = PageRequestParams.of(cursor, size);
@@ -99,7 +104,7 @@ public class RecordingService {
 				result.add(RecordingStatus.valueOf(name.strip()));
 			}
 			catch (IllegalArgumentException e) {
-				throw ApiException.invalid("status", "status는 RECEIVED, DETECTING, DONE, FAILED 중에서 고릅니다.");
+				throw ApiException.invalid("status");
 			}
 		}
 		return result;
@@ -114,17 +119,19 @@ public class RecordingService {
 		jobIds.forEach(publisher::publishQuietly);
 	}
 
+	// 문장 수와 각 문장의 시각을 확인한다.
 	private void validate(UploadRequest request) {
 		if (request.sentences().size() > MAX_SENTENCES) {
-			throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE", "묶음의 구간이 너무 많습니다.");
+			throw new ApiException(ErrorCode.PAYLOAD_TOO_LARGE);
 		}
 		for (int i = 0; i < request.sentences().size(); i++) {
 			if (request.sentences().get(i).endMs() <= request.sentences().get(i).startMs()) {
-				throw ApiException.invalid("sentences[" + i + "].endMs", "구간의 끝은 시작보다 뒤여야 합니다.");
+				throw ApiException.invalid("sentences[" + i + "].endMs");
 			}
 		}
 	}
 
+	// 녹음과 묶음을 저장하고 넣을 감지 작업을 만든다.
 	private Saved save(long userId, UploadRequest request) {
 		Recording recording = recordings.findByUserIdAndClientRecordingId(userId, request.clientRecordingId())
 			.orElseGet(() -> recordings.saveAndFlush(
@@ -138,10 +145,10 @@ public class RecordingService {
 			return new Saved(response(recording), List.of());
 		}
 		if (!existing.isEmpty() && existing.getLast().isLast()) {
-			throw new ApiException(HttpStatus.CONFLICT, "RECORDING_CLOSED", "이미 끝난 녹음입니다.");
+			throw new ApiException(ErrorCode.RECORDING_CLOSED);
 		}
 		if (request.partNo() != existing.size() + 1) {
-			throw new ApiException(HttpStatus.CONFLICT, "PART_OUT_OF_ORDER", "다음 묶음 번호는 " + (existing.size() + 1) + "입니다.");
+			throw new ApiException(ErrorCode.PART_OUT_OF_ORDER);
 		}
 		parts.saveAndFlush(new RecordingPart(recording, request.partNo(), request.isLast(), request.durationSec(),
 				objectMapper.writeValueAsString(request.sentences())));
@@ -198,10 +205,12 @@ public class RecordingService {
 		recording.setStatus(anyFailed && !anyDetected ? RecordingStatus.FAILED : RecordingStatus.DONE);
 	}
 
+	// 녹음을 업로드 응답 모양으로 바꾼다.
 	private UploadResponse response(Recording recording) {
 		return new UploadResponse(recording.getId(), recording.getStatus());
 	}
 
+	// save 결과. 응답과 큐에 넣을 작업 ID.
 	private record Saved(UploadResponse response, List<Long> jobIds) {
 	}
 

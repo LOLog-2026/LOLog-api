@@ -37,6 +37,7 @@ public class DetectPublisher {
 	private final ObjectMapper objectMapper;
 	private final TransactionTemplate tx;
 
+	// 큐에 넣는 데 필요한 저장소와 도구를 받는다.
 	public DetectPublisher(JobRepository jobs, RecordingPartRepository parts, StringRedisTemplate redis,
 			ObjectMapper objectMapper, PlatformTransactionManager transactionManager) {
 		this.jobs = jobs;
@@ -57,11 +58,13 @@ public class DetectPublisher {
 		}
 	}
 
+	// 아직 못 넣은 감지 작업을 다시 넣는다.
 	@Scheduled(fixedDelayString = "${lolog.detect.republish-delay-ms:60000}")
 	void republishPending() {
 		jobs.findUnpublishedIds("DETECT", OffsetDateTime.now().minusMinutes(1)).forEach(this::publishQuietly);
 	}
 
+	// 작업 하나를 감지 메시지로 만들어 스트림에 넣고 넣었다고 표시한다.
 	private void publish(Long jobId) {
 		tx.executeWithoutResult(status -> {
 			Job job = jobs.findById(jobId).orElseThrow();
@@ -110,6 +113,7 @@ public class DetectPublisher {
 			.toList();
 	}
 
+	// 묶음에 저장된 문장 JSON을 목록으로 바꾼다.
 	public List<Sentence> read(RecordingPart part) {
 		if (part.getSentences() == null) {
 			return List.of();

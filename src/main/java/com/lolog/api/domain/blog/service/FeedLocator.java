@@ -28,6 +28,7 @@ public class FeedLocator {
 		this.platforms = platforms;
 	}
 
+	// 찾은 RSS 주소, 읽은 피드, 고른 플랫폼.
 	public record Located(String feedUrl, Feed feed, BlogPlatform platform) {
 	}
 
@@ -45,6 +46,7 @@ public class FeedLocator {
 		return trimmed;
 	}
 
+	// 후보 주소를 차례로 읽어 처음 찾은 피드를 돌려준다.
 	public Located locate(String siteUrl) {
 		BlogPlatform byUrl = platforms.byUrl(URI.create(siteUrl));
 		List<String> candidates = new ArrayList<>(byUrl.feedCandidates(URI.create(siteUrl)));

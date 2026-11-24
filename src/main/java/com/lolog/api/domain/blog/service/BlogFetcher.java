@@ -79,6 +79,7 @@ public class BlogFetcher {
 		throw new FetchException("리다이렉트가 너무 많습니다.");
 	}
 
+	// http·https 주소인지 확인해 URI로 바꾼다.
 	public static URI parse(String url) {
 		try {
 			URI uri = new URI(url);
@@ -130,6 +131,7 @@ public class BlogFetcher {
 		return false;
 	}
 
+	// 응답 본문을 크기 한도까지 읽는다.
 	private static byte[] read(HttpResponse<InputStream> response) {
 		try (InputStream in = response.body()) {
 			byte[] bytes = in.readNBytes(MAX_BYTES + 1);
@@ -143,6 +145,7 @@ public class BlogFetcher {
 		}
 	}
 
+	// 쓰지 않을 응답 본문을 닫는다.
 	private static void close(HttpResponse<InputStream> response) {
 		try {
 			response.body().close();
@@ -157,10 +160,12 @@ public class BlogFetcher {
 
 		private final boolean internal;
 
+		// 내부 주소 거절이 아닌 실패.
 		public FetchException(String message) {
 			this(message, false);
 		}
 
+		// internal이 true면 내부 주소라 거절한 것이다.
 		public FetchException(String message, boolean internal) {
 			super(message);
 			this.internal = internal;

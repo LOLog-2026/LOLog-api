@@ -15,6 +15,7 @@ import org.springframework.security.web.authentication.AnonymousAuthenticationFi
 @Configuration
 public class InternalSecurityConfig {
 
+	// /internal 주소를 내부 토큰으로 막는 필터 체인을 만든다.
 	@Bean
 	@Order(1)
 	SecurityFilterChain internalSecurityFilterChain(HttpSecurity http,
