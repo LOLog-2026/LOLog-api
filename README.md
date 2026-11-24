@@ -10,7 +10,7 @@ LOLog의 메인 백엔드예요. 앱이 올린 대화 글을 받아 Jetson AI �
 | --- | --- | --- |
 | 언어·프레임워크 | Java 21, Spring Boot 4.1 (Web MVC, Validation, Actuator) | REST API 서버 |
 | DB | PostgreSQL(배포 17, 로컬·테스트 latest), Spring Data JPA(Hibernate) | 회원 서비스 정보, 카드, 만화·쇼츠 기록, 친구, 방, 알림 |
-| DB 변경 관리 | Flyway (V1~V20) | 표 구조를 번호 붙은 SQL로 순서대로 적용 |
+| DB 변경 관리 | Flyway (V1~V21) | 표 구조를 번호 붙은 SQL로 순서대로 적용 |
 | 캐시·큐 | Redis(배포 7.4, 로컬 latest), Redis Streams | Jetson 작업 큐 3개, 컨슈머 그룹 `jetson-workers` |
 | 파일 저장 | MinIO(S3 호환), AWS SDK for Java v2 | 만화 PNG, 쇼츠 mp4, 음성, 캐릭터 그림. 앱에는 10분 서명 주소로 줌 |
 | 인증 | Spring Security OAuth2 Resource Server, JWT(HS256) | lolog-auth가 발급한 액세스 토큰을 서명만으로 확인 |
@@ -65,9 +65,9 @@ com.lolog.api
 | `auth` | JWT 확인, `X-Internal-Token` 확인, 관리자 확인(`AdminGuard`) |
 | `error` | 공통 오류 응답 |
 | `web` | 업로드 크기 제한, 목록 쪽 나누기 |
-| `storage` | MinIO 업로드·삭제·서명 주소 |
+| `storage` | MinIO 업로드·삭제·서명 주소, 지울 파일 목록(`StorageDeletions`) |
 | `push` | FCM으로 보내기 |
-| `transaction` | 커밋 뒤에 할 일(저장소 파일 지우기 등) |
+| `transaction` | 커밋 뒤에 할 일(`AfterCommit`) |
 | `util` | 로그에 대화 글을 남기지 않기(`SafeLog`) |
 
 ### `domain`
@@ -104,7 +104,7 @@ com.lolog.api
 
 ## DB
 
-- 표 설명은 마이그레이션 파일의 `COMMENT ON TABLE`에 있어요. `src/main/resources/db/migration/V1__init.sql` ~ `V20__cards_created_at_clock.sql`.
+- 표 설명은 마이그레이션 파일의 `COMMENT ON TABLE`에 있어요. `src/main/resources/db/migration/V1__init.sql` ~ `V21__storage_deletions.sql`.
 - 한 번 적용한 마이그레이션은 고치지 않고 다음 번호 파일을 더해요.
 - 회원 계정(이메일·비밀번호·소셜 계정)은 lolog-auth의 DB에 있고, 이 서버는 `user_id`만 가져요.
 - ERD는 [조직 README](https://github.com/LOLog-2026)의 `lolog-erd.png`를 보세요.
@@ -127,6 +127,15 @@ com.lolog.api
 - 여러 표를 합쳐 보여 주는 화면용 목록 조회는 그 조회를 쓰는 도메인의 리포지토리에 JPQL 한 문장으로 두고, 결과는 화면에 필요한 칸만 담은 record로 받아요(`select new ...`). 표마다 따로 읽어 Java에서 합치면 DB 왕복이 늘어서예요. 쓰기는 지금처럼 엔티티로 해요.
 - SQL 문장 자체가 실행 중에 바뀌는 조회는 리포지토리 패키지의 `@Repository` 클래스에서만 `JdbcTemplate`을 써요(`InboxQueries`).
 - 서버 상태 확인(`HealthController`의 `select 1`)은 데이터를 다루지 않아 이 규칙에서 빼요.
+
+### 커밋 뒤에 할 일
+
+- 큐에 넣기, 푸시, 구간 음성 자르기처럼 커밋된 뒤에 할 일은 `AfterCommit.run`으로 맡겨요. 트랜잭션 동기화를 직접 쓰는 곳은 `AfterCommit` 하나예요.
+- 커밋 뒤 할 일이 실패해도 요청은 실패로 돌리지 않고 로그만 남겨요. 데이터는 이미 저장됐고, 500을 주면 앱이 다시 보내 같은 일이 두 번 생겨서예요.
+- 그래서 꼭 해야 하는 일은 다시 하는 길을 둬요. 큐에 넣기는 1분마다 못 넣은 작업을 다시 넣고(`republishPending`), 구간 음성은 한 시간마다 다시 잘라요(`AudioRetentionJob`). 푸시는 다시 보내지 않아요(앱이 조회로 상태를 알아요).
+- 저장소 파일 지우기는 `StorageDeletions.schedule`(키 하나)·`schedulePrefix`(그 아래 전체)로 해요. 데이터를 바꾸는 트랜잭션 안에서 `storage_deletions`에 줄을 넣어 그 변경과 함께 커밋·되돌림되고, 커밋 뒤에 바로 지운 다음 줄을 빼요. 못 지운 줄은 10분마다 다시 지워요(`lolog.storage.deletion-retry-delay-ms`).
+- 정해진 키(프로필 사진, 내 목소리 녹음 등)에 파일을 다시 올릴 때는 올리기 전에 `StorageDeletions.cancel`로 그 키의 남은 지우기를 빼요. 예전 지우기가 새 파일을 지우지 않게 하려는 거예요.
+- 탈퇴(`users/{userId}/` 지우기)와 7일 지난 녹음 지우기는 이 목록을 쓰지 않고 바로 지워요. 탈퇴는 실패하면 오류를 돌려 lolog-auth가 다시 부르고, 녹음은 줄이 남아 다음 시간에 다시 지워요.
 
 ## 보안
 
