@@ -163,20 +163,30 @@ public class VideoWorkerService {
 		}
 		String key = ImageStorage.videoAudioKey(found.getUserId(), videoId);
 		storage.put(key, wav, "audio/wav");
-		Long drawJob = tx.execute(status -> {
-			Video video = lock(videoId);
-			if (!video.isInProgress()) {
-				return null;
-			}
-			if (!video.hasStoryboard()) {
-				throw ApiException.invalid(null);
-			}
-			if (!video.attachAudio(key)) {
-				return null;
-			}
-			completeJob(videoId, "VIDEO_VOICE");
-			return jobs.save(Job.video("VIDEO_DRAW", videoId, video.getUserId())).getId();
-		});
+		Long drawJob;
+		try {
+			drawJob = tx.execute(status -> {
+				Video video = lock(videoId);
+				if (!video.isInProgress()) {
+					// 올리는 사이 끝났거나 실패했다. 올린 파일은 어느 영상도 쓰지 않으니 지운다.
+					deletions.schedule(key);
+					return null;
+				}
+				if (!video.hasStoryboard()) {
+					throw ApiException.invalid(null);
+				}
+				if (!video.attachAudio(key)) {
+					return null;
+				}
+				completeJob(videoId, "VIDEO_VOICE");
+				return jobs.save(Job.video("VIDEO_DRAW", videoId, video.getUserId())).getId();
+			});
+		}
+		catch (ApiException e) {
+			// 올리는 사이 영상이 지워졌거나 콘티가 아직 없다. 트랜잭션이 되돌려졌으니 밖에서 지운다.
+			deletions.schedule(key);
+			throw e;
+		}
 		if (drawJob != null) {
 			publisher.publishQuietly(drawJob);
 		}

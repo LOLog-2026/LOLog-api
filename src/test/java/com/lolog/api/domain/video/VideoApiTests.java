@@ -1,6 +1,7 @@
 package com.lolog.api.domain.video;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -15,6 +16,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.lolog.api.global.auth.TestTokens;
 import com.lolog.api.global.push.PushSender;
+import com.lolog.api.global.storage.ImageStorage;
 import java.util.List;
 import org.springframework.data.domain.Range;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -43,6 +45,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -94,6 +97,9 @@ class VideoApiTests {
 
 	@Autowired
 	StringRedisTemplate redisTemplate;
+
+	@Autowired
+	ImageStorage storage;
 
 	@MockitoBean
 	PushSender sender;
@@ -358,6 +364,18 @@ class VideoApiTests {
 		jdbc.update("update user_profiles set voice_clone_status = 'PROCESSING' where user_id = ?", me);
 		internal(get("/internal/videos/" + myVideo + "/source"))
 			.andExpect(jsonPath("$.speakers[0].character.voice").isEmpty());
+	}
+
+	@Test
+	void 콘티보다_먼저_온_음성은_거절하고_올린_파일을_지운다() throws Exception {
+		long me = USERS.incrementAndGet();
+		long videoId = request(me, card(me));
+		internal(get("/internal/videos/" + videoId + "/source")).andExpect(status().isOk());
+
+		audio(videoId, wav()).andExpect(status().isBadRequest());
+		assertThatThrownBy(() -> storage.get(ImageStorage.videoAudioKey(me, videoId))).isInstanceOf(NoSuchKeyException.class);
+		assertThat(jdbc.queryForObject("select count(*) from storage_deletions where object_key = ?", Long.class,
+				ImageStorage.videoAudioKey(me, videoId))).isZero();
 	}
 
 	@Test
