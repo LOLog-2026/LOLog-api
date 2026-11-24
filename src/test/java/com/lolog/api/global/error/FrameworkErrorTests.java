@@ -19,6 +19,7 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.testcontainers.utility.DockerImageName;
 
 // Spring이 직접 거절하는 요청(없는 주소, 틀린 메서드, 틀린 Content-Type)도 ErrorResponse 모양인지 본다
 // (api-dto.md 오류 코드, LOLog-docs PR #60). Docker가 켜져 있어야 한다.
@@ -29,7 +30,7 @@ class FrameworkErrorTests {
 
 	@Container
 	@ServiceConnection
-	static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:latest");
+	static PostgreSQLContainer postgres = new PostgreSQLContainer(DockerImageName.parse("pgvector/pgvector:pg17").asCompatibleSubstituteFor("postgres"));
 
 	@Container
 	@ServiceConnection(name = "redis")

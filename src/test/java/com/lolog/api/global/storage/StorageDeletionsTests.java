@@ -25,6 +25,7 @@ import org.testcontainers.images.builder.Transferable;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.testcontainers.utility.DockerImageName;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 
 // 저장소 파일 지우기(storage_deletions)를 실제 PostgreSQL·SeaweedFS로 확인한다. Docker가 켜져 있어야 한다.
@@ -40,7 +41,7 @@ class StorageDeletionsTests {
 
 	@Container
 	@ServiceConnection
-	static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:latest");
+	static PostgreSQLContainer postgres = new PostgreSQLContainer(DockerImageName.parse("pgvector/pgvector:pg17").asCompatibleSubstituteFor("postgres"));
 
 	@Container
 	@SuppressWarnings("resource")

@@ -21,6 +21,7 @@ import org.testcontainers.images.builder.Transferable;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.testcontainers.utility.DockerImageName;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 
 // 실제 SeaweedFS(compose.yaml과 같은 이미지)에 올리고, 꺼내고, 서명 주소로 열고, 지운다. Docker가 켜져 있어야 한다.
@@ -34,7 +35,7 @@ class ImageStorageTests {
 
 	@Container
 	@ServiceConnection
-	static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:latest");
+	static PostgreSQLContainer postgres = new PostgreSQLContainer(DockerImageName.parse("pgvector/pgvector:pg17").asCompatibleSubstituteFor("postgres"));
 
 	@Container
 	@SuppressWarnings("resource")

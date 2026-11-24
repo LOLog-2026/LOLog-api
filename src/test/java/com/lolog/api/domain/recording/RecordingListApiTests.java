@@ -20,6 +20,7 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.testcontainers.utility.DockerImageName;
 import tools.jackson.databind.ObjectMapper;
 
 // GET /api/recordings(내 녹음 목록)를 실제 PostgreSQL·Redis로 확인한다. Docker가 켜져 있어야 한다.
@@ -30,7 +31,7 @@ class RecordingListApiTests {
 
 	@Container
 	@ServiceConnection
-	static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:latest");
+	static PostgreSQLContainer postgres = new PostgreSQLContainer(DockerImageName.parse("pgvector/pgvector:pg17").asCompatibleSubstituteFor("postgres"));
 
 	@Container
 	@ServiceConnection(name = "redis")

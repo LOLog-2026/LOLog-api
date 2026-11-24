@@ -91,6 +91,7 @@ public enum ErrorCode {
 	INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다."),
 
 	// ---- 503 SERVICE_UNAVAILABLE ----
+	EMBEDDING_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "소리 검색 모델을 쓸 수 없어요."),
 	VOICE_CLONE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "아직 내 목소리를 만들 수 없어요.");
 
 	private final HttpStatus status;

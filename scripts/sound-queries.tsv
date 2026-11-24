@@ -1,0 +1,221 @@
+# 효과음·배경음을 모을 검색어 목록(초안, #106, LOLog-docs sounds.md 3장 "정할 것"). 모두 210개.
+# 한 줄에 검색어 값(sound_library.query, 영어 소문자·숫자·_ 50자까지), 종류(SFX·BGM), Freesound 검색 글을 탭으로 나눈다.
+# 콘티는 이 값을 고르지 않는다. 소리를 고르는 건 벡터 검색이고, 이 목록은 Freesound에서 모아 올 때만 쓴다.
+# 생활 소리
+door_slam	SFX	door slam
+door_knock	SFX	door knock
+door_creak	SFX	door creak
+footsteps	SFX	footsteps
+running_footsteps	SFX	running footsteps
+stairs_footsteps	SFX	stairs footsteps
+keyboard_typing	SFX	keyboard typing
+mouse_click	SFX	mouse click
+phone_notification	SFX	phone notification
+phone_vibrate	SFX	phone vibrate
+phone_ringing	SFX	phone ringing
+camera_shutter	SFX	camera shutter
+dishes_clink	SFX	dishes clink
+cup_clink	SFX	cup clink
+glass_break	SFX	glass break
+pouring_water	SFX	pouring water
+kettle_boiling	SFX	kettle boiling
+frying_pan_sizzle	SFX	frying pan sizzle
+microwave_beep	SFX	microwave beep
+fridge_door	SFX	fridge door
+toilet_flush	SFX	toilet flush
+shower_water	SFX	shower water
+zipper	SFX	zipper
+paper_rustle	SFX	paper rustle
+page_turn	SFX	page turn
+pen_writing	SFX	pen writing
+scissors_cut	SFX	scissors cut
+tape_rip	SFX	tape rip
+bag_rustle	SFX	bag rustle
+plastic_bag	SFX	plastic bag
+chair_creak	SFX	chair creak
+chair_drag	SFX	chair drag
+desk_drawer	SFX	desk drawer
+keys_jingle	SFX	keys jingle
+coins_drop	SFX	coins drop
+light_switch	SFX	light switch
+doorbell	SFX	doorbell
+alarm_clock	SFX	alarm clock
+clock_ticking	SFX	clock ticking
+vacuum_cleaner	SFX	vacuum cleaner
+washing_machine	SFX	washing machine
+hair_dryer	SFX	hair dryer
+eating_crunch	SFX	eating crunch
+drinking_gulp	SFX	drinking gulp
+chewing	SFX	chewing
+slurp_noodles	SFX	slurp noodles
+can_open	SFX	can open
+bottle_pop	SFX	bottle pop
+box_open	SFX	box open
+clothes_rustle	SFX	clothes rustle
+# 사람 반응
+laugh	SFX	laugh
+crowd_laugh	SFX	crowd laugh
+giggle	SFX	giggle
+applause	SFX	applause
+small_applause	SFX	small applause
+cheer	SFX	cheer
+gasp	SFX	gasp
+sigh	SFX	sigh
+yawn	SFX	yawn
+cough	SFX	cough
+sneeze	SFX	sneeze
+hiccup	SFX	hiccup
+scream	SFX	scream
+shout	SFX	shout
+whisper	SFX	whisper
+clap_hands	SFX	clap hands
+snap_fingers	SFX	snap fingers
+kiss	SFX	kiss
+burp	SFX	burp
+snore	SFX	snore
+sniff	SFX	sniff
+grunt	SFX	grunt
+groan	SFX	groan
+oh_no	SFX	oh no
+wow_reaction	SFX	wow reaction
+ooh_crowd	SFX	ooh crowd
+aww_crowd	SFX	aww crowd
+boo_crowd	SFX	boo crowd
+heartbeat	SFX	heartbeat
+stomach_growl	SFX	stomach growl
+# 동물
+dog_bark	SFX	dog bark
+small_dog_bark	SFX	small dog bark
+dog_whine	SFX	dog whine
+cat_meow	SFX	cat meow
+cat_purr	SFX	cat purr
+bird_chirp	SFX	bird chirp
+crow_caw	SFX	crow caw
+rooster	SFX	rooster
+chicken	SFX	chicken
+duck_quack	SFX	duck quack
+cow_moo	SFX	cow moo
+pig_oink	SFX	pig oink
+sheep	SFX	sheep
+horse_neigh	SFX	horse neigh
+frog_croak	SFX	frog croak
+cricket	SFX	cricket
+mosquito_buzz	SFX	mosquito buzz
+fly_buzz	SFX	fly buzz
+bee_buzz	SFX	bee buzz
+owl_hoot	SFX	owl hoot
+# 탈것
+car_horn	SFX	car horn
+car_engine_start	SFX	car engine start
+car_door	SFX	car door
+car_pass_by	SFX	car pass by
+car_brake	SFX	car brake
+motorcycle	SFX	motorcycle
+bus	SFX	bus
+subway_train	SFX	subway train
+train_horn	SFX	train horn
+bicycle_bell	SFX	bicycle bell
+airplane_fly_over	SFX	airplane fly over
+helicopter	SFX	helicopter
+siren	SFX	siren
+ambulance_siren	SFX	ambulance siren
+truck_reverse_beep	SFX	truck reverse beep
+# 날씨·자연
+rain	SFX	rain
+heavy_rain	SFX	heavy rain
+thunder	SFX	thunder
+wind	SFX	wind
+storm	SFX	storm
+snow_footsteps	SFX	snow footsteps
+river_stream	SFX	river stream
+ocean_waves	SFX	ocean waves
+fire_crackling	SFX	fire crackling
+leaves_rustle	SFX	leaves rustle
+# 장소 분위기
+cafe_ambience	SFX	cafe ambience
+restaurant_ambience	SFX	restaurant ambience
+classroom_ambience	SFX	classroom ambience
+office_ambience	SFX	office ambience
+street_ambience	SFX	street ambience
+crowd_chatter	SFX	crowd chatter
+park_ambience	SFX	park ambience
+school_bell	SFX	school bell
+hospital_ambience	SFX	hospital ambience
+supermarket_ambience	SFX	supermarket ambience
+library_quiet	SFX	library quiet
+party_crowd	SFX	party crowd
+stadium_crowd	SFX	stadium crowd
+subway_station	SFX	subway station
+airport_ambience	SFX	airport ambience
+night_crickets	SFX	night crickets
+city_traffic	SFX	city traffic
+construction_site	SFX	construction site
+kitchen_ambience	SFX	kitchen ambience
+playground_kids	SFX	playground kids
+# 만화 효과음
+pop	SFX	pop
+boing	SFX	boing
+whoosh	SFX	whoosh
+swoosh	SFX	swoosh
+thud	SFX	thud
+bonk	SFX	bonk
+slap	SFX	slap
+punch	SFX	punch
+fall_down	SFX	fall down
+slip	SFX	slip
+spring	SFX	spring
+squeak	SFX	squeak
+rimshot	SFX	rimshot
+fail_trombone	SFX	fail trombone
+success_jingle	SFX	success jingle
+ding	SFX	ding
+cash_register	SFX	cash register
+magic_sparkle	SFX	magic sparkle
+twinkle	SFX	twinkle
+drum_roll	SFX	drum roll
+cymbal_crash	SFX	cymbal crash
+record_scratch	SFX	record scratch
+cartoon_run	SFX	cartoon run
+cartoon_fall_whistle	SFX	cartoon fall whistle
+balloon_pop	SFX	balloon pop
+explosion	SFX	explosion
+glitch	SFX	glitch
+beep	SFX	beep
+error_buzzer	SFX	error buzzer
+correct_answer	SFX	correct answer
+wrong_answer	SFX	wrong answer
+level_up	SFX	level up
+coin_collect	SFX	coin collect
+notification_ping	SFX	notification ping
+bubble_pop	SFX	bubble pop
+water_drop	SFX	water drop
+splash	SFX	splash
+gong	SFX	gong
+tada	SFX	tada
+dun_dun_dun	SFX	dun dun dun
+# 음악 분위기
+bgm_upbeat	BGM	upbeat music loop
+bgm_happy	BGM	happy music
+bgm_cheerful_ukulele	BGM	cheerful ukulele
+bgm_calm	BGM	calm music loop
+bgm_calm_piano	BGM	calm piano
+bgm_lofi	BGM	lofi music
+bgm_acoustic_guitar	BGM	acoustic guitar
+bgm_tense	BGM	tense music loop
+bgm_suspense	BGM	suspense music
+bgm_horror_ambience	BGM	horror ambience music
+bgm_sad	BGM	sad music loop
+bgm_sad_piano	BGM	sad piano
+bgm_emotional_strings	BGM	emotional strings
+bgm_comic	BGM	comic music loop
+bgm_funny	BGM	funny music
+bgm_quirky	BGM	quirky music
+bgm_romantic	BGM	romantic music
+bgm_epic	BGM	epic music
+bgm_action	BGM	action music
+bgm_jazz	BGM	jazz music
+bgm_electronic	BGM	electronic music
+bgm_retro_game	BGM	retro game music
+bgm_marimba	BGM	marimba music
+bgm_whistle	BGM	whistle music
+bgm_dreamy	BGM	dreamy music

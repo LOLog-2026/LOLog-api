@@ -44,3 +44,11 @@ lolog:
   # ai 워커가 kind로 나누기 전에는 쇼츠로 잘못 처리해서 기본은 끈다. 꺼져 있으면 내 목소리 만들기는 503 VOICE_CLONE_UNAVAILABLE이다.
   voice-clone:
     queue-enabled: ${VOICE_CLONE_QUEUE_ENABLED:false}
+  # 효과음·배경음 벡터 검색(sounds.md 5장). CLAP 글 쪽 ONNX 모델 폴더(text_model.onnx, tokenizer.json)는 레포에 넣지 않고 서버에 둔다.
+  # 폴더가 비어 있으면 서버는 뜨고 POST /internal/sounds/search만 503 EMBEDDING_UNAVAILABLE이다.
+  sound:
+    embed-model-dir: ${SOUND_EMBED_MODEL_DIR:}
+    # 검색할 때 이 이름으로 만든 소리 벡터만 본다. 소리를 넣을 때(PUT)도 이 이름이어야 한다.
+    embed-model-name: ${SOUND_EMBED_MODEL_NAME:laion/clap-htsat-unfused}
+    # 코사인 거리 기준. 이보다 먼 소리는 돌려주지 않는다. 비어 있으면 거르지 않는다(소리를 모은 뒤 재서 정한다).
+    max-distance: ${SOUND_MAX_DISTANCE:}

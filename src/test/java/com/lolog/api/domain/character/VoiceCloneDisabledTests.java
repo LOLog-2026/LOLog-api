@@ -19,6 +19,7 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.testcontainers.utility.DockerImageName;
 
 // 큐 넣기를 끈 기본 설정(lolog.voice-clone.queue-enabled=false)에서는 내 목소리를 만들지 않고 503으로 거절한다(#83).
 // ai 워커가 lolog:video를 kind로 나누기 전에 voice 작업이 쇼츠로 잘못 처리되지 않게 하려는 것이다.
@@ -29,7 +30,7 @@ class VoiceCloneDisabledTests {
 
 	@Container
 	@ServiceConnection
-	static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:latest");
+	static PostgreSQLContainer postgres = new PostgreSQLContainer(DockerImageName.parse("pgvector/pgvector:pg17").asCompatibleSubstituteFor("postgres"));
 
 	@Container
 	@ServiceConnection(name = "redis")
