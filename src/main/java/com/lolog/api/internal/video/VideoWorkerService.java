@@ -8,6 +8,8 @@ import com.lolog.api.domain.character.service.DefaultCharacterService;
 import com.lolog.api.domain.job.entity.Job;
 import com.lolog.api.domain.job.repository.JobRepository;
 import com.lolog.api.domain.notification.service.PushService;
+import com.lolog.api.domain.user.entity.UserProfile;
+import com.lolog.api.domain.user.repository.UserProfileRepository;
 import com.lolog.api.domain.video.entity.Video;
 import com.lolog.api.domain.video.repository.VideoRepository;
 import com.lolog.api.domain.video.service.VideoPublisher;
@@ -23,7 +25,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
@@ -38,7 +39,7 @@ public class VideoWorkerService {
 
 	static final long MAX_BYTES = 20L * 1024 * 1024;
 
-	private final JdbcTemplate jdbc;
+	private final UserProfileRepository profiles;
 	private final VideoRepository videos;
 	private final CardRepository cards;
 	private final JobRepository jobs;
@@ -50,10 +51,10 @@ public class VideoWorkerService {
 	private final PushService push;
 	private final DefaultCharacterService defaultCharacters;
 
-	public VideoWorkerService(JdbcTemplate jdbc, VideoRepository videos, CardRepository cards, JobRepository jobs,
+	public VideoWorkerService(UserProfileRepository profiles, VideoRepository videos, CardRepository cards, JobRepository jobs,
 			CharacterViews characters, ImageStorage storage, ObjectMapper objectMapper, TransactionTemplate tx,
 			VideoPublisher publisher, PushService push, DefaultCharacterService defaultCharacters) {
-		this.jdbc = jdbc;
+		this.profiles = profiles;
 		this.videos = videos;
 		this.cards = cards;
 		this.jobs = jobs;
@@ -254,18 +255,15 @@ public class VideoWorkerService {
 	private Voice voice(long owner, Ref ref) {
 		if (CharacterViews.PROFILE.equals(ref.type())) {
 			long userId = Long.parseLong(ref.id());
-			return jdbc.query("""
-					select character_voice, voice_clone_status, voice_clone_share_friends, voice_clone_text
-					from user_profiles where user_id = ?
-					""", (rs, n) -> {
-				String voice = rs.getString("character_voice");
-				if (!"self".equals(voice)) {
+			return profiles.findById(userId).map(p -> {
+				String voice = p.getCharacterVoice();
+				if (!UserProfile.SELF_VOICE.equals(voice)) {
 					return new Voice(voice, null);
 				}
-				boolean ready = "READY".equals(rs.getString("voice_clone_status"));
-				boolean allowed = userId == owner || rs.getBoolean("voice_clone_share_friends");
-				return ready && allowed ? new Voice(voice, rs.getString("voice_clone_text")) : Voice.NONE;
-			}, userId).stream().findFirst().orElse(Voice.NONE);
+				boolean ready = UserProfile.CHARACTER_READY.equals(p.getVoiceCloneStatus());
+				boolean allowed = userId == owner || p.isVoiceCloneShareFriends();
+				return ready && allowed ? new Voice(voice, p.getVoiceCloneText()) : Voice.NONE;
+			}).orElse(Voice.NONE);
 		}
 		return defaultCharacters.hasVoice(ref.id()) ? new Voice(ref.id(), null) : Voice.NONE;
 	}
@@ -286,8 +284,7 @@ public class VideoWorkerService {
 
 	// 영상의 그 단계 작업을 DONE으로 바꾼다.
 	private void completeJob(long videoId, String type) {
-		jdbc.update("update jobs set status = 'DONE', updated_at = current_timestamp where video_id = ? and job_type = ? "
-				+ "and status not in ('DONE', 'FAILED')", videoId, type);
+		jobs.completeVideoStep(videoId, type);
 	}
 
 	// 영상을 찾는다. 없으면 404다.

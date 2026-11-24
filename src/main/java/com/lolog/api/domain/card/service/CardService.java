@@ -20,6 +20,8 @@ import com.lolog.api.domain.character.service.CharacterViews.SpeakerCharacter;
 import com.lolog.api.domain.character.service.CharacterViews;
 import com.lolog.api.domain.comic.entity.ComicStatus;
 import com.lolog.api.domain.comic.repository.ComicRepository;
+import com.lolog.api.domain.text.service.TextService;
+import com.lolog.api.domain.text.service.TextService.TextOrigin;
 import com.lolog.api.domain.video.service.VideoService;
 import com.lolog.api.global.error.ApiException;
 import com.lolog.api.global.error.ErrorCode;
@@ -39,7 +41,6 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Limit;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -60,21 +61,21 @@ public class CardService {
 
 	private final CardRepository cards;
 	private final ComicRepository comics;
-	private final JdbcTemplate jdbc;
+	private final TextService texts;
 	private final ImageStorage storage;
 	private final CharacterViews characters;
 	private final CardAudioViews audio;
 	private final EntityManager entityManager;
 	private final VideoService videos;
 
-	public CardService(CardRepository cards, ComicRepository comics, JdbcTemplate jdbc, ImageStorage storage,
+	public CardService(CardRepository cards, ComicRepository comics, TextService texts, ImageStorage storage,
 			CharacterViews characters, CardAudioViews audio, EntityManager entityManager, VideoService videos) {
 		this.videos = videos;
 		this.entityManager = entityManager;
 		this.audio = audio;
 		this.cards = cards;
 		this.comics = comics;
-		this.jdbc = jdbc;
+		this.texts = texts;
 		this.storage = storage;
 		this.characters = characters;
 	}
@@ -95,7 +96,7 @@ public class CardService {
 		Map<Long, Long> comicCounts = ids.isEmpty() ? Map.of() : toMap(comics.countNotFailedByCardIds(ids));
 		// 들을 수 있는 카드 구간 음성이 있으면 true(replay.md 4장)
 		Map<Long, Boolean> hasAudio = audio.ready(ids);
-		Map<Long, TextOrigin> origins = origins(shown.stream().map(Card::getTextId).filter(t -> t != null).toList());
+		Map<Long, TextOrigin> origins = texts.origins(shown.stream().map(Card::getTextId).filter(t -> t != null).toList());
 		List<CardSummary> items = shown.stream()
 			.map(c -> new CardSummary(c.getId(), c.getKind(), c.getSummary(), c.getRecordedAt(), c.getStartMs(),
 					c.getEndMs(), c.getPlace(), Math.toIntExact(lineCounts.getOrDefault(c.getId(), 0L)),
@@ -272,18 +273,15 @@ public class CardService {
 	// 남은 화자의 key를 화자1부터 빠짐없이 다시 매긴다. 이름·그림과 그 화자의 대사가 따라간다.
 	// 작은 번호부터 바꾸면 바꿀 자리는 늘 비어 있다(앞 화자는 이미 더 작은 번호로 옮겼고, 뒤 화자는 더 큰 번호다).
 	private void renumberSpeakers(long cardId) {
-		List<String> remaining = jdbc.queryForList("select speaker_key from card_speakers where card_id = ?", String.class,
-				cardId).stream().sorted(Comparator.comparingInt(CardService::speakerNumber)).toList();
+		List<String> remaining = cards.findSpeakerKeys(cardId).stream().sorted(Comparator.comparingInt(CardService::speakerNumber)).toList();
 		for (int i = 0; i < remaining.size(); i++) {
 			String from = remaining.get(i);
 			String to = SPEAKER_PREFIX + (i + 1);
 			if (from.equals(to)) {
 				continue;
 			}
-			jdbc.update("update card_speakers set speaker_key = ?, updated_at = current_timestamp "
-					+ "where card_id = ? and speaker_key = ?", to, cardId, from);
-			jdbc.update("update card_lines set speaker_key = ?, updated_at = current_timestamp "
-					+ "where card_id = ? and speaker_key = ?", to, cardId, from);
+			cards.renameSpeaker(cardId, from, to);
+			cards.renameLineSpeaker(cardId, from, to);
 		}
 	}
 
@@ -297,13 +295,13 @@ public class CardService {
 	public void delete(long userId, long id) {
 		Card card = findLocked(userId, id);
 		// 카드 구간 음성도 같이 지운다(audio.md 5장). 행을 잠근 뒤 읽어서, 자르는 중인 쪽과 엇갈리지 않는다.
-		String audioKey = jdbc.queryForObject("select audio_key from cards where id = ?", String.class, card.getId());
+		String audioKey = card.getAudioKey();
 		Long textId = card.getTextId();
 		cards.delete(card);
 		// 글 카드면 그 글도 지운다(texts.md 2장). 블로그 글 줄(blog_posts)은 같은 글을 다시 가져오지 않게 남는다.
 		if (textId != null) {
 			entityManager.flush();
-			jdbc.update("delete from texts where id = ?", textId);
+			texts.delete(textId);
 		}
 		if (audioKey != null) {
 			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -383,29 +381,13 @@ public class CardService {
 		List<ComicRef> comicRefs = comics.findByCardIdOrderByIdDesc(card.getId()).stream()
 			.map(m -> new ComicRef(m.getId(), m.getStatus()))
 			.toList();
-		Map<Long, TextOrigin> origins = card.getTextId() == null ? Map.of() : origins(List.of(card.getTextId()));
+		Map<Long, TextOrigin> origins = card.getTextId() == null ? Map.of() : texts.origins(List.of(card.getTextId()));
 		TextOrigin origin = card.getTextId() == null ? null : origins.get(card.getTextId());
 		return new CardDetail(card.getId(), card.getRecordingId(), card.getKind(), card.getSummary(), card.getPlace(),
 				card.getRecordedAt(), card.getStartMs(), card.getEndMs(), speakers, lines, comicRefs,
 				MAX_COMICS - card.getComicCount(), videos.refs(card.getId()), videos.remaining(card.getId()),
 				audio.detail(card.getId()),
 				source(card, origins), card.getTextId(), origin != null && origin.truncated(), card.getCreatedAt());
-	}
-
-	// 글 카드의 출처와 잘림. 녹음 카드인지 글 카드인지는 text_id로, 직접 쓴 글인지 블로그 글인지는 texts.source로 안다(texts.md 7장).
-	private record TextOrigin(String source, boolean truncated) {
-	}
-
-	// 글 ID마다 출처와 잘림을 읽는다.
-	private Map<Long, TextOrigin> origins(List<Long> textIds) {
-		if (textIds.isEmpty()) {
-			return Map.of();
-		}
-		Map<Long, TextOrigin> result = new HashMap<>();
-		jdbc.query("select id, source, truncated from texts where id = any(?)", rs -> {
-			result.put(rs.getLong("id"), new TextOrigin(rs.getString("source"), rs.getBoolean("truncated")));
-		}, (Object) textIds.toArray(Long[]::new));
-		return result;
 	}
 
 	// 녹음 카드는 녹음을 지워 recording_id가 비어도 RECORDING이다(글 카드는 늘 text_id가 있다).

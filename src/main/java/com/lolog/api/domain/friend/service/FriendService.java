@@ -9,14 +9,23 @@ import com.lolog.api.domain.friend.dto.FriendDtos.FriendList;
 import com.lolog.api.domain.friend.dto.FriendDtos.FriendRequestList;
 import com.lolog.api.domain.friend.dto.FriendDtos.FriendRequestResponse;
 import com.lolog.api.domain.friend.dto.FriendDtos.FriendUser;
+import com.lolog.api.domain.friend.entity.Friendship;
+import com.lolog.api.domain.friend.entity.FriendshipStatus;
+import com.lolog.api.domain.friend.entity.UserBlock;
+import com.lolog.api.domain.friend.repository.FriendshipRepository;
+import com.lolog.api.domain.friend.repository.UserBlockRepository;
 import com.lolog.api.domain.notification.service.PushService;
+import com.lolog.api.domain.user.entity.UserProfile;
+import com.lolog.api.domain.user.repository.UserProfileRepository;
 import com.lolog.api.global.error.ApiException;
 import com.lolog.api.global.error.ErrorCode;
-import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,24 +41,24 @@ public class FriendService {
 	private static final String PENDING = "PENDING";
 	private static final String ACCEPTED = "ACCEPTED";
 
-	private final JdbcTemplate jdbc;
+	private final FriendshipRepository friendships;
+	private final UserBlockRepository blocks;
+	private final UserProfileRepository profiles;
 	private final FriendCodeAttemptLimiter limiter;
 	private final PushService push;
 	private final CharacterDetacher detacher;
 	private final CharacterViews characters;
 
 	// 친구 기능에 필요한 저장소와 도구를 받는다.
-	public FriendService(JdbcTemplate jdbc, FriendCodeAttemptLimiter limiter, PushService push,
-			CharacterDetacher detacher, CharacterViews characters) {
-		this.jdbc = jdbc;
+	public FriendService(FriendshipRepository friendships, UserBlockRepository blocks, UserProfileRepository profiles,
+			FriendCodeAttemptLimiter limiter, PushService push, CharacterDetacher detacher, CharacterViews characters) {
+		this.friendships = friendships;
+		this.blocks = blocks;
+		this.profiles = profiles;
 		this.limiter = limiter;
 		this.push = push;
 		this.detacher = detacher;
 		this.characters = characters;
-	}
-
-	// friendships 한 줄.
-	private record Friendship(long id, long requesterId, long addresseeId, String status, OffsetDateTime createdAt) {
 	}
 
 	// 친구 코드나 같은 방 멤버의 userId(초안)로 요청한다. 상대가 이미 나에게 요청해 뒀으면 새 줄 없이 그 줄을 ACCEPTED로 바꾼다(푸시 없음).
@@ -66,11 +75,7 @@ public class FriendService {
 			}
 			requireNickname(me);
 			// 지금 같은 방에 있지 않거나 닉네임이 없으면 친구 코드를 모를 때와 같은 404다.
-			target = jdbc.queryForList("""
-					select p.user_id from user_profiles p where p.user_id = ? and p.nickname is not null and exists (
-					  select 1 from room_members a join room_members b on b.room_id = a.room_id
-					  where a.user_id = ? and b.user_id = p.user_id)
-					""", Long.class, userId, me).stream().findFirst().orElseThrow(FriendService::codeNotFound);
+			target = friendships.findRoommateWithNickname(userId, me).orElseThrow(FriendService::codeNotFound);
 		}
 		else {
 			String code = friendCode.strip().toUpperCase(Locale.ROOT);
@@ -80,11 +85,8 @@ public class FriendService {
 			requireNickname(me);
 			limiter.check(me);
 			// 닉네임을 정하지 않은 사람의 코드는 없는 코드와 같다(코드가 앱에 보이지 않는 상태).
-			target = jdbc
-				.queryForList("select user_id from user_profiles where friend_code = ? and nickname is not null",
-						Long.class, code)
-				.stream()
-				.findFirst()
+			target = profiles.findByFriendCodeAndNicknameIsNotNull(code)
+				.map(UserProfile::getUserId)
 				.orElseThrow(FriendService::codeNotFound);
 		}
 		if (target == me) {
@@ -98,27 +100,24 @@ public class FriendService {
 		if (blocked(me, target)) {
 			throw new ApiException(ErrorCode.USER_BLOCKED);
 		}
-		Optional<Friendship> existing = findPair(me, target);
-		if (existing.isPresent() && ACCEPTED.equals(existing.get().status())) {
+		Optional<Friendship> existing = friendships.findBetween(me, target);
+		if (existing.isPresent() && existing.get().isAccepted()) {
 			throw new ApiException(ErrorCode.ALREADY_FRIENDS);
 		}
-		if (existing.isPresent() && existing.get().requesterId() == me) {
+		if (existing.isPresent() && existing.get().isRequestedBy(me)) {
 			throw new ApiException(ErrorCode.FRIEND_REQUEST_EXISTS);
 		}
 		checkLimit(me, target);
 		FriendUser user = friendUser(target);
 		if (existing.isPresent()) {
 			Friendship received = existing.get();
-			accept(received.id());
-			return new FriendRequestResponse(received.id(), "SENT", user, ACCEPTED, received.createdAt());
+			received.accept();
+			return new FriendRequestResponse(received.getId(), "SENT", user, ACCEPTED, received.getCreatedAt());
 		}
-		Friendship created = jdbc.queryForObject("""
-				insert into friendships (requester_id, addressee_id) values (?, ?)
-				returning id, requester_id, addressee_id, status, created_at
-				""", (rs, n) -> friendship(rs), me, target);
-		String myNickname = jdbc.queryForObject("select nickname from user_profiles where user_id = ?", String.class, me);
-		push.notify(target, PushService.friendRequest(created.id(), myNickname));
-		return new FriendRequestResponse(created.id(), "SENT", user, PENDING, created.createdAt());
+		Friendship created = friendships.save(new Friendship(me, target));
+		String myNickname = profiles.findById(me).map(UserProfile::getNickname).orElse(null);
+		push.notify(target, PushService.friendRequest(created.getId(), myNickname));
+		return new FriendRequestResponse(created.getId(), "SENT", user, PENDING, created.getCreatedAt());
 	}
 
 	// direction은 received(내가 받음)·sent(내가 보냄). 최신순.
@@ -134,41 +133,39 @@ public class FriendService {
 		else {
 			throw ApiException.invalid("direction");
 		}
-		String mine = received ? "addressee_id" : "requester_id";
-		String other = received ? "requester_id" : "addressee_id";
-		List<FriendRequestResponse> list = jdbc.query("""
-				select f.id, f.created_at, p.user_id, p.nickname, p.friend_code
-				from friendships f join user_profiles p on p.user_id = f.%s
-				where f.%s = ? and f.status = 'PENDING'
-				order by f.created_at desc, f.id desc
-				""".formatted(other, mine),
-				(rs, n) -> new FriendRequestResponse(rs.getLong("id"), received ? "RECEIVED" : "SENT",
-						new FriendUser(rs.getLong("user_id"), rs.getString("nickname"), rs.getString("friend_code")),
-						PENDING, rs.getObject("created_at", OffsetDateTime.class)),
-				me);
+		List<Friendship> rows = received
+				? friendships.findAllByAddresseeIdAndStatusOrderByCreatedAtDescIdDesc(me, FriendshipStatus.PENDING)
+				: friendships.findAllByRequesterIdAndStatusOrderByCreatedAtDescIdDesc(me, FriendshipStatus.PENDING);
+		Map<Long, UserProfile> people = profilesOf(rows.stream().map(f -> f.otherThan(me)).toList());
+		List<FriendRequestResponse> list = new ArrayList<>();
+		for (Friendship f : rows) {
+			// 프로필이 없는 상대는 뺀다(전에 프로필과 이어 읽던 것과 같다).
+			UserProfile p = people.get(f.otherThan(me));
+			if (p != null) {
+				list.add(new FriendRequestResponse(f.getId(), received ? "RECEIVED" : "SENT", friendUser(p), PENDING,
+						f.getCreatedAt()));
+			}
+		}
 		return new FriendRequestList(list);
 	}
 
 	// 내가 받은 요청만 수락할 수 있다. 보낸 사람이 수락하려 하면 없는 요청과 같은 404다.
 	@Transactional
 	public FriendItem acceptRequest(long me, long requestId) {
-		long requester = receivedRequest(me, requestId).requesterId();
+		long requester = receivedRequest(me, requestId).getRequesterId();
 		requireNickname(me);
 		lockPair(me, requester);
 		// 잠그기 전에 상대가 취소했을 수 있어 다시 읽는다.
-		receivedRequest(me, requestId);
+		Friendship request = receivedRequest(me, requestId);
 		checkLimit(me, requester);
-		accept(requestId);
-		return friendItems(me, "and f.id = ?", requestId).getFirst();
+		request.accept();
+		return friendItem(request, profiles.findById(requester).orElseThrow());
 	}
 
 	// 받은 요청 거절, 보낸 요청 취소. 상대에게 알리지 않는다.
 	@Transactional
 	public void deleteRequest(long me, long requestId) {
-		int deleted = jdbc.update(
-				"delete from friendships where id = ? and status = 'PENDING' and (requester_id = ? or addressee_id = ?)",
-				requestId, me, me);
-		if (deleted == 0) {
+		if (friendships.deletePendingOf(requestId, me) == 0) {
 			throw requestNotFound();
 		}
 	}
@@ -176,17 +173,24 @@ public class FriendService {
 	// 최근에 친구가 된 사람이 위. 친구가 100명까지라 한 번에 다 준다.
 	@Transactional(readOnly = true)
 	public FriendList friends(long me) {
-		return new FriendList(friendItems(me, "", null));
+		List<Friendship> rows = friendships.findFriendsOf(me);
+		Map<Long, UserProfile> people = profilesOf(rows.stream().map(f -> f.otherThan(me)).toList());
+		List<FriendItem> list = new ArrayList<>();
+		for (Friendship f : rows) {
+			// 프로필이 없는 친구는 뺀다(전에 프로필과 이어 읽던 것과 같다).
+			UserProfile p = people.get(f.otherThan(me));
+			if (p != null) {
+				list.add(friendItem(f, p));
+			}
+		}
+		return new FriendList(list);
 	}
 
 	// 친구가 아니어도 204다. 끊으면 서로의 프로필 캐릭터가 상대 카드 화자에서 빠진다(characters.md 3장).
 	@Transactional
 	public void unfriend(long me, long userId) {
 		detacher.detachBetween(me, userId);
-		jdbc.update("""
-				delete from friendships where status = 'ACCEPTED'
-				and ((requester_id = ? and addressee_id = ?) or (requester_id = ? and addressee_id = ?))
-				""", me, userId, userId, me);
+		friendships.deleteAcceptedBetween(me, userId);
 	}
 
 	// 회원이면 누구나 차단할 수 있다(사용자 결정, 2026-11-11). 친구를 차단하면 친구 관계가 저절로 끊긴다.
@@ -197,134 +201,111 @@ public class FriendService {
 		if (userId == me) {
 			throw new ApiException(ErrorCode.CANNOT_FRIEND_SELF);
 		}
-		Boolean exists = jdbc.queryForObject("select exists (select 1 from user_profiles where user_id = ?)",
-				Boolean.class, userId);
-		if (!Boolean.TRUE.equals(exists)) {
+		if (!profiles.existsById(userId)) {
 			throw new ApiException(ErrorCode.USER_NOT_FOUND);
 		}
 		lockPair(me, userId);
 		if (blocked(me, userId)) {
 			return;
 		}
-		findPair(me, userId).ifPresent(p -> jdbc.update("delete from friendships where id = ?", p.id()));
+		friendships.deleteBetween(me, userId);
 		detacher.detachBetween(me, userId);
-		jdbc.update("insert into user_blocks (blocker_id, blocked_id, hide_in_rooms) values (?, ?, ?) on conflict do nothing",
-				me, userId, hideInRooms);
+		// 상대 프로필 줄을 잠근 뒤라 같은 차단이 동시에 들어오지 않는다.
+		blocks.save(new UserBlock(me, userId, hideInRooms));
 	}
 
 	// 방에서 그 사람 글 숨기기 설정을 바꾼다. 차단한 사람이 아니면 404(초안).
 	@Transactional
 	public void updateBlock(long me, long userId, boolean hideInRooms) {
-		if (jdbc.update("update user_blocks set hide_in_rooms = ? where blocker_id = ? and blocked_id = ?", hideInRooms, me,
-				userId) == 0) {
-			throw new ApiException(ErrorCode.USER_NOT_FOUND);
-		}
+		blocks.findById(new UserBlock.Key(me, userId))
+			.orElseThrow(() -> new ApiException(ErrorCode.USER_NOT_FOUND))
+			.changeHideInRooms(hideInRooms);
 	}
 
 	// 차단한 사람 목록(최신순).
 	@Transactional(readOnly = true)
 	public BlockList blocks(long me) {
-		return new BlockList(jdbc.query("""
-				select b.blocked_id, b.created_at, b.hide_in_rooms, p.nickname, p.friend_code
-				from user_blocks b join user_profiles p on p.user_id = b.blocked_id
-				where b.blocker_id = ?
-				order by b.created_at desc, b.blocked_id desc
-				""", (rs, n) -> new BlockItem(rs.getLong("blocked_id"), rs.getString("nickname"),
-				rs.getString("friend_code"), rs.getObject("created_at", OffsetDateTime.class),
-				rs.getBoolean("hide_in_rooms")), me));
+		List<UserBlock> rows = blocks.findAllByBlockerIdOrderByCreatedAtDescBlockedIdDesc(me);
+		Map<Long, UserProfile> people = profilesOf(rows.stream().map(UserBlock::getBlockedId).toList());
+		List<BlockItem> list = new ArrayList<>();
+		for (UserBlock b : rows) {
+			// 프로필이 없는 사람은 뺀다(전에 프로필과 이어 읽던 것과 같다).
+			UserProfile p = people.get(b.getBlockedId());
+			if (p != null) {
+				list.add(new BlockItem(b.getBlockedId(), p.getNickname(), p.getFriendCode(), b.getCreatedAt(),
+						b.isHideInRooms()));
+			}
+		}
+		return new BlockList(list);
 	}
 
 	// 차단을 풀어도 친구로 돌아가지 않는다. 차단한 적 없어도 204다.
 	@Transactional
 	public void unblock(long me, long userId) {
-		jdbc.update("delete from user_blocks where blocker_id = ? and blocked_id = ?", me, userId);
+		blocks.deleteBlock(me, userId);
+	}
+
+	// 받은 친구 요청이 있는지 본다(알림 화면의 친구 새 소식 점).
+	@Transactional(readOnly = true)
+	public boolean hasReceivedRequests(long me) {
+		return friendships.existsByAddresseeIdAndStatus(me, FriendshipStatus.PENDING);
 	}
 
 	// 닉네임이 없으면(프로필이 없는 경우 포함) 요청을 보내거나 수락할 수 없다.
 	private void requireNickname(long userId) {
-		List<String> nickname = jdbc.queryForList("select nickname from user_profiles where user_id = ?", String.class,
-				userId);
-		if (nickname.isEmpty() || nickname.getFirst() == null) {
+		if (profiles.findById(userId).map(UserProfile::getNickname).isEmpty()) {
 			throw new ApiException(ErrorCode.PROFILE_REQUIRED);
 		}
 	}
 
 	// 두 사람의 프로필 줄을 회원 ID 순서로 잠근다(교착 막기). 프로필이 없는 쪽은 잠그지 않는다.
 	private void lockPair(long a, long b) {
-		jdbc.queryForList("select user_id from user_profiles where user_id in (?, ?) order by user_id for update",
-				Long.class, Math.min(a, b), Math.max(a, b));
+		profiles.findAllByIdForUpdate(List.of(Math.min(a, b), Math.max(a, b)));
 	}
 
 	// blocker가 blockedUser를 차단했는지 본다.
 	private boolean blocked(long blocker, long blockedUser) {
-		return Boolean.TRUE.equals(jdbc.queryForObject(
-				"select exists (select 1 from user_blocks where blocker_id = ? and blocked_id = ?)", Boolean.class,
-				blocker, blockedUser));
-	}
-
-	// 두 사람 사이의 친구 요청이나 친구 줄을 찾는다.
-	private Optional<Friendship> findPair(long a, long b) {
-		return jdbc.query("""
-				select id, requester_id, addressee_id, status, created_at from friendships
-				where (requester_id = ? and addressee_id = ?) or (requester_id = ? and addressee_id = ?)
-				""", (rs, n) -> friendship(rs), a, b, b, a).stream().findFirst();
+		return blocks.existsById(new UserBlock.Key(blocker, blockedUser));
 	}
 
 	// 내가 받은 대기 중인 요청을 찾는다. 없으면 404다.
 	private Friendship receivedRequest(long me, long requestId) {
-		return jdbc.query("""
-				select id, requester_id, addressee_id, status, created_at from friendships
-				where id = ? and addressee_id = ? and status = 'PENDING'
-				""", (rs, n) -> friendship(rs), requestId, me)
-			.stream()
-			.findFirst()
+		return friendships.findByIdAndAddresseeIdAndStatus(requestId, me, FriendshipStatus.PENDING)
 			.orElseThrow(FriendService::requestNotFound);
 	}
 
 	// 나나 상대의 친구가 이미 100명이면 409.
 	private void checkLimit(long a, long b) {
 		for (long userId : new long[] { a, b }) {
-			Long count = jdbc.queryForObject(
-					"select count(*) from friendships where status = 'ACCEPTED' and (requester_id = ? or addressee_id = ?)",
-					Long.class, userId, userId);
-			if (count != null && count >= FRIEND_LIMIT) {
+			if (friendships.countFriendsOf(userId) >= FRIEND_LIMIT) {
 				throw new ApiException(ErrorCode.FRIEND_LIMIT);
 			}
 		}
 	}
 
-	// 친구가 된 시각은 ACCEPTED로 바꾼 updated_at이다.
-	private void accept(long friendshipId) {
-		jdbc.update("update friendships set status = 'ACCEPTED', updated_at = current_timestamp where id = ?",
-				friendshipId);
-	}
-
 	// 회원 한 명의 닉네임과 친구 코드를 읽는다.
 	private FriendUser friendUser(long userId) {
-		return jdbc.queryForObject("select user_id, nickname, friend_code from user_profiles where user_id = ?",
-				(rs, n) -> new FriendUser(rs.getLong("user_id"), rs.getString("nickname"), rs.getString("friend_code")),
-				userId);
+		return friendUser(profiles.findById(userId).orElseThrow());
 	}
 
-	// 내 친구 목록. extra는 더 거를 조건(예: 친구 관계 ID 하나).
-	private List<FriendItem> friendItems(long me, String extra, Long arg) {
-		String sql = """
-				select f.updated_at, p.user_id, p.nickname, p.friend_code, p.character_thumb_key
-				from friendships f
-				join user_profiles p on p.user_id = case when f.requester_id = ? then f.addressee_id else f.requester_id end
-				where f.status = 'ACCEPTED' and (f.requester_id = ? or f.addressee_id = ?) %s
-				order by f.updated_at desc, f.id desc
-				""".formatted(extra);
-		Object[] args = arg == null ? new Object[] { me, me, me } : new Object[] { me, me, me, arg };
-		return jdbc.query(sql, (rs, n) -> new FriendItem(rs.getLong("user_id"), rs.getString("nickname"),
-				rs.getString("friend_code"), rs.getObject("updated_at", OffsetDateTime.class),
-				characters.friendCharacter(rs.getString("character_thumb_key"))), args);
+	// 프로필을 FriendUser로 바꾼다.
+	private static FriendUser friendUser(UserProfile p) {
+		return new FriendUser(p.getUserId(), p.getNickname(), p.getFriendCode());
 	}
 
-	// DB 한 줄을 Friendship으로 바꾼다.
-	private static Friendship friendship(java.sql.ResultSet rs) throws java.sql.SQLException {
-		return new Friendship(rs.getLong("id"), rs.getLong("requester_id"), rs.getLong("addressee_id"),
-				rs.getString("status"), rs.getObject("created_at", OffsetDateTime.class));
+	// 친구 줄과 친구의 프로필로 친구 목록 한 줄을 만든다. 친구가 된 시각은 ACCEPTED로 바꾼 updated_at이다.
+	private FriendItem friendItem(Friendship f, UserProfile p) {
+		return new FriendItem(p.getUserId(), p.getNickname(), p.getFriendCode(), f.getUpdatedAt(),
+				characters.friendCharacter(p.getCharacterThumbKey()));
+	}
+
+	// 회원 ID로 프로필을 한 번에 읽는다.
+	private Map<Long, UserProfile> profilesOf(Collection<Long> userIds) {
+		Map<Long, UserProfile> result = new HashMap<>();
+		if (!userIds.isEmpty()) {
+			profiles.findAllById(userIds).forEach(p -> result.put(p.getUserId(), p));
+		}
+		return result;
 	}
 
 	// 친구 코드를 찾지 못했다는 오류를 만든다.

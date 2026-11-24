@@ -3,11 +3,11 @@ package com.lolog.api.domain.job.repository;
 import com.lolog.api.domain.job.entity.Job;
 import jakarta.persistence.LockModeType;
 import java.time.OffsetDateTime;
-import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -49,8 +49,40 @@ public interface JobRepository extends JpaRepository<Job, Long> {
 	@Query(value = "select p.recording_id from jobs j join recording_parts p on p.id = j.recording_part_id where j.id = :jobId", nativeQuery = true)
 	Optional<Long> findRecordingIdByJobId(@Param("jobId") Long jobId);
 
-	// 주어진 글 중 TEXT 작업이 실패한 글의 ID.
-	@Query("select distinct j.textId from Job j where j.textId in :textIds and j.status = 'FAILED'")
-	List<Long> findFailedTextIds(@Param("textIds") Collection<Long> textIds);
+	// since 뒤에 받은 이 회원의 프로필 캐릭터 작업 수. 실패한 작업은 세지 않지만, 사용자가 지워서 멈춘 작업은 센다.
+	@Query("""
+			select count(j) from Job j where j.userId = :userId and j.jobType = 'AVATAR'
+			  and (j.status <> 'FAILED' or j.failReason = '캐릭터를 지움') and j.createdAt >= :since
+			""")
+	long countAvatarJobsSince(@Param("userId") Long userId, @Param("since") OffsetDateTime since);
+
+	// 회원의 type 작업 중 아직 대기 중인(QUEUED) 것을 모두 성공으로 끝낸다.
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query("""
+			update Job j set j.status = 'DONE', j.updatedAt = current_timestamp
+			where j.userId = :userId and j.jobType = :type and j.status = 'QUEUED'
+			""")
+	int completeQueued(@Param("userId") Long userId, @Param("type") String type);
+
+	// 회원의 type 작업 중 아직 대기 중인(QUEUED) 것을 모두 실패로 끝내고 이유를 남긴다.
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query("""
+			update Job j set j.status = 'FAILED', j.failReason = :reason, j.updatedAt = current_timestamp
+			where j.userId = :userId and j.jobType = :type and j.status = 'QUEUED'
+			""")
+	int failQueued(@Param("userId") Long userId, @Param("type") String type, @Param("reason") String reason);
+
+	// 영상의 그 단계(type) 작업을 아직 끝나지 않았으면 성공으로 끝낸다.
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query("""
+			update Job j set j.status = 'DONE', j.updatedAt = current_timestamp
+			where j.videoId = :videoId and j.jobType = :type and j.status not in ('DONE', 'FAILED')
+			""")
+	int completeVideoStep(@Param("videoId") Long videoId, @Param("type") String type);
+
+	// 회원의 작업을 모두 지운다(탈퇴).
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query("delete from Job j where j.userId = :userId")
+	int deleteAllByUserId(@Param("userId") Long userId);
 
 }

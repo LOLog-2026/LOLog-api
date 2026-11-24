@@ -1,9 +1,10 @@
 package com.lolog.api.domain.inbox.service;
 
+import com.lolog.api.domain.notification.repository.NotificationRepository;
 import com.lolog.api.global.util.SafeLog;
+import java.time.OffsetDateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -13,11 +14,11 @@ public class NotificationCleanupJob {
 
 	private static final Logger log = LoggerFactory.getLogger(NotificationCleanupJob.class);
 
-	private final JdbcTemplate jdbc;
+	private final NotificationRepository notifications;
 
-	// DB를 받는다.
-	public NotificationCleanupJob(JdbcTemplate jdbc) {
-		this.jdbc = jdbc;
+	// 알림 리포지토리를 받는다.
+	public NotificationCleanupJob(NotificationRepository notifications) {
+		this.notifications = notifications;
 	}
 
 	// 지난 알림을 지우고, 실패하면 로그만 남긴다.
@@ -25,8 +26,7 @@ public class NotificationCleanupJob {
 			initialDelayString = "${lolog.inbox.cleanup-initial-delay-ms:60000}")
 	public void run() {
 		try {
-			int deleted = jdbc.update("delete from notifications where created_at < current_timestamp - make_interval(days => ?)",
-					InboxService.KEEP_DAYS);
+			int deleted = notifications.deleteCreatedBefore(OffsetDateTime.now().minusDays(InboxService.KEEP_DAYS));
 			if (deleted > 0) {
 				log.info("30일 지난 알림 {}개를 지웠습니다.", deleted);
 			}

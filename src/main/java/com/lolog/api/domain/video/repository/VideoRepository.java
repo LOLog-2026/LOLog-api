@@ -9,6 +9,7 @@ import java.util.Optional;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -36,5 +37,10 @@ public interface VideoRepository extends JpaRepository<Video, Long> {
 
 	// 그 카드에 주어진 상태의 영상이 있는지 본다.
 	boolean existsByCardIdAndStatusIn(Long cardId, Collection<VideoStatus> statuses);
+
+	// 회원의 영상을 모두 지운다(탈퇴).
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query("delete from Video v where v.userId = :userId")
+	int deleteAllByUserId(@Param("userId") Long userId);
 
 }

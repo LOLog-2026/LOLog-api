@@ -80,6 +80,9 @@ class InboxApiTests {
 	@Autowired
 	ObjectMapper objectMapper;
 
+	@Autowired
+	NotificationCleanupJob cleanupJob;
+
 	private long user(String nickname) throws Exception {
 		long id = USERS.incrementAndGet();
 		call(patch("/api/me/profile").contentType(MediaType.APPLICATION_JSON).content("{\"nickname\":\"" + nickname + "\"}"),
@@ -180,7 +183,7 @@ class InboxApiTests {
 		call(get("/api/inbox").param("cursor", "nope"), me).andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.field").value("cursor"));
 
-		new NotificationCleanupJob(jdbc).run();
+		cleanupJob.run();
 		assertThat(jdbc.queryForObject("select count(*) from notifications where user_id = ?", Long.class, me)).isEqualTo(25);
 	}
 

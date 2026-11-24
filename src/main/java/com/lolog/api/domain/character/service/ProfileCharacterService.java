@@ -5,6 +5,8 @@ import com.lolog.api.domain.friend.service.ProfileService;
 import com.lolog.api.domain.job.entity.Job;
 import com.lolog.api.domain.job.repository.JobRepository;
 import com.lolog.api.domain.notification.service.PushService;
+import com.lolog.api.domain.user.entity.UserProfile;
+import com.lolog.api.domain.user.repository.UserProfileRepository;
 import com.lolog.api.global.error.ApiException;
 import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.storage.ImageStorage;
@@ -16,11 +18,12 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.time.OffsetDateTime;
-import java.util.List;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import javax.imageio.ImageIO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -41,7 +44,9 @@ public class ProfileCharacterService {
 	static final int THUMB_SIZE = 256;
 	static final int MAX_APPEARANCE = 200;
 
-	private final JdbcTemplate jdbc;
+	private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+
+	private final UserProfileRepository userProfiles;
 	private final ImageStorage storage;
 	private final ProfileService profiles;
 	private final JobRepository jobs;
@@ -52,12 +57,12 @@ public class ProfileCharacterService {
 	private final VoiceCloneService voiceClones;
 	private final DefaultCharacterService defaultCharacters;
 
-	public ProfileCharacterService(JdbcTemplate jdbc, ImageStorage storage, ProfileService profiles, JobRepository jobs,
+	public ProfileCharacterService(UserProfileRepository userProfiles, ImageStorage storage, ProfileService profiles, JobRepository jobs,
 			ComicPublisher publisher, PushService push, CharacterDetacher detacher, CharacterViews views,
 			VoiceCloneService voiceClones, DefaultCharacterService defaultCharacters) {
 		this.voiceClones = voiceClones;
 		this.defaultCharacters = defaultCharacters;
-		this.jdbc = jdbc;
+		this.userProfiles = userProfiles;
 		this.storage = storage;
 		this.profiles = profiles;
 		this.jobs = jobs;
@@ -74,10 +79,6 @@ public class ProfileCharacterService {
 			VoiceCloneService.VoiceCloneView voiceClone) {
 	}
 
-	// DB에서 읽은 프로필 캐릭터 상태.
-	private record State(String status, String thumbKey, OffsetDateTime updatedAt) {
-	}
-
 	// 사진을 올려 만들기·다시 만들기. 닉네임은 없어도 된다.
 	@Transactional
 	public ProfileCharacterResponse upload(long userId, byte[] photo) {
@@ -92,26 +93,19 @@ public class ProfileCharacterService {
 			throw ApiException.invalid("photo");
 		}
 		profiles.ensure(userId);
-		State state = lock(userId);
-		if ("PROCESSING".equals(state.status())) {
+		UserProfile profile = lock(userId);
+		if (UserProfile.CHARACTER_PROCESSING.equals(profile.getCharacterStatus())) {
 			throw new ApiException(ErrorCode.CHARACTER_IN_PROGRESS);
 		}
 		// 한국 시간 오늘 0시부터 받은 것(202). 실패한 작업은 세지 않는다. 만드는 중에 사용자가 지워서 멈춘 작업은
 		// 실패가 아니라 받은 것이라 센다(characters.md "202를 받은 것을 세고").
-		Long today = jdbc.queryForObject("""
-				select count(*) from jobs where user_id = ? and job_type = 'AVATAR'
-				  and (status <> 'FAILED' or fail_reason = '캐릭터를 지움')
-				  and created_at >= (date_trunc('day', now() at time zone 'Asia/Seoul') at time zone 'Asia/Seoul')
-				""", Long.class, userId);
-		if (today != null && today >= DAILY_LIMIT) {
+		OffsetDateTime midnight = ZonedDateTime.now(SEOUL).truncatedTo(ChronoUnit.DAYS).toOffsetDateTime();
+		if (jobs.countAvatarJobsSince(userId, midnight) >= DAILY_LIMIT) {
 			throw new ApiException(ErrorCode.CHARACTER_LIMIT);
 		}
 
 		storage.put(ImageStorage.profilePhotoKey(userId), photo, contentType);
-		jdbc.update("""
-				update user_profiles set character_status = 'PROCESSING', character_updated_at = current_timestamp,
-				    updated_at = current_timestamp where user_id = ?
-				""", userId);
+		profile.startCharacter();
 		long jobId = jobs.save(Job.avatar(userId)).getId();
 		afterCommit(() -> publisher.publishQuietly(jobId));
 		return response(userId);
@@ -122,20 +116,13 @@ public class ProfileCharacterService {
 	@Transactional
 	public void delete(long userId) {
 		voiceClones.delete(userId);
-		List<State> found = jdbc.query("select character_status, character_thumb_key, character_updated_at "
-				+ "from user_profiles where user_id = ? for update", (rs, n) -> state(rs), userId);
-		if (found.isEmpty() || found.getFirst().status() == null) {
+		UserProfile profile = userProfiles.findByIdForUpdate(userId).orElse(null);
+		if (profile == null || profile.getCharacterStatus() == null) {
 			return;
 		}
-		jdbc.update("""
-				update user_profiles set character_status = null, character_key = null, character_thumb_key = null,
-				    character_appearance = null, character_voice = null, character_updated_at = current_timestamp,
-				    updated_at = current_timestamp
-				where user_id = ?
-				""", userId);
+		profile.removeCharacter();
 		// 만드는 중이던 작업은 실패로 둔다. 워커가 나중에 사진을 찾으면 404라 그 메시지를 버린다.
-		jdbc.update("update jobs set status = 'FAILED', fail_reason = '캐릭터를 지움', updated_at = current_timestamp "
-				+ "where user_id = ? and job_type = 'AVATAR' and status = 'QUEUED'", userId);
+		jobs.failQueued(userId, "AVATAR", "캐릭터를 지움");
 		detacher.detachEverywhere(userId);
 		afterCommit(() -> {
 			deleteQuietly(ImageStorage.profileCharacterKey(userId));
@@ -147,9 +134,8 @@ public class ProfileCharacterService {
 	// 워커가 원본 사진을 받는다. 만드는 중이 아니면(이미 끝남, 지움, 회원 없음) 404 CHARACTER_NOT_FOUND.
 	@Transactional(readOnly = true)
 	public ImageStorage.StoredObject photo(long userId) {
-		List<String> status = jdbc.queryForList("select character_status from user_profiles where user_id = ?",
-				String.class, userId);
-		if (status.isEmpty() || !"PROCESSING".equals(status.getFirst())) {
+		String status = userProfiles.findById(userId).map(UserProfile::getCharacterStatus).orElse(null);
+		if (!UserProfile.CHARACTER_PROCESSING.equals(status)) {
 			throw notFound();
 		}
 		try {
@@ -171,22 +157,15 @@ public class ProfileCharacterService {
 		if (text.isEmpty() || text.length() > MAX_APPEARANCE) {
 			throw ApiException.invalid("appearance");
 		}
-		List<State> found = jdbc.query("select character_status, character_thumb_key, character_updated_at "
-				+ "from user_profiles where user_id = ? for update", (rs, n) -> state(rs), userId);
-		if (found.isEmpty() || !"PROCESSING".equals(found.getFirst().status())) {
-			throw notFound();
-		}
+		UserProfile profile = userProfiles.findByIdForUpdate(userId)
+			.filter(p -> UserProfile.CHARACTER_PROCESSING.equals(p.getCharacterStatus()))
+			.orElseThrow(ProfileCharacterService::notFound);
 		String key = ImageStorage.profileCharacterKey(userId);
 		String thumbKey = ImageStorage.profileCharacterThumbKey(userId);
 		storage.putPng(key, png);
 		storage.putPng(thumbKey, thumbnail(image));
-		jdbc.update("""
-				update user_profiles set character_status = 'READY', character_key = ?, character_thumb_key = ?,
-				    character_appearance = ?, character_updated_at = current_timestamp, updated_at = current_timestamp
-				where user_id = ?
-				""", key, thumbKey, text, userId);
-		jdbc.update("update jobs set status = 'DONE', updated_at = current_timestamp "
-				+ "where user_id = ? and job_type = 'AVATAR' and status = 'QUEUED'", userId);
+		profile.characterReady(key, thumbKey, text);
+		jobs.completeQueued(userId, "AVATAR");
 		afterCommit(() -> deleteQuietly(ImageStorage.profilePhotoKey(userId)));
 		push.notify(userId, PushService.profileCharacterReady());
 	}
@@ -201,15 +180,11 @@ public class ProfileCharacterService {
 		}
 		job.fail(reason);
 		long userId = job.getUserId();
-		List<State> found = jdbc.query("select character_status, character_thumb_key, character_updated_at "
-				+ "from user_profiles where user_id = ? for update", (rs, n) -> state(rs), userId);
-		if (found.isEmpty() || !"PROCESSING".equals(found.getFirst().status())) {
+		UserProfile profile = userProfiles.findByIdForUpdate(userId).orElse(null);
+		if (profile == null || !UserProfile.CHARACTER_PROCESSING.equals(profile.getCharacterStatus())) {
 			return;
 		}
-		jdbc.update("""
-				update user_profiles set character_status = 'FAILED', character_updated_at = current_timestamp,
-				    updated_at = current_timestamp where user_id = ?
-				""", userId);
+		profile.characterFailed();
 		afterCommit(() -> deleteQuietly(ImageStorage.profilePhotoKey(userId)));
 		push.notify(userId, PushService.profileCharacterFailed());
 	}
@@ -220,15 +195,11 @@ public class ProfileCharacterService {
 	@Transactional
 	public void chooseVoice(long userId, String voice) {
 		// "프로필 캐릭터가 있을 때"는 쓸 수 있는 그림이 있을 때다. 다시 만드는 중·실패여도 예전 그림이 있으면 고를 수 있다.
-		List<String> key = jdbc.queryForList("select character_key from user_profiles where user_id = ? for update",
-				String.class, userId);
-		if (key.isEmpty() || key.getFirst() == null) {
-			throw new ApiException(ErrorCode.CHARACTER_NOT_FOUND);
-		}
-		if ("self".equals(voice)) {
-			String clone = jdbc.queryForObject("select voice_clone_status from user_profiles where user_id = ?",
-					String.class, userId);
-			if (!"READY".equals(clone)) {
+		UserProfile profile = userProfiles.findByIdForUpdate(userId)
+			.filter(p -> p.getCharacterKey() != null)
+			.orElseThrow(() -> new ApiException(ErrorCode.CHARACTER_NOT_FOUND));
+		if (UserProfile.SELF_VOICE.equals(voice)) {
+			if (!UserProfile.CHARACTER_READY.equals(profile.getVoiceCloneStatus())) {
 				throw new ApiException(ErrorCode.VOICE_CLONE_NOT_READY, "voice");
 			}
 		}
@@ -237,8 +208,7 @@ public class ProfileCharacterService {
 				throw new ApiException(ErrorCode.UNKNOWN_CHARACTER, "voice");
 			}
 		}
-		jdbc.update("update user_profiles set character_voice = ?, updated_at = current_timestamp where user_id = ?", voice,
-				userId);
+		profile.chooseVoice(voice);
 	}
 
 	// ProfileResponse.character와 같은 값
@@ -246,16 +216,9 @@ public class ProfileCharacterService {
 		return views.profileResponse(userId);
 	}
 
-	// 프로필 행을 잠그고 캐릭터 상태를 읽는다.
-	private State lock(long userId) {
-		return jdbc.queryForObject("select character_status, character_thumb_key, character_updated_at "
-				+ "from user_profiles where user_id = ? for update", (rs, n) -> state(rs), userId);
-	}
-
-	// DB 행을 State로 바꾼다.
-	private static State state(java.sql.ResultSet rs) throws java.sql.SQLException {
-		return new State(rs.getString("character_status"), rs.getString("character_thumb_key"),
-				rs.getObject("character_updated_at", OffsetDateTime.class));
+	// 프로필 행을 잠그고 읽는다.
+	private UserProfile lock(long userId) {
+		return userProfiles.findByIdForUpdate(userId).orElseThrow();
 	}
 
 	// 첫 바이트로 JPEG·PNG를 가린다. 둘 다 아니면 null.

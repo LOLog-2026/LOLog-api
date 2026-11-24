@@ -1,6 +1,5 @@
 package com.lolog.api.domain.text.service;
 
-import com.lolog.api.domain.blog.entity.BlogPost;
 import com.lolog.api.domain.blog.repository.BlogPostRepository;
 import com.lolog.api.domain.card.entity.Card;
 import com.lolog.api.domain.card.repository.CardRepository;
@@ -15,16 +14,15 @@ import com.lolog.api.domain.text.dto.TextDtos.TextResponse;
 import com.lolog.api.domain.text.dto.TextDtos.TextResult;
 import com.lolog.api.domain.text.dto.TextStatus;
 import com.lolog.api.domain.text.entity.Text;
+import com.lolog.api.domain.text.entity.TextSource;
 import com.lolog.api.domain.text.repository.TextRepository;
+import com.lolog.api.domain.text.repository.TextView;
 import com.lolog.api.global.error.ApiException;
 import com.lolog.api.global.error.ErrorCode;
 import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -98,53 +96,32 @@ public class TextService {
 	// 내 글 하나를 상태와 함께 돌려준다.
 	@Transactional(readOnly = true)
 	public TextResponse get(long userId, long id) {
-		Text text = texts.findByIdAndUserId(id, userId).orElseThrow(TextService::notFound);
-		TextProgress progress = statuses(List.of(text.getId())).get(text.getId());
+		TextView text = texts.findView(id, userId).orElseThrow(TextService::notFound);
 		// 블로그 글이면 원문 링크와 가져올 때 복사해 둔 블로그 이름(연결을 끊어도 남음)을 붙이고 본문은 보내지 않는다.
-		BlogPost post = text.isBlog() ? blogPosts.findById(text.getBlogPostId()).orElse(null) : null;
-		return new TextResponse(text.getId(), text.getSource().name(), progress.status(), progress.cardId(),
-				text.getTitle(), text.isBlog() ? null : text.getBody(), text.getPlace(), text.getSituation(),
-				post == null ? null : post.getLink(), post == null ? null : post.getBlogTitle(), text.isTruncated(),
-				text.getCreatedAt());
+		boolean blog = text.source() == TextSource.BLOG;
+		return new TextResponse(text.id(), text.source().name(), TextStatus.valueOf(text.status()), text.cardId(),
+				text.title(), blog ? null : text.body(), text.place(), text.situation(), blog ? text.link() : null,
+				blog ? text.blogTitle() : null, text.truncated(), text.createdAt());
 	}
 
-	// 글의 첫 카드와 상태.
-	public record TextProgress(Long cardId, TextStatus status) {
+	// 글 카드의 출처와 잘림. 녹음 카드인지 글 카드인지는 text_id로, 직접 쓴 글인지 블로그 글인지는 texts.source로 안다(texts.md 7장).
+	public record TextOrigin(String source, boolean truncated) {
 	}
 
-	// 가져온 블로그 글마다 그 글로 만든 글의 첫 카드와 상태. 글을 만들지 않은 블로그 글은 빠진다.
-	@Transactional(readOnly = true)
-	public Map<Long, TextProgress> progressByBlogPosts(Collection<Long> blogPostIds) {
-		Map<Long, TextProgress> result = new HashMap<>();
-		if (blogPostIds.isEmpty()) {
-			return result;
-		}
-		List<Text> found = texts.findByBlogPostIdIn(blogPostIds);
-		Map<Long, TextProgress> byText = statuses(found.stream().map(Text::getId).toList());
-		found.forEach(t -> result.put(t.getBlogPostId(), byText.get(t.getId())));
-		return result;
-	}
-
-	// 글마다 상태를 한 번에 정한다. 그 글로 만든 카드가 있으면 DONE, TEXT 작업이 실패면 FAILED, 그 밖에는 QUEUED
-	// (texts.md 2장 "상태 채우기"). 블로그 글 목록도 이것으로 채운다.
-	@Transactional(readOnly = true)
-	public Map<Long, TextProgress> statuses(Collection<Long> textIds) {
-		Map<Long, TextProgress> result = new HashMap<>();
+	// 글 ID마다 출처와 잘림을 읽는다.
+	public Map<Long, TextOrigin> origins(Collection<Long> textIds) {
+		Map<Long, TextOrigin> result = new HashMap<>();
 		if (textIds.isEmpty()) {
 			return result;
 		}
-		Map<Long, Long> firstCards = new HashMap<>();
-		for (Object[] row : cards.findFirstCardIdsByTextIds(textIds)) {
-			firstCards.put((Long) row[0], (Long) row[1]);
-		}
-		Set<Long> failed = new HashSet<>(jobs.findFailedTextIds(textIds));
-		for (Long textId : textIds) {
-			Long cardId = firstCards.get(textId);
-			TextStatus status = cardId != null ? TextStatus.DONE
-					: failed.contains(textId) ? TextStatus.FAILED : TextStatus.QUEUED;
-			result.put(textId, new TextProgress(cardId, status));
-		}
+		texts.findAllById(textIds)
+			.forEach(t -> result.put(t.getId(), new TextOrigin(t.getSource().name(), t.isTruncated())));
 		return result;
+	}
+
+	// 글 하나를 지운다(글 카드를 지울 때, texts.md 2장). 이미 없으면 그대로 둔다. 부르는 쪽의 트랜잭션 안에서 부른다.
+	public void delete(long textId) {
+		texts.deleteById(textId);
 	}
 
 	// 워커가 보낸 카드 한 장을 저장한다. 같은 jobId가 다시 오면(워커 재시도) 저장하지 않는다.

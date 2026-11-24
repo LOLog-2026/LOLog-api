@@ -15,7 +15,7 @@ import com.lolog.api.domain.blog.service.BlogFetcher.FetchException;
 import com.lolog.api.domain.blog.service.FeedLocator.Located;
 import com.lolog.api.domain.blog.service.FeedParser.Feed;
 import com.lolog.api.domain.blog.service.FeedParser.Item;
-import com.lolog.api.domain.text.service.TextService.TextProgress;
+import com.lolog.api.domain.text.dto.TextStatus;
 import com.lolog.api.domain.text.service.TextService;
 import com.lolog.api.global.error.ApiException;
 import com.lolog.api.global.error.ErrorCode;
@@ -25,7 +25,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -204,13 +203,11 @@ public class BlogService {
 		if (!sources.existsByIdAndUserId(id, userId)) {
 			throw notFound();
 		}
-		var found = blogPosts.findPage(id, params.before(), Limit.of(params.size() + 1));
-		Map<Long, TextProgress> progress = texts.progressByBlogPosts(found.stream().map(p -> p.getId()).toList());
-		List<Row> rows = found.stream().map(p -> {
-			TextProgress text = progress.get(p.getId());
-			return new Row(p.getId(), new BlogPost(p.getTitle(), p.getLink(), p.getCategory(), p.getPublishedAt(),
-					text == null ? null : text.cardId(), text == null ? null : text.status()));
-		}).toList();
+		List<Row> rows = blogPosts.findPage(id, params.before(), Limit.of(params.size() + 1))
+			.stream()
+			.map(p -> new Row(p.id(), new BlogPost(p.title(), p.link(), p.category(), p.publishedAt(), p.cardId(),
+					p.textId() == null ? null : TextStatus.valueOf(p.status()))))
+			.toList();
 		boolean more = rows.size() > params.size();
 		List<Row> shown = more ? rows.subList(0, params.size()) : rows;
 		return new BlogPostPage(shown.stream().map(Row::post).toList(),

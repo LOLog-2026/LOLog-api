@@ -1,5 +1,11 @@
 package com.lolog.api.domain.room.service;
 
+import com.lolog.api.domain.comic.entity.ComicStatus;
+import com.lolog.api.domain.comic.repository.ComicRepository;
+import com.lolog.api.domain.friend.entity.Friendship;
+import com.lolog.api.domain.friend.entity.FriendshipStatus;
+import com.lolog.api.domain.friend.repository.FriendshipRepository;
+import com.lolog.api.domain.friend.repository.UserBlockRepository;
 import com.lolog.api.domain.notification.service.PushService;
 import com.lolog.api.domain.room.dto.RoomDtos.InviteList;
 import com.lolog.api.domain.room.dto.RoomDtos.MessageList;
@@ -13,11 +19,26 @@ import com.lolog.api.domain.room.dto.RoomDtos.RoomMessage;
 import com.lolog.api.domain.room.dto.RoomDtos.RoomPost;
 import com.lolog.api.domain.room.dto.RoomDtos.RoomPostSummary;
 import com.lolog.api.domain.room.dto.RoomDtos.RoomRef;
+import com.lolog.api.domain.room.entity.Room;
+import com.lolog.api.domain.room.repository.ReceivedInviteView;
+import com.lolog.api.domain.room.repository.RoomInviteRepository;
+import com.lolog.api.domain.room.repository.RoomItemView;
+import com.lolog.api.domain.room.repository.RoomMemberRepository;
+import com.lolog.api.domain.room.repository.RoomMessageRepository;
+import com.lolog.api.domain.room.repository.RoomMessageView;
+import com.lolog.api.domain.room.repository.RoomPersonView;
+import com.lolog.api.domain.room.repository.RoomPostLikeRepository;
+import com.lolog.api.domain.room.repository.RoomPostRepository;
+import com.lolog.api.domain.room.repository.RoomPostView;
+import com.lolog.api.domain.room.repository.RoomRepository;
+import com.lolog.api.domain.room.repository.SentInviteView;
+import com.lolog.api.domain.user.entity.UserProfile;
+import com.lolog.api.domain.user.repository.UserProfileRepository;
+import com.lolog.api.domain.user.repository.UserSuspensionRepository;
 import com.lolog.api.global.error.ApiException;
 import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.storage.ImageStorage;
 import com.lolog.api.global.web.PageRequestParams;
-import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -25,10 +46,9 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
-import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,14 +65,36 @@ public class RoomService {
 	static final int MESSAGE_PAGE = 50;
 	static final int ROOM_LIMIT = 20;
 
-	private final JdbcTemplate jdbc;
-	private final NamedParameterJdbcTemplate named;
+	private final RoomRepository rooms;
+	private final RoomMemberRepository members;
+	private final RoomInviteRepository invites;
+	private final RoomPostRepository posts;
+	private final RoomPostLikeRepository likes;
+	private final RoomMessageRepository messages;
+	private final UserProfileRepository profiles;
+	private final UserSuspensionRepository suspensions;
+	private final FriendshipRepository friendships;
+	private final UserBlockRepository blocks;
+	private final ComicRepository comics;
 	private final ImageStorage storage;
 	private final PushService push;
 
-	public RoomService(JdbcTemplate jdbc, NamedParameterJdbcTemplate named, ImageStorage storage, PushService push) {
-		this.jdbc = jdbc;
-		this.named = named;
+	// 방 도메인 리포지토리와 회원·친구·만화 리포지토리, 저장소, 푸시를 받는다.
+	public RoomService(RoomRepository rooms, RoomMemberRepository members, RoomInviteRepository invites,
+			RoomPostRepository posts, RoomPostLikeRepository likes, RoomMessageRepository messages,
+			UserProfileRepository profiles, UserSuspensionRepository suspensions, FriendshipRepository friendships,
+			UserBlockRepository blocks, ComicRepository comics, ImageStorage storage, PushService push) {
+		this.rooms = rooms;
+		this.members = members;
+		this.invites = invites;
+		this.posts = posts;
+		this.likes = likes;
+		this.messages = messages;
+		this.profiles = profiles;
+		this.suspensions = suspensions;
+		this.friendships = friendships;
+		this.blocks = blocks;
+		this.comics = comics;
 		this.storage = storage;
 		this.push = push;
 	}
@@ -62,10 +104,7 @@ public class RoomService {
 	// 마지막 소식이 최근인 방이 위(소식이 없으면 만든 시각)
 	@Transactional(readOnly = true)
 	public RoomList rooms(long me) {
-		List<Long> ids = jdbc.queryForList("""
-				select r.id from rooms r join room_members m on m.room_id = r.id and m.user_id = ?
-				order by coalesce(r.last_activity_at, r.created_at) desc, r.id desc
-				""", Long.class, me);
+		List<Long> ids = rooms.findIdsOfMember(me);
 		return new RoomList(items(ids, me));
 	}
 
@@ -77,16 +116,15 @@ public class RoomService {
 		if (memberIds.size() + 1 > MEMBER_MAX) {
 			throw memberLimit();
 		}
-		List<String> nickname = jdbc.queryForList("select nickname from user_profiles where user_id = ?", String.class, me);
-		if (nickname.isEmpty() || nickname.getFirst() == null) {
+		// 한 사람의 방 20개 제한을 동시에 넘기지 않게 프로필 줄을 처음 읽을 때 잠근다.
+		Optional<UserProfile> profile = lockUser(me);
+		if (profile.isEmpty() || profile.get().getNickname() == null) {
 			throw new ApiException(ErrorCode.PROFILE_REQUIRED);
 		}
 		requireFriends(me, memberIds, "memberIds");
-		lockUser(me);
 		checkRoomLimit(me);
-		long roomId = jdbc.queryForObject("insert into rooms (name, created_by, owner_id) values (?, ?, ?) returning id",
-				Long.class, trimmed, me, me);
-		jdbc.update("insert into room_members (room_id, user_id, created_at) values (?, ?, clock_timestamp())", roomId, me);
+		long roomId = rooms.save(new Room(trimmed, me)).getId();
+		members.insert(roomId, me);
 		// "방을 만들었어요" 줄. 마지막 소식에도 보인다(앱 PR #53 화면과 같게).
 		addMessage(roomId, me, "CREATED", null, null);
 		sendInvites(me, roomId, trimmed, memberIds);
@@ -104,9 +142,9 @@ public class RoomService {
 	@Transactional
 	public RoomItem rename(long me, long roomId, String name) {
 		requireMember(me, roomId);
-		requireOwner(me, roomId);
+		Room room = requireOwner(me, rooms.findById(roomId));
 		String trimmed = roomName(name);
-		jdbc.update("update rooms set name = ?, updated_at = current_timestamp where id = ?", trimmed, roomId);
+		room.rename(trimmed);
 		return items(List.of(roomId), me).getFirst();
 	}
 
@@ -114,12 +152,10 @@ public class RoomService {
 	@Transactional
 	public void disband(long me, long roomId) {
 		requireMember(me, roomId);
-		lockRoom(roomId);
-		requireOwner(me, roomId);
-		String name = jdbc.queryForObject("select name from rooms where id = ?", String.class, roomId);
-		List<Long> others = jdbc.queryForList("select user_id from room_members where room_id = ? and user_id <> ?",
-				Long.class, roomId, me);
-		jdbc.update("delete from rooms where id = ?", roomId);
+		Room room = requireOwner(me, lockRoom(roomId));
+		String name = room.getName();
+		List<Long> others = members.findOtherUserIds(roomId, me);
+		rooms.delete(room);
 		others.forEach(userId -> push.notify(userId, PushService.roomDisbanded(name)));
 	}
 
@@ -127,12 +163,11 @@ public class RoomService {
 	@Transactional
 	public void kick(long me, long roomId, long userId) {
 		requireMember(me, roomId);
-		lockRoom(roomId);
-		requireOwner(me, roomId);
+		requireOwner(me, lockRoom(roomId));
 		if (userId == me) {
 			throw ApiException.invalid("userId");
 		}
-		if (jdbc.update("delete from room_members where room_id = ? and user_id = ?", roomId, userId) == 0) {
+		if (members.deleteMember(roomId, userId) == 0) {
 			throw new ApiException(ErrorCode.USER_NOT_FOUND);
 		}
 	}
@@ -142,35 +177,28 @@ public class RoomService {
 	@Transactional
 	public void leave(long me, long roomId, Long newOwnerId) {
 		requireMember(me, roomId);
-		lockRoom(roomId);
-		Long owner = ownerOf(roomId);
-		Long others = jdbc.queryForObject("select count(*) from room_members where room_id = ? and user_id <> ?", Long.class,
-				roomId, me);
-		if (owner != null && owner == me && others != null && others > 0) {
+		Optional<Room> room = lockRoom(roomId);
+		Long owner = room.map(Room::getOwnerId).orElse(null);
+		long others = members.countByRoomIdAndUserIdNot(roomId, me);
+		if (owner != null && owner == me && others > 0) {
 			if (newOwnerId == null) {
 				throw new ApiException(ErrorCode.NEW_OWNER_REQUIRED);
 			}
-			Boolean member = jdbc.queryForObject(
-					"select exists (select 1 from room_members where room_id = ? and user_id = ?)", Boolean.class, roomId,
-					newOwnerId);
-			if (newOwnerId == me || !Boolean.TRUE.equals(member)) {
+			if (newOwnerId == me || !members.existsByRoomIdAndUserId(roomId, newOwnerId)) {
 				throw ApiException.invalid("newOwnerId");
 			}
-			jdbc.update("update rooms set owner_id = ?, updated_at = current_timestamp where id = ?", newOwnerId, roomId);
+			// 아래 멤버 지우기가 먼저 이 변경을 DB에 쓴다(flushAutomatically).
+			room.get().changeOwner(newOwnerId);
 		}
-		jdbc.update("delete from room_members where room_id = ? and user_id = ?", roomId, me);
-		removeEmptyOrHandOver(jdbc, roomId);
+		members.deleteMember(roomId, me);
+		removeEmptyOrHandOver(roomId);
 	}
 
 	// 멤버가 없으면 방을 지우고, 방장이 멤버가 아니면 가장 먼저 들어온 멤버에게 넘긴다. 탈퇴할 때도 쓴다.
-	public static void removeEmptyOrHandOver(JdbcTemplate jdbc, long roomId) {
-		jdbc.update("delete from rooms r where r.id = ? and not exists (select 1 from room_members m where m.room_id = r.id)",
-				roomId);
-		jdbc.update("""
-				update rooms r set owner_id = (select m.user_id from room_members m where m.room_id = r.id
-				  order by m.created_at, m.user_id limit 1), updated_at = current_timestamp
-				where r.id = ? and not exists (select 1 from room_members m where m.room_id = r.id and m.user_id = r.owner_id)
-				""", roomId);
+	@Transactional
+	public void removeEmptyOrHandOver(long roomId) {
+		rooms.deleteIfEmpty(roomId);
+		rooms.handOverIfOwnerLeft(roomId);
 	}
 
 	// ---- 초대 ----
@@ -179,31 +207,24 @@ public class RoomService {
 	@Transactional
 	public InviteList invite(long me, long roomId, List<Long> userIds) {
 		requireMember(me, roomId);
-		lockRoom(roomId);
-		requireOwner(me, roomId);
+		Room room = requireOwner(me, lockRoom(roomId));
 		checkInvitees(me, userIds, "userIds", "초대할 친구를 한 명 이상 골라 주세요.");
 		requireFriends(me, userIds, "userIds");
 		for (int i = 0; i < userIds.size(); i++) {
-			Boolean member = jdbc.queryForObject(
-					"select exists (select 1 from room_members where room_id = ? and user_id = ?)", Boolean.class, roomId,
-					userIds.get(i));
-			if (Boolean.TRUE.equals(member)) {
+			if (members.existsByRoomIdAndUserId(roomId, userIds.get(i))) {
 				throw ApiException.invalid("userIds[" + i + "]");
 			}
 		}
 		List<Long> fresh = new ArrayList<>();
 		for (Long userId : userIds) {
-			Boolean invited = jdbc.queryForObject(
-					"select exists (select 1 from room_invites where room_id = ? and user_id = ?)", Boolean.class, roomId,
-					userId);
-			if (!Boolean.TRUE.equals(invited)) {
+			if (!invites.existsByRoomIdAndUserId(roomId, userId)) {
 				fresh.add(userId);
 			}
 		}
 		if (headcount(roomId) + fresh.size() > MEMBER_MAX) {
 			throw memberLimit();
 		}
-		String name = jdbc.queryForObject("select name from rooms where id = ?", String.class, roomId);
+		String name = room.getName();
 		sendInvites(me, roomId, name, fresh);
 		List<RoomInvite> all = sentInvites(List.of(roomId), me).getOrDefault(roomId, List.of());
 		return new InviteList(all.stream().filter(i -> userIds.contains(i.invitedUser().userId())).toList());
@@ -213,8 +234,8 @@ public class RoomService {
 	@Transactional
 	public void cancelInvite(long me, long roomId, long inviteId) {
 		requireMember(me, roomId);
-		requireOwner(me, roomId);
-		if (jdbc.update("delete from room_invites where id = ? and room_id = ?", inviteId, roomId) == 0) {
+		requireOwner(me, rooms.findById(roomId));
+		if (invites.deleteByIdAndRoomId(inviteId, roomId) == 0) {
 			throw inviteNotFound();
 		}
 	}
@@ -222,20 +243,11 @@ public class RoomService {
 	// 내가 받은 초대(최신순)
 	@Transactional(readOnly = true)
 	public InviteList receivedInvites(long me) {
-		record I(long id, long roomId, String roomName, long invitedBy, OffsetDateTime at, boolean hasBlocked) {
-		}
-		List<I> rows = jdbc.query("""
-				select i.id, i.room_id, r.name, i.invited_by, i.created_at,
-				       exists (select 1 from room_members m join user_blocks b on b.blocked_id = m.user_id and b.blocker_id = i.user_id
-				               where m.room_id = i.room_id) as has_blocked
-				from room_invites i join rooms r on r.id = i.room_id
-				where i.user_id = ? order by i.created_at desc, i.id desc
-				""", (rs, n) -> new I(rs.getLong("id"), rs.getLong("room_id"), rs.getString("name"), rs.getLong("invited_by"),
-				rs.getObject("created_at", OffsetDateTime.class), rs.getBoolean("has_blocked")), me);
-		Map<Long, RoomMember> people = people(rows.stream().map(I::invitedBy).toList(), me, null);
+		List<ReceivedInviteView> rows = invites.findReceived(me);
+		Map<Long, RoomMember> people = people(rows.stream().map(ReceivedInviteView::invitedBy).toList(), me);
 		return new InviteList(rows.stream()
 			.map(i -> new RoomInvite(i.id(), new RoomRef(i.roomId(), i.roomName()), null, people.get(i.invitedBy()),
-					i.hasBlocked(), i.at()))
+					i.hasBlocked(), i.createdAt()))
 			.toList());
 	}
 
@@ -248,15 +260,15 @@ public class RoomService {
 		// 잠그기 전에 방장이 취소했을 수 있어 다시 읽는다.
 		invitedRoom(me, inviteId);
 		checkRoomLimit(me);
-		jdbc.update("delete from room_invites where id = ?", inviteId);
-		jdbc.update("insert into room_members (room_id, user_id, created_at) values (?, ?, clock_timestamp())", roomId, me);
+		invites.deleteInvite(inviteId);
+		members.insert(roomId, me);
 		return items(List.of(roomId), me).getFirst();
 	}
 
 	// 거절해도 방장에게 알리지 않는다.
 	@Transactional
 	public void declineInvite(long me, long inviteId) {
-		if (jdbc.update("delete from room_invites where id = ? and user_id = ?", inviteId, me) == 0) {
+		if (invites.deleteByIdAndUserId(inviteId, me) == 0) {
 			throw inviteNotFound();
 		}
 	}
@@ -277,20 +289,11 @@ public class RoomService {
 		if (comicId == null) {
 			throw ApiException.invalid("comicId");
 		}
-		Boolean mine = jdbc.queryForObject(
-				"select exists (select 1 from comics where id = ? and user_id = ? and status = 'DONE')", Boolean.class,
-				comicId, me);
-		if (!Boolean.TRUE.equals(mine)) {
+		boolean mine = comics.findByIdAndUserId(comicId, me).map(c -> c.getStatus() == ComicStatus.DONE).orElse(false);
+		if (!mine) {
 			throw new ApiException(ErrorCode.COMIC_NOT_FOUND);
 		}
-		List<Long> created = jdbc.queryForList("""
-				insert into room_posts (room_id, comic_id, user_id) values (?, ?, ?)
-				on conflict (room_id, comic_id) do nothing returning id
-				""", Long.class, roomId, comicId, me);
-		if (created.isEmpty()) {
-			throw new ApiException(ErrorCode.ROOM_POST_EXISTS);
-		}
-		long postId = created.getFirst();
+		long postId = posts.insertNew(roomId, comicId, me).orElseThrow(() -> new ApiException(ErrorCode.ROOM_POST_EXISTS));
 		addMessage(roomId, me, "POSTED", postId, null);
 		return posts(me, roomId, postId).getFirst();
 	}
@@ -303,7 +306,7 @@ public class RoomService {
 		if (author != me) {
 			throw new ApiException(ErrorCode.ROOM_POST_NOT_MINE);
 		}
-		jdbc.update("delete from room_posts where id = ?", postId);
+		posts.deletePost(postId);
 	}
 
 	// 이미 눌렀어도 그대로 200
@@ -311,8 +314,7 @@ public class RoomService {
 	public RoomPost like(long me, long roomId, long postId) {
 		requireMember(me, roomId);
 		postAuthor(roomId, postId);
-		int added = jdbc.update("insert into room_post_likes (post_id, user_id) values (?, ?) on conflict do nothing",
-				postId, me);
+		int added = likes.insertIfAbsent(postId, me);
 		if (added > 0) {
 			addMessage(roomId, me, "LIKED", postId, null);
 		}
@@ -324,9 +326,9 @@ public class RoomService {
 	public RoomPost unlike(long me, long roomId, long postId) {
 		requireMember(me, roomId);
 		postAuthor(roomId, postId);
-		int removed = jdbc.update("delete from room_post_likes where post_id = ? and user_id = ?", postId, me);
+		int removed = likes.deleteLike(postId, me);
 		if (removed > 0) {
-			jdbc.update("delete from room_messages where post_id = ? and user_id = ? and message_type = 'LIKED'", postId, me);
+			messages.deleteLiked(postId, me);
 		}
 		return posts(me, roomId, postId).getFirst();
 	}
@@ -339,19 +341,14 @@ public class RoomService {
 	public MessageList messages(long me, long roomId, String cursor) {
 		requireMember(me, roomId);
 		PageRequestParams page = PageRequestParams.of(cursor, MESSAGE_PAGE);
-		List<Row> rows = new ArrayList<>(jdbc.query("""
-				select x.id, x.user_id, x.message_type, x.post_id, x.body, x.created_at
-				from room_messages x where x.room_id = ? and (?::bigint is null or x.id < ?) order by x.id desc limit ?
-				""", (rs, n) -> new Row(rs.getLong("id"), rs.getLong("user_id"), rs.getString("message_type"),
-				(Long) rs.getObject("post_id"), rs.getString("body"), rs.getObject("created_at", OffsetDateTime.class)),
-				roomId, page.before(), page.before(), MESSAGE_PAGE + 1));
+		List<RoomMessageView> rows = new ArrayList<>(messages.findPage(roomId, page.before(), Limit.of(MESSAGE_PAGE + 1)));
 		String next = null;
 		if (rows.size() > MESSAGE_PAGE) {
 			rows = new ArrayList<>(rows.subList(0, MESSAGE_PAGE));
 			next = String.valueOf(rows.getLast().id());
 		}
 		java.util.Collections.reverse(rows);
-		jdbc.update("update room_members set last_read_at = clock_timestamp() where room_id = ? and user_id = ?", roomId, me);
+		members.markRead(roomId, me);
 		return new MessageList(messages(me, roomId, rows), next);
 	}
 
@@ -368,15 +365,10 @@ public class RoomService {
 		long id = addMessage(roomId, me, "COMMENT", postId, trimmed);
 		// 내 만화에 다른 사람이 댓글을 달면 올린 사람에게만 푸시. 올린 사람이 방에서 나갔으면 보내지 않는다.
 		if (author != null && author != me && isMember(author, roomId)) {
-			String nickname = jdbc.queryForObject("select nickname from user_profiles where user_id = ?", String.class, me);
+			String nickname = profiles.findById(me).map(UserProfile::getNickname).orElse(null);
 			push.notify(author, PushService.roomComment(roomId, postId, nickname == null ? "" : nickname));
 		}
-		Row row = jdbc.queryForObject("select id, user_id, message_type, post_id, body, created_at from room_messages where id = ?",
-				(rs, n) -> new Row(rs.getLong("id"), rs.getLong("user_id"), rs.getString("message_type"),
-						(Long) rs.getObject("post_id"), rs.getString("body"),
-						rs.getObject("created_at", OffsetDateTime.class)),
-				id);
-		return messages(me, roomId, List.of(row)).getFirst();
+		return messages(me, roomId, List.of(messages.findView(id).orElseThrow())).getFirst();
 	}
 
 	// ---- 안에서 쓰는 것 ----
@@ -408,11 +400,7 @@ public class RoomService {
 	// 모두 내 친구여야 한다. 아니면 404 USER_NOT_FOUND.
 	private void requireFriends(long me, List<Long> ids, String field) {
 		for (int i = 0; i < ids.size(); i++) {
-			Boolean friend = jdbc.queryForObject("""
-					select exists (select 1 from friendships where status = 'ACCEPTED'
-					  and ((requester_id = ? and addressee_id = ?) or (requester_id = ? and addressee_id = ?)))
-					""", Boolean.class, me, ids.get(i), ids.get(i), me);
-			if (!Boolean.TRUE.equals(friend)) {
+			if (!friendships.areFriends(me, ids.get(i))) {
 				throw new ApiException(ErrorCode.USER_NOT_FOUND, field + "[" + i + "]");
 			}
 		}
@@ -421,54 +409,45 @@ public class RoomService {
 	// 초대 줄을 넣고 초대받은 사람에게 푸시를 보낸다.
 	private void sendInvites(long me, long roomId, String roomName, List<Long> userIds) {
 		for (Long userId : userIds) {
-			long inviteId = jdbc.queryForObject("""
-					insert into room_invites (room_id, user_id, invited_by, created_at) values (?, ?, ?, clock_timestamp())
-					returning id
-					""", Long.class, roomId, userId, me);
+			long inviteId = invites.insert(roomId, userId, me);
 			push.notify(userId, PushService.roomInvite(inviteId, roomId, roomName));
 		}
 	}
 
 	// 멤버 + 답을 기다리는 초대
 	private int headcount(long roomId) {
-		Integer count = jdbc.queryForObject("""
-				select (select count(*) from room_members where room_id = ?) + (select count(*) from room_invites where room_id = ?)
-				""", Integer.class, roomId, roomId);
-		return count == null ? 0 : count;
+		return (int) (members.countByRoomId(roomId) + invites.countByRoomId(roomId));
 	}
 
 	// 이미 들어간 방이 20개면 막는다.
 	private void checkRoomLimit(long userId) {
-		Long count = jdbc.queryForObject("select count(*) from room_members where user_id = ?", Long.class, userId);
-		if (count != null && count >= ROOM_LIMIT) {
+		if (members.countByUserId(userId) >= ROOM_LIMIT) {
 			throw new ApiException(ErrorCode.ROOM_LIMIT);
 		}
 	}
 
-	// 같은 방의 인원을 동시에 바꾸지 않게 방 줄을 잠근다.
-	private void lockRoom(long roomId) {
-		jdbc.queryForList("select id from rooms where id = ? for update", Long.class, roomId);
+	// 같은 방의 인원을 동시에 바꾸지 않게 방 줄을 잠그고 읽는다. 그 사이 방이 지워졌으면 비어 있다.
+	private Optional<Room> lockRoom(long roomId) {
+		return rooms.findByIdForUpdate(roomId);
 	}
 
 	// 한 사람의 방 20개 제한을 동시에 넘기지 않게 프로필 줄을 잠근다. 프로필이 없으면 잠그지 않는다.
-	private void lockUser(long userId) {
-		jdbc.queryForList("select user_id from user_profiles where user_id = ? for update", Long.class, userId);
+	private Optional<UserProfile> lockUser(long userId) {
+		return profiles.findByIdForUpdate(userId);
 	}
 
-	// 방장이 아니면 막는다.
-	private void requireOwner(long me, long roomId) {
-		Long owner = jdbc.queryForObject("select owner_id from rooms where id = ?", Long.class, roomId);
-		if (owner == null || owner != me) {
+	// 방장이 아니면 막는다. 그 사이 방이 지워졌으면 방 없음 오류.
+	private Room requireOwner(long me, Optional<Room> room) {
+		Room found = room.orElseThrow(() -> new ApiException(ErrorCode.ROOM_NOT_FOUND));
+		if (!found.isOwnedBy(me)) {
 			throw new ApiException(ErrorCode.ROOM_OWNER_ONLY);
 		}
+		return found;
 	}
 
 	// 내가 받은 초대의 방 ID. 없으면 초대 없음 오류.
 	private long invitedRoom(long me, long inviteId) {
-		return jdbc.queryForList("select room_id from room_invites where id = ? and user_id = ?", Long.class, inviteId, me)
-			.stream()
-			.findFirst()
-			.orElseThrow(RoomService::inviteNotFound);
+		return invites.findRoomIdByIdAndUserId(inviteId, me).orElseThrow(RoomService::inviteNotFound);
 	}
 
 	// 방 인원 초과 오류를 만든다.
@@ -483,31 +462,18 @@ public class RoomService {
 
 	// 방장이 보는 답을 기다리는 초대. 방장이 아닌 방은 빈 목록.
 	private Map<Long, List<RoomInvite>> sentInvites(List<Long> roomIds, long me) {
-		record I(long id, long roomId, String roomName, long userId, OffsetDateTime at) {
-		}
-		List<I> rows = named.query("""
-				select i.id, i.room_id, r.name, i.user_id, i.created_at from room_invites i join rooms r on r.id = i.room_id
-				where i.room_id in (:ids) and r.owner_id = :me order by i.created_at, i.id
-				""", new MapSqlParameterSource("ids", roomIds).addValue("me", me),
-				(rs, n) -> new I(rs.getLong("id"), rs.getLong("room_id"), rs.getString("name"), rs.getLong("user_id"),
-						rs.getObject("created_at", OffsetDateTime.class)));
-		Map<Long, RoomMember> people = people(rows.stream().map(I::userId).toList(), me, null);
+		List<SentInviteView> rows = invites.findSent(roomIds, me);
+		Map<Long, RoomMember> people = people(rows.stream().map(SentInviteView::userId).toList(), me);
 		Map<Long, List<RoomInvite>> result = new HashMap<>();
 		rows.forEach(i -> result.computeIfAbsent(i.roomId(), k -> new ArrayList<>())
 			.add(new RoomInvite(i.id(), new RoomRef(i.roomId(), i.roomName()), people.get(i.userId()), null, false,
-					i.at())));
+					i.createdAt())));
 		return result;
-	}
-
-	// DB에서 읽은 대화 한 줄.
-	private record Row(long id, long userId, String type, Long postId, String body, OffsetDateTime at) {
 	}
 
 	// 지금 이 방의 멤버인지 본다.
 	private boolean isMember(long userId, long roomId) {
-		return Boolean.TRUE.equals(jdbc.queryForObject(
-				"select exists (select 1 from room_members where room_id = ? and user_id = ?)", Boolean.class, roomId,
-				userId));
+		return members.existsByRoomIdAndUserId(roomId, userId);
 	}
 
 	// 멤버가 아니면 방 없음 오류.
@@ -519,84 +485,93 @@ public class RoomService {
 
 	// 이 방에 올린 만화의 올린 사람. 없거나 다른 방이면 404.
 	private long postAuthor(long roomId, long postId) {
-		return jdbc.queryForList("select user_id from room_posts where id = ? and room_id = ?", Long.class, postId, roomId)
-			.stream()
-			.findFirst()
+		return posts.findByIdAndRoomId(postId, roomId)
+			.map(com.lolog.api.domain.room.entity.RoomPost::getUserId)
 			.orElseThrow(() -> new ApiException(ErrorCode.ROOM_POST_NOT_FOUND));
 	}
 
 	// 대화 줄을 넣고 방의 마지막 소식 시각을 바꾼다.
 	private long addMessage(long roomId, long userId, String type, Long postId, String body) {
-		long id = jdbc.queryForObject("""
-				insert into room_messages (room_id, user_id, message_type, post_id, body, created_at)
-				values (?, ?, ?, ?, ?, clock_timestamp()) returning id
-				""", Long.class, roomId, userId, type, postId, body);
-		jdbc.update("update rooms set last_activity_at = clock_timestamp(), updated_at = current_timestamp where id = ?",
-				roomId);
+		long id = messages.insert(roomId, userId, type, postId, body);
+		rooms.touchActivity(roomId);
 		return id;
 	}
 
 	// 방에 남긴 글의 사람. 지금 멤버가 아니면 "나간 멤버"로 바꾼다.
 	private Map<Long, RoomMember> authors(Collection<Long> userIds, long me, long roomId) {
-		Set<Long> members = new HashSet<>(
-				jdbc.queryForList("select user_id from room_members where room_id = ?", Long.class, roomId));
-		Map<Long, RoomMember> result = people(userIds, me, ownerOf(roomId));
-		result.replaceAll((id, m) -> members.contains(id) ? m : RoomMember.leftMember());
-		return result;
+		return people(userIds, me, roomId, true);
 	}
 
-	// 회원들의 닉네임과 프로필 캐릭터 썸네일. owner가 있으면 그 사람의 isOwner가 true.
-	private Map<Long, RoomMember> people(Collection<Long> userIds, long me, Long owner) {
+	// 회원들의 닉네임과 프로필 캐릭터 썸네일, 나와의 관계, 정지 여부(방 목록·초대처럼 방이 정해지지 않은 화면).
+	private Map<Long, RoomMember> people(Collection<Long> userIds, long me) {
+		return people(userIds, me, null, false);
+	}
+
+	// 사람 정보를 한 번에 읽는다. roomId가 있으면 그 방의 방장 표시를 하고, leftAsLeftMember면 그 방 멤버가 아닌 사람을 "나간 멤버"로 바꾼다.
+	private Map<Long, RoomMember> people(Collection<Long> userIds, long me, Long roomId, boolean leftAsLeftMember) {
 		Map<Long, RoomMember> result = new HashMap<>();
 		if (userIds.isEmpty()) {
 			return result;
 		}
-		Map<Long, String> states = friendStates(userIds, me);
-		// 기한이 지난 정지는 정지 아님으로 본다(인증 서비스가 따로 알리지 않음).
-		Set<Long> suspended = new HashSet<>(named.queryForList("""
-				select user_id from user_suspensions where user_id in (:ids)
-				and (suspended_until is null or suspended_until > current_timestamp)
-				""", Map.of("ids", userIds), Long.class));
-		named.query("select user_id, nickname, character_thumb_key from user_profiles where user_id in (:ids)",
-				Map.of("ids", userIds), rs -> {
-					long id = rs.getLong("user_id");
-					String thumb = rs.getString("character_thumb_key");
-					String nickname = rs.getString("nickname");
-					result.put(id, new RoomMember(id, nickname == null ? "" : nickname,
-							thumb == null ? null : storage.presignedUrl(thumb).toString(), id == me,
-							owner != null && id == owner, false, states.get(id), suspended.contains(id)));
-				});
-		for (Long id : userIds) {
-			result.putIfAbsent(id, new RoomMember(id, "", null, id == me, owner != null && id == owner, false,
-					states.get(id), suspended.contains(id)));
+		for (RoomPersonView p : members.findPeople(me, roomId, userIds)) {
+			long id = p.userId();
+			if (leftAsLeftMember && !p.member()) {
+				result.put(id, RoomMember.leftMember());
+				continue;
+			}
+			String thumb = p.thumbKey();
+			result.put(id, new RoomMember(id, p.nickname() == null ? "" : p.nickname(),
+					thumb == null ? null : storage.presignedUrl(thumb).toString(), id == me, p.owner(), false,
+					friendState(id, me, p), p.suspended()));
+		}
+		// 프로필 줄이 없는 회원(드묾)은 따로 읽어 빈 닉네임으로 채운다.
+		List<Long> missing = userIds.stream().filter(id -> !result.containsKey(id)).distinct().toList();
+		if (!missing.isEmpty()) {
+			Map<Long, String> states = friendStates(missing, me);
+			Set<Long> suspended = new HashSet<>(suspensions.findSuspendedIdsAmong(missing));
+			Set<Long> current = leftAsLeftMember ? new HashSet<>(members.findUserIdsByRoomId(roomId)) : Set.of();
+			Long owner = roomId == null ? null : ownerOf(roomId);
+			for (Long id : missing) {
+				result.put(id, leftAsLeftMember && !current.contains(id) ? RoomMember.leftMember()
+						: new RoomMember(id, "", null, id == me, owner != null && id.equals(owner), false, states.get(id),
+								suspended.contains(id)));
+			}
 		}
 		return result;
+	}
+
+	// 나와 그 사람의 관계. 내가 차단했으면 BLOCKED가 먼저다.
+	private static String friendState(long id, long me, RoomPersonView p) {
+		if (id == me) {
+			return "ME";
+		}
+		if (p.blocked()) {
+			return "BLOCKED";
+		}
+		if (p.sentStatus() == FriendshipStatus.ACCEPTED || p.receivedStatus() == FriendshipStatus.ACCEPTED) {
+			return "FRIEND";
+		}
+		if (p.sentStatus() != null) {
+			return "REQUESTED";
+		}
+		return p.receivedStatus() != null ? "RECEIVED" : "NONE";
 	}
 
 	// 나와 그 사람의 관계. 내가 차단했으면 BLOCKED가 먼저다.
 	private Map<Long, String> friendStates(Collection<Long> userIds, long me) {
 		Map<Long, String> states = new HashMap<>();
 		userIds.forEach(id -> states.put(id, id == me ? "ME" : "NONE"));
-		MapSqlParameterSource args = new MapSqlParameterSource("ids", userIds).addValue("me", me);
-		named.query("""
-				select requester_id, addressee_id, status from friendships
-				where (requester_id = :me and addressee_id in (:ids)) or (addressee_id = :me and requester_id in (:ids))
-				""", args, rs -> {
-			boolean sent = rs.getLong("requester_id") == me;
-			long other = sent ? rs.getLong("addressee_id") : rs.getLong("requester_id");
-			states.put(other, "ACCEPTED".equals(rs.getString("status")) ? "FRIEND" : sent ? "REQUESTED" : "RECEIVED");
-		});
-		named.query("select blocked_id from user_blocks where blocker_id = :me and blocked_id in (:ids)", args,
-				rs -> {
-					states.put(rs.getLong("blocked_id"), "BLOCKED");
-				});
+		for (Friendship f : friendships.findAllBetween(me, userIds)) {
+			boolean sent = f.isRequestedBy(me);
+			states.put(f.otherThan(me), f.isAccepted() ? "FRIEND" : sent ? "REQUESTED" : "RECEIVED");
+		}
+		blocks.findBlockedIdsAmong(me, userIds).forEach(id -> states.put(id, "BLOCKED"));
 		return states;
 	}
 
 	// 내가 차단하고 방 글을 숨기기로 한 사람들
 	private Set<Long> hiddenUsers(long me) {
-		return new HashSet<>(jdbc.queryForList(
-				"select blocked_id from user_blocks where blocker_id = ? and hide_in_rooms", Long.class, me));
+		return new HashSet<>(blocks.findHiddenInRoomsIds(me));
 	}
 
 	// 방 응답을 만든다(멤버·마지막 소식·받지 않은 글·초대).
@@ -604,54 +579,34 @@ public class RoomService {
 		if (roomIds.isEmpty()) {
 			return List.of();
 		}
-		MapSqlParameterSource ids = new MapSqlParameterSource("ids", roomIds).addValue("me", me);
 		Map<Long, List<Long>> memberIds = new HashMap<>();
-		named.query("select room_id, user_id from room_members where room_id in (:ids) order by created_at, user_id", ids,
-				rs -> {
-					memberIds.computeIfAbsent(rs.getLong("room_id"), k -> new ArrayList<>()).add(rs.getLong("user_id"));
-				});
-		record Last(String type, long userId, OffsetDateTime at, String body) {
-		}
-		Map<Long, Last> last = new HashMap<>();
-		named.query("""
-				select distinct on (room_id) room_id, message_type, user_id, created_at, body from room_messages
-				where room_id in (:ids) order by room_id, id desc
-				""", ids, rs -> {
-			last.put(rs.getLong("room_id"), new Last(rs.getString("message_type"), rs.getLong("user_id"),
-					rs.getObject("created_at", OffsetDateTime.class), rs.getString("body")));
-		});
-		Map<Long, Integer> unread = new HashMap<>();
-		named.query("""
-				select m.room_id, count(x.id) as unread from room_members m
-				left join room_messages x on x.room_id = m.room_id and x.user_id <> m.user_id and x.created_at > m.last_read_at
-				where m.user_id = :me and m.room_id in (:ids) group by m.room_id
-				""", ids, rs -> {
-			unread.put(rs.getLong("room_id"), rs.getInt("unread"));
-		});
+		members.findByRoomIdInOrderByCreatedAtAscUserIdAsc(roomIds)
+			.forEach(m -> memberIds.computeIfAbsent(m.getRoomId(), k -> new ArrayList<>()).add(m.getUserId()));
+		List<RoomItemView> found = rooms.findItems(me, roomIds);
 		Set<Long> everyone = new HashSet<>();
 		memberIds.values().forEach(everyone::addAll);
-		last.values().forEach(l -> everyone.add(l.userId()));
-		Map<Long, RoomMember> people = people(everyone, me, null);
+		found.stream().map(RoomItemView::lastUserId).filter(java.util.Objects::nonNull).forEach(everyone::add);
+		Map<Long, RoomMember> people = people(everyone, me);
 		Set<String> memberPairs = new HashSet<>();
 		memberIds.forEach((room, users) -> users.forEach(u -> memberPairs.add(room + ":" + u)));
-		Map<Long, List<RoomInvite>> invites = sentInvites(roomIds, me);
+		Map<Long, List<RoomInvite>> sent = sentInvites(roomIds, me);
 		Set<Long> hidden = hiddenUsers(me);
 		Map<Long, RoomItem> byId = new LinkedHashMap<>();
-		named.query("select id, name, owner_id, created_at from rooms where id in (:ids)", ids, rs -> {
-			long id = rs.getLong("id");
-			long owner = rs.getLong("owner_id");
-			Last l = last.get(id);
-			RoomActivity activity = l == null ? null
-					: new RoomActivity("COMMENT".equals(l.type()) ? "COMMENTED" : l.type(),
-							memberPairs.contains(id + ":" + l.userId()) ? people.get(l.userId()).nickname() : null,
-							l.userId() == me, l.at(), hidden.contains(l.userId()) ? null : l.body());
-			List<RoomMember> members = memberIds.getOrDefault(id, List.of())
+		found.forEach(r -> {
+			long id = r.id();
+			long owner = r.ownerId();
+			Long lastUser = r.lastUserId();
+			RoomActivity activity = lastUser == null ? null
+					: new RoomActivity("COMMENT".equals(r.lastType()) ? "COMMENTED" : r.lastType(),
+							memberPairs.contains(id + ":" + lastUser) ? people.get(lastUser).nickname() : null,
+							lastUser == me, r.lastAt(), hidden.contains(lastUser) ? null : r.lastBody());
+			List<RoomMember> roomMembers = memberIds.getOrDefault(id, List.of())
 				.stream()
 				.map(people::get)
 				.map(m -> withOwner(m, owner))
 				.toList();
-			byId.put(id, new RoomItem(id, rs.getString("name"), owner, members, invites.getOrDefault(id, List.of()),
-					activity, unread.getOrDefault(id, 0), rs.getObject("created_at", OffsetDateTime.class)));
+			byId.put(id, new RoomItem(id, r.name(), owner, roomMembers, sent.getOrDefault(id, List.of()), activity,
+					(int) r.unread(), r.createdAt()));
 		});
 		return roomIds.stream().map(byId::get).filter(java.util.Objects::nonNull).toList();
 	}
@@ -663,58 +618,32 @@ public class RoomService {
 
 	// 방장 ID. 방이 없으면 null.
 	private Long ownerOf(long roomId) {
-		return jdbc.queryForList("select owner_id from rooms where id = ?", Long.class, roomId).stream().findFirst().orElse(null);
+		return rooms.findById(roomId).map(Room::getOwnerId).orElse(null);
 	}
 
 	// 방의 올린 만화. onlyPost가 있으면 그 하나만. 최근에 올린 것이 앞.
 	private List<RoomPost> posts(long me, long roomId, Long onlyPost) {
-		record P(long id, long comicId, long userId, OffsetDateTime at, String title, String imageKey, int likes,
-				boolean liked, int comments) {
-		}
-		List<P> rows = jdbc.query("""
-				select p.id, p.comic_id, p.user_id, p.created_at, c.card_summary, c.image_key,
-				       (select count(*) from room_post_likes l where l.post_id = p.id) as likes,
-				       exists (select 1 from room_post_likes l where l.post_id = p.id and l.user_id = ?) as liked,
-				       (select count(*) from room_messages x where x.post_id = p.id and x.message_type = 'COMMENT') as comments
-				from room_posts p join comics c on c.id = p.comic_id
-				where p.room_id = ? and (?::bigint is null or p.id = ?)
-				order by p.created_at desc, p.id desc
-				""", (rs, n) -> new P(rs.getLong("id"), rs.getLong("comic_id"), rs.getLong("user_id"),
-				rs.getObject("created_at", OffsetDateTime.class), rs.getString("card_summary"), rs.getString("image_key"),
-				rs.getInt("likes"), rs.getBoolean("liked"), rs.getInt("comments")), me, roomId, onlyPost, onlyPost);
-		Map<Long, RoomMember> people = authors(rows.stream().map(P::userId).toList(), me, roomId);
+		List<RoomPostView> rows = posts.findViews(me, roomId, onlyPost);
+		Map<Long, RoomMember> people = authors(rows.stream().map(RoomPostView::userId).toList(), me, roomId);
 		Set<Long> hidden = hiddenUsers(me);
 		return rows.stream().map(p -> {
 			boolean hide = hidden.contains(p.userId());
 			return new RoomPost(p.id(), roomId, p.comicId(), hide ? null : p.title() == null ? "" : p.title(),
-					hide ? null : url(p.imageKey()), people.get(p.userId()), p.at(), p.likes(), p.liked(), p.comments(),
-					hide);
+					hide ? null : url(p.imageKey()), people.get(p.userId()), p.createdAt(), (int) p.likes(), p.liked(),
+					(int) p.comments(), hide);
 		}).toList();
 	}
 
-	// 대화 줄을 응답 모양으로 바꾼다. 숨긴 사람의 줄은 내용을 뺀다.
-	private List<RoomMessage> messages(long me, long roomId, List<Row> rows) {
-		Set<Long> postIds = new HashSet<>();
-		rows.forEach(r -> {
-			if (r.postId() != null) {
-				postIds.add(r.postId());
-			}
-		});
-		Map<Long, RoomPostSummary> summaries = new HashMap<>();
-		if (!postIds.isEmpty()) {
-			named.query("select p.id, c.card_summary, c.image_key from room_posts p join comics c on c.id = p.comic_id "
-					+ "where p.id in (:ids)", Map.of("ids", postIds), rs -> {
-						String title = rs.getString("card_summary");
-						summaries.put(rs.getLong("id"), new RoomPostSummary(rs.getLong("id"), title == null ? "" : title,
-								url(rs.getString("image_key"))));
-					});
-		}
-		Map<Long, RoomMember> people = authors(rows.stream().map(Row::userId).toList(), me, roomId);
+	// 대화 줄을 응답 모양으로 바꾼다. 숨긴 사람의 줄은 내용을 뺀다. 내렸거나 없는 만화에 단 줄은 만화 요약이 없다.
+	private List<RoomMessage> messages(long me, long roomId, List<RoomMessageView> rows) {
+		Map<Long, RoomMember> people = authors(rows.stream().map(RoomMessageView::userId).toList(), me, roomId);
 		Set<Long> hidden = hiddenUsers(me);
 		return rows.stream().map(r -> {
 			boolean hide = hidden.contains(r.userId());
-			return new RoomMessage(r.id(), r.type(), people.get(r.userId()), r.at(), r.postId(),
-					hide || r.postId() == null ? null : summaries.get(r.postId()), hide ? null : r.body(), hide);
+			RoomPostSummary summary = hide || r.comicId() == null ? null
+					: new RoomPostSummary(r.postId(), r.postTitle() == null ? "" : r.postTitle(), url(r.postImageKey()));
+			return new RoomMessage(r.id(), r.type(), people.get(r.userId()), r.createdAt(), r.postId(), summary,
+					hide ? null : r.body(), hide);
 		}).toList();
 	}
 
@@ -723,4 +652,9 @@ public class RoomService {
 		return key == null ? null : storage.presignedUrl(key).toString();
 	}
 
+	// 들어간 방에 아직 읽지 않은 남의 글이 있거나 받은 초대가 있는지 본다(방 새 소식 점).
+	@Transactional(readOnly = true)
+	public boolean hasNews(long me) {
+		return members.existsUnread(me) || invites.existsByUserId(me);
+	}
 }

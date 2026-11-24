@@ -1,5 +1,6 @@
 package com.lolog.api.domain.notification.service;
 
+import com.lolog.api.domain.notification.repository.NotificationRepository;
 import com.lolog.api.global.push.PushSender;
 import com.lolog.api.global.util.SafeLog;
 import java.util.LinkedHashMap;
@@ -10,7 +11,6 @@ import java.util.concurrent.Executors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.DisposableBean;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -27,16 +27,17 @@ public class PushService implements DisposableBean {
 
 	private final DeviceTokenService tokens;
 	private final PushSender sender;
-	private final JdbcTemplate jdbc;
+	private final NotificationRepository notifications;
 	private final ObjectMapper objectMapper;
 	// 워커·앱 요청의 응답을 붙잡지 않게 따로 보낸다. 빈으로 두지 않는다(Spring 기본 작업 실행기를 대신하지 않게).
 	private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
 	// 푸시 보내기와 알림 목록 저장에 필요한 도구를 받는다.
-	public PushService(DeviceTokenService tokens, PushSender sender, JdbcTemplate jdbc, ObjectMapper objectMapper) {
+	public PushService(DeviceTokenService tokens, PushSender sender, NotificationRepository notifications,
+			ObjectMapper objectMapper) {
 		this.tokens = tokens;
 		this.sender = sender;
-		this.jdbc = jdbc;
+		this.notifications = notifications;
 		this.objectMapper = objectMapper;
 	}
 
@@ -154,8 +155,7 @@ public class PushService implements DisposableBean {
 	private void record(long userId, Map<String, String> data) {
 		Map<String, String> rest = new LinkedHashMap<>(data);
 		String type = rest.remove("type");
-		jdbc.update("insert into notifications (user_id, type, data, created_at) values (?, ?, ?::jsonb, clock_timestamp())",
-				userId, type, objectMapper.writeValueAsString(rest));
+		notifications.insert(userId, type, objectMapper.writeValueAsString(rest));
 	}
 
 	// 토큰 값은 로그에 남기지 않는다(TR-12).

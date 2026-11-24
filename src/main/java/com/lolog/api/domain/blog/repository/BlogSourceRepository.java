@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -37,5 +38,10 @@ public interface BlogSourceRepository extends JpaRepository<BlogSource, Long> {
 	// 모든 블로그의 ID(주기적으로 읽을 때).
 	@Query("select s.id from BlogSource s order by s.id")
 	List<Long> findAllIds();
+
+	// 회원의 블로그 연결을 모두 지운다(탈퇴).
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query("delete from BlogSource s where s.userId = :userId")
+	int deleteAllByUserId(@Param("userId") Long userId);
 
 }

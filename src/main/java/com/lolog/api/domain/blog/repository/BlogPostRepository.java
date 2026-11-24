@@ -1,6 +1,7 @@
 package com.lolog.api.domain.blog.repository;
 
 import com.lolog.api.domain.blog.entity.BlogPost;
+import com.lolog.api.domain.text.repository.TextRepository;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -14,7 +15,8 @@ import org.springframework.data.repository.query.Param;
 public interface BlogPostRepository extends JpaRepository<BlogPost, Long> {
 
 	// 옛 글을 guid만 적어 둔다(skipped). 이미 있으면 그대로 둔다.
-	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	// 새 줄만 넣어 이미 읽은 엔티티가 낡지 않으므로 영속성 컨텍스트를 비우지 않는다(뒤에 바꾼 엔티티가 저장되게).
+	@Modifying(flushAutomatically = true)
 	@Query(value = """
 			insert into blog_posts (source_id, user_id, guid, skipped) values (:sourceId, :userId, :guid, true)
 			on conflict (user_id, guid) do nothing
@@ -48,8 +50,17 @@ public interface BlogPostRepository extends JpaRepository<BlogPost, Long> {
 			@Param("category") String category, @Param("publishedAt") OffsetDateTime publishedAt,
 			@Param("blogTitle") String blogTitle);
 
-	// 블로그의 가져온 글 목록. 최신순(id 내림차순), before가 null이면 처음부터. 옛 글(skipped)은 뺀다.
-	@Query("select p from BlogPost p where p.sourceId = :sourceId and p.skipped = false and (:before is null or p.id < :before) order by p.id desc")
-	List<BlogPost> findPage(@Param("sourceId") Long sourceId, @Param("before") Long before, Limit limit);
+	// 블로그의 가져온 글 목록과 그 글로 만든 글의 첫 카드·상태. 최신순(id 내림차순), before가 null이면 처음부터.
+	// 옛 글(skipped)은 뺀다.
+	@Query("select new com.lolog.api.domain.blog.repository.BlogPostView(p.id, p.title, p.link, p.category, p.publishedAt,"
+			+ " t.id, " + TextRepository.FIRST_CARD_JPQL + ", " + TextRepository.STATUS_JPQL + ")"
+			+ " from BlogPost p left join Text t on t.blogPostId = p.id"
+			+ " where p.sourceId = :sourceId and p.skipped = false and (:before is null or p.id < :before) order by p.id desc")
+	List<BlogPostView> findPage(@Param("sourceId") Long sourceId, @Param("before") Long before, Limit limit);
+
+	// 회원이 가져온 블로그 글을 모두 지운다(탈퇴).
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query("delete from BlogPost p where p.userId = :userId")
+	int deleteAllByUserId(@Param("userId") Long userId);
 
 }

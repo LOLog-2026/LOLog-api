@@ -9,6 +9,7 @@ import java.util.Optional;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -45,5 +46,10 @@ public interface ComicRepository extends JpaRepository<Comic, Long> {
 	// 카드 목록의 comicCount. 남아 있는 만화 중 실패 아닌 것(지운 만화는 행이 없으므로 빠진다).
 	@Query("select m.cardId, count(m) from Comic m where m.cardId in :cardIds and m.status <> com.lolog.api.domain.comic.entity.ComicStatus.FAILED group by m.cardId")
 	List<Object[]> countNotFailedByCardIds(@Param("cardIds") Collection<Long> cardIds);
+
+	// 회원의 만화를 모두 지운다(탈퇴).
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query("delete from Comic m where m.userId = :userId")
+	int deleteAllByUserId(@Param("userId") Long userId);
 
 }

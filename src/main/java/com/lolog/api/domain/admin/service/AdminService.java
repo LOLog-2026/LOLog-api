@@ -5,16 +5,19 @@ import com.lolog.api.domain.admin.dto.AdminDtos.FeedbackItem;
 import com.lolog.api.domain.admin.dto.AdminDtos.FeedbackPage;
 import com.lolog.api.domain.admin.dto.AdminDtos.FeedbackRequest;
 import com.lolog.api.domain.admin.dto.AdminDtos.Notice;
+import com.lolog.api.domain.admin.entity.Feedback;
+import com.lolog.api.domain.admin.repository.FeedbackRepository;
+import com.lolog.api.domain.inbox.repository.NoticeRepository;
+import com.lolog.api.domain.user.repository.UserProfileRepository;
+import com.lolog.api.domain.user.repository.UserSuspensionRepository;
 import com.lolog.api.global.error.ApiException;
 import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.web.PageRequestParams;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,10 +31,17 @@ public class AdminService {
 	static final int FEEDBACK_PER_DAY = 10;
 	static final int PAGE_SIZE = 20;
 
-	private final JdbcTemplate jdbc;
+	private final NoticeRepository notices;
+	private final FeedbackRepository feedback;
+	private final UserProfileRepository profiles;
+	private final UserSuspensionRepository suspensions;
 
-	public AdminService(JdbcTemplate jdbc) {
-		this.jdbc = jdbc;
+	public AdminService(NoticeRepository notices, FeedbackRepository feedback, UserProfileRepository profiles,
+			UserSuspensionRepository suspensions) {
+		this.notices = notices;
+		this.feedback = feedback;
+		this.profiles = profiles;
+		this.suspensions = suspensions;
 	}
 
 	// ---- 공지사항 ----
@@ -41,29 +51,25 @@ public class AdminService {
 	public Notice createNotice(String title, String body) {
 		String t = title(title);
 		String b = body(body);
-		long id = jdbc.queryForObject("insert into notices (title, body) values (?, ?) returning id", Long.class, t, b);
-		return notice(id);
+		return notice(notices.save(new com.lolog.api.domain.inbox.entity.Notice(t, b)));
 	}
 
 	// 바꾼 것만 보낸다. 둘 다 없으면 그대로 돌려준다.
 	@Transactional
 	public Notice updateNotice(long id, String title, String body) {
-		notice(id);
-		if (title != null) {
-			jdbc.update("update notices set title = ?, updated_at = current_timestamp where id = ?", title(title), id);
-		}
-		if (body != null) {
-			jdbc.update("update notices set body = ?, updated_at = current_timestamp where id = ?", body(body), id);
-		}
-		return notice(id);
+		com.lolog.api.domain.inbox.entity.Notice notice = findNotice(id);
+		String t = title == null ? notice.getTitle() : title(title);
+		String b = body == null ? notice.getBody() : body(body);
+		notice.edit(t, b);
+		// 바뀐 수정 일시를 응답에 담으려고 먼저 반영한다.
+		notices.flush();
+		return notice(notice);
 	}
 
 	// 읽음 기록은 외래 키로 함께 지워진다.
 	@Transactional
 	public void deleteNotice(long id) {
-		if (jdbc.update("delete from notices where id = ?", id) == 0) {
-			throw noticeNotFound();
-		}
+		notices.delete(findNotice(id));
 	}
 
 	// ---- 회원 ----
@@ -71,26 +77,22 @@ public class AdminService {
 	// 닉네임과 친구 코드는 메인 백엔드에 있다. 프로필이 없거나 닉네임을 정하기 전이면 null이다.
 	@Transactional(readOnly = true)
 	public AdminUser user(long userId) {
-		return jdbc.query("select nickname, friend_code from user_profiles where user_id = ? and nickname is not null",
-				(rs, n) -> new AdminUser(rs.getString("nickname"), rs.getString("friend_code")), userId)
-			.stream()
-			.findFirst()
+		return profiles.findById(userId)
+			.filter(p -> p.getNickname() != null)
+			.map(p -> new AdminUser(p.getNickname(), p.getFriendCode()))
 			.orElse(new AdminUser(null, null));
 	}
 
 	// 인증 서비스가 정지할 때 부른다. 다시 부르면 기한을 바꾼다.
 	@Transactional
 	public void suspend(long userId, OffsetDateTime until) {
-		jdbc.update("""
-				insert into user_suspensions (user_id, suspended_until) values (?, ?)
-				on conflict (user_id) do update set suspended_until = excluded.suspended_until
-				""", userId, until);
+		suspensions.upsert(userId, until);
 	}
 
 	// 관리자가 먼저 풀었을 때. 기한이 지나 풀릴 때는 부르지 않는다(기한으로 판단).
 	@Transactional
 	public void unsuspend(long userId) {
-		jdbc.update("delete from user_suspensions where user_id = ?", userId);
+		suspensions.findById(userId).ifPresent(suspensions::delete);
 	}
 
 	// ---- 오류 신고·의견 ----
@@ -105,17 +107,12 @@ public class AdminService {
 		String text = trimmed(request.text(), "text", FEEDBACK_MAX, "내용은 1~1000자예요.");
 		String appVersion = trimmed(request.appVersion(), "appVersion", 30, "appVersion이 필요해요(30자까지).");
 		String deviceModel = trimmed(request.deviceModel(), "deviceModel", 100, "deviceModel이 필요해요(100자까지).");
-		jdbc.queryForList("select pg_advisory_xact_lock(?, ?)", 7002, (int) (me ^ (me >>> 32)));
-		Long today = jdbc.queryForObject(
-				"select count(*) from feedback where user_id = ? and created_at > current_timestamp - interval '1 day'",
-				Long.class, me);
-		if (today != null && today >= FEEDBACK_PER_DAY) {
+		feedback.lockSender(7002, (int) (me ^ (me >>> 32)));
+		long today = feedback.countSentSince(me, OffsetDateTime.now().minusDays(1));
+		if (today >= FEEDBACK_PER_DAY) {
 			throw new ApiException(ErrorCode.TOO_MANY_REQUESTS);
 		}
-		long id = jdbc.queryForObject("""
-				insert into feedback (user_id, category, text, app_version, device_model) values (?, ?, ?, ?, ?) returning id
-				""", Long.class, me, category, text, appVersion, deviceModel);
-		return feedback(id);
+		return item(feedback.save(new Feedback(me, category, text, appVersion, deviceModel)));
 	}
 
 	// 최근 것이 위. status가 없으면 전부.
@@ -125,10 +122,10 @@ public class AdminService {
 			throw ApiException.invalid("status");
 		}
 		PageRequestParams page = PageRequestParams.of(cursor, PAGE_SIZE);
-		List<FeedbackItem> items = new ArrayList<>(jdbc.query("""
-				select * from feedback where (?::varchar is null or status = ?) and (?::bigint is null or id < ?)
-				order by id desc limit ?
-				""", (rs, n) -> feedback(rs), status, status, page.before(), page.before(), PAGE_SIZE + 1));
+		Limit limit = Limit.of(PAGE_SIZE + 1);
+		List<Feedback> rows = status == null ? feedback.findPage(page.before(), limit)
+				: feedback.findPageByStatus(status, page.before(), limit);
+		List<FeedbackItem> items = new ArrayList<>(rows.stream().map(AdminService::item).toList());
 		String next = null;
 		if (items.size() > PAGE_SIZE) {
 			items = new ArrayList<>(items.subList(0, PAGE_SIZE));
@@ -143,35 +140,27 @@ public class AdminService {
 		if (!Set.of("OPEN", "DONE").contains(status == null ? "" : status)) {
 			throw ApiException.invalid("status");
 		}
-		if (jdbc.update("update feedback set status = ?, updated_at = current_timestamp where id = ?", status, id) == 0) {
-			throw new ApiException(ErrorCode.FEEDBACK_NOT_FOUND);
-		}
-		return feedback(id);
+		Feedback found = feedback.findById(id).orElseThrow(() -> new ApiException(ErrorCode.FEEDBACK_NOT_FOUND));
+		found.mark(status);
+		return item(found);
 	}
 
 	// ---- 안에서 쓰는 것 ----
 
-	// 공지사항 하나를 읽는다. 없으면 NOTICE_NOT_FOUND.
-	private Notice notice(long id) {
-		return jdbc.query("select * from notices where id = ?",
-				(rs, n) -> new Notice(rs.getLong("id"), rs.getString("title"), rs.getString("body"),
-						rs.getObject("created_at", OffsetDateTime.class), rs.getObject("updated_at", OffsetDateTime.class)),
-				id)
-			.stream()
-			.findFirst()
-			.orElseThrow(AdminService::noticeNotFound);
+	// 공지사항 하나를 찾는다. 없으면 NOTICE_NOT_FOUND.
+	private com.lolog.api.domain.inbox.entity.Notice findNotice(long id) {
+		return notices.findById(id).orElseThrow(AdminService::noticeNotFound);
 	}
 
-	// 오류 신고·의견 하나를 읽는다.
-	private FeedbackItem feedback(long id) {
-		return jdbc.queryForObject("select * from feedback where id = ?", (rs, n) -> feedback(rs), id);
+	// 공지사항을 응답 모양으로 바꾼다.
+	private static Notice notice(com.lolog.api.domain.inbox.entity.Notice n) {
+		return new Notice(n.getId(), n.getTitle(), n.getBody(), n.getCreatedAt(), n.getUpdatedAt());
 	}
 
-	// DB 행을 FeedbackItem으로 바꾼다.
-	private static FeedbackItem feedback(ResultSet rs) throws SQLException {
-		return new FeedbackItem(rs.getLong("id"), (Long) rs.getObject("user_id"), rs.getString("category"),
-				rs.getString("text"), rs.getString("app_version"), rs.getString("device_model"), rs.getString("status"),
-				rs.getObject("created_at", OffsetDateTime.class));
+	// 오류 신고·의견을 응답 모양으로 바꾼다.
+	private static FeedbackItem item(Feedback f) {
+		return new FeedbackItem(f.getId(), f.getUserId(), f.getCategory(), f.getText(), f.getAppVersion(),
+				f.getDeviceModel(), f.getStatus(), f.getCreatedAt());
 	}
 
 	// 제목을 다듬고 길이를 확인한다.

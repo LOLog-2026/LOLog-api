@@ -2,16 +2,25 @@ package com.lolog.api.domain.text.repository;
 
 import com.lolog.api.domain.text.entity.Text;
 import jakarta.persistence.LockModeType;
-import java.util.Collection;
-import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 // 글 DB 조회.
 public interface TextRepository extends JpaRepository<Text, Long> {
+
+	// 글(별칭 t)의 첫 카드 ID. 카드가 없으면 null.
+	String FIRST_CARD_JPQL = "(select min(c.id) from Card c where c.textId = t.id)";
+
+	// 글(별칭 t)의 상태. 그 글로 만든 카드가 있으면 DONE, 작업이 실패면 FAILED, 그 밖에는 QUEUED(texts.md 2장 "상태 채우기").
+	// 블로그 글 목록도 이것으로 채운다.
+	String STATUS_JPQL = """
+			case when exists (select 1 from Card c where c.textId = t.id) then 'DONE'
+			     when exists (select 1 from Job j where j.textId = t.id and j.status = 'FAILED') then 'FAILED'
+			     else 'QUEUED' end""";
 
 	// 워커가 같은 글의 카드를 동시에 보내도 하나씩 받게 글 행을 잠근다.
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -21,7 +30,15 @@ public interface TextRepository extends JpaRepository<Text, Long> {
 	// 내 글 하나를 찾는다.
 	Optional<Text> findByIdAndUserId(Long id, Long userId);
 
-	// 가져온 블로그 글들로 만든 글.
-	List<Text> findByBlogPostIdIn(Collection<Long> blogPostIds);
+	// 내 글 하나를 첫 카드·상태와 블로그 글 정보(원문 링크, 블로그 이름)와 함께 읽는다.
+	@Query("select new com.lolog.api.domain.text.repository.TextView(t.id, t.source, t.title, t.body, t.place, t.situation,"
+			+ " t.truncated, t.createdAt, " + FIRST_CARD_JPQL + ", " + STATUS_JPQL + ", p.link, p.blogTitle)"
+			+ " from Text t left join BlogPost p on p.id = t.blogPostId where t.id = :id and t.userId = :userId")
+	Optional<TextView> findView(@Param("id") Long id, @Param("userId") Long userId);
+
+	// 회원의 글을 모두 지운다(탈퇴).
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query("delete from Text t where t.userId = :userId")
+	int deleteAllByUserId(@Param("userId") Long userId);
 
 }

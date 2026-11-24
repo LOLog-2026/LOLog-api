@@ -2,18 +2,20 @@ package com.lolog.api.domain.character.service;
 
 import com.lolog.api.domain.character.entity.DefaultCharacter;
 import com.lolog.api.domain.character.repository.DefaultCharacterRepository;
+import com.lolog.api.domain.friend.repository.FriendshipRepository;
+import com.lolog.api.domain.user.entity.UserProfile;
+import com.lolog.api.domain.user.repository.UserProfileRepository;
 import com.lolog.api.global.error.ApiException;
 import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.storage.ImageStorage;
-import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
-import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
-import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Component;
 
 // 화자 그림을 읽는 쪽 모음(characters.md 4장). 카드 응답, 만화 원본(ComicSource), 프로필·친구 응답이 쓴다.
@@ -24,12 +26,16 @@ public class CharacterViews {
 	public static final String DEFAULT = "DEFAULT";
 	public static final String PROFILE = "PROFILE";
 
-	private final NamedParameterJdbcTemplate jdbc;
+	private final UserProfileRepository profiles;
+	private final FriendshipRepository friendships;
 	private final ImageStorage storage;
 	private final DefaultCharacterRepository defaults;
 
-	public CharacterViews(NamedParameterJdbcTemplate jdbc, ImageStorage storage, DefaultCharacterRepository defaults) {
-		this.jdbc = jdbc;
+	// 친구인지는 친구 도메인의 리포지토리로 본다. FriendService가 이 클래스를 받으므로 FriendService는 받지 않는다.
+	public CharacterViews(UserProfileRepository profiles, FriendshipRepository friendships, ImageStorage storage,
+			DefaultCharacterRepository defaults) {
+		this.profiles = profiles;
+		this.friendships = friendships;
 		this.storage = storage;
 		this.defaults = defaults;
 	}
@@ -54,27 +60,20 @@ public class CharacterViews {
 
 	// 내 프로필 캐릭터 응답을 만든다. 만든 적이 없으면 null.
 	public ProfileCharacterService.ProfileCharacterResponse profileResponse(long userId) {
-		List<ProfileCharacterService.ProfileCharacterResponse> found = jdbc.query("""
-				select character_status, character_thumb_key, character_updated_at, character_voice, voice_clone_status,
-				       voice_clone_preview_key, voice_clone_fail_reason, voice_clone_share_friends
-				from user_profiles where user_id = :id
-				""", Map.of("id", userId), (rs, n) -> {
-			String status = rs.getString("character_status");
-			if (status == null) {
-				return null;
-			}
-			String thumb = rs.getString("character_thumb_key");
-			// 내 목소리. 만든 적이 없으면 null(정함 11-14). previewUrl은 미리 듣기 wav의 10분 서명 주소
-			String cloneStatus = rs.getString("voice_clone_status");
-			String preview = rs.getString("voice_clone_preview_key");
-			VoiceCloneService.VoiceCloneView clone = cloneStatus == null ? null
-					: new VoiceCloneService.VoiceCloneView(cloneStatus, preview == null ? null : url(preview),
-							rs.getString("voice_clone_fail_reason"), rs.getBoolean("voice_clone_share_friends"));
-			return new ProfileCharacterService.ProfileCharacterResponse(status,
-					thumb == null ? null : storage.presignedUrl(thumb).toString(),
-					rs.getObject("character_updated_at", OffsetDateTime.class), rs.getString("character_voice"), clone);
-		});
-		return found.isEmpty() ? null : found.getFirst();
+		UserProfile p = profiles.findById(userId).orElse(null);
+		if (p == null || p.getCharacterStatus() == null) {
+			return null;
+		}
+		String thumb = p.getCharacterThumbKey();
+		// 내 목소리. 만든 적이 없으면 null(정함 11-14). previewUrl은 미리 듣기 wav의 10분 서명 주소
+		String cloneStatus = p.getVoiceCloneStatus();
+		String preview = p.getVoiceClonePreviewKey();
+		VoiceCloneService.VoiceCloneView clone = cloneStatus == null ? null
+				: new VoiceCloneService.VoiceCloneView(cloneStatus, preview == null ? null : url(preview),
+						p.getVoiceCloneFailReason(), p.isVoiceCloneShareFriends());
+		return new ProfileCharacterService.ProfileCharacterResponse(p.getCharacterStatus(),
+				thumb == null ? null : storage.presignedUrl(thumb).toString(), p.getCharacterUpdatedAt(),
+				p.getCharacterVoice(), clone);
 	}
 
 	// 쓸 수 있는 그림이 없으면 null(친구의 status는 보내지 않는다).
@@ -95,12 +94,10 @@ public class CharacterViews {
 		}
 		Set<Long> profiles = userIds(refs);
 		if (!profiles.isEmpty()) {
-			jdbc.query("select user_id, nickname, character_thumb_key from user_profiles where user_id in (:ids)",
-					Map.of("ids", profiles), rs -> {
-						String id = String.valueOf(rs.getLong("user_id"));
-						result.put(new Ref(PROFILE, id), new SpeakerCharacter(PROFILE, id, rs.getString("nickname"),
-								url(rs.getString("character_thumb_key"))));
-					});
+			for (UserProfile p : this.profiles.findAllById(profiles)) {
+				String id = String.valueOf(p.getUserId());
+				result.put(new Ref(PROFILE, id), new SpeakerCharacter(PROFILE, id, p.getNickname(), url(p.getCharacterThumbKey())));
+			}
 		}
 		return result;
 	}
@@ -119,17 +116,22 @@ public class CharacterViews {
 		}
 		Set<Long> profiles = userIds(refs);
 		if (!profiles.isEmpty()) {
-			jdbc.query("""
-					select p.user_id, p.character_appearance, p.character_key from user_profiles p
-					where p.user_id in (:ids) and p.character_key is not null and p.character_appearance is not null
-					  and (p.user_id = :owner or exists (select 1 from friendships f where f.status = 'ACCEPTED'
-					       and ((f.requester_id = :owner and f.addressee_id = p.user_id)
-					         or (f.addressee_id = :owner and f.requester_id = p.user_id))))
-					""", new MapSqlParameterSource("ids", profiles).addValue("owner", owner), rs -> {
-				String id = String.valueOf(rs.getLong("user_id"));
-				result.put(new Ref(PROFILE, id), new SourceCharacter("profile:" + id,
-						rs.getString("character_appearance"), url(rs.getString("character_key"))));
-			});
+			// 쓸 수 있는 그림과 외모 글이 있고, 카드 주인 본인이거나 친구인 회원만
+			List<UserProfile> ready = new ArrayList<>();
+			for (UserProfile p : this.profiles.findAllById(profiles)) {
+				if (p.getCharacterKey() != null && p.getCharacterAppearance() != null) {
+					ready.add(p);
+				}
+			}
+			Set<Long> others = ready.stream().map(UserProfile::getUserId).filter(id -> id != owner).collect(Collectors.toSet());
+			Set<Long> friendIds = others.isEmpty() ? Set.of() : new HashSet<>(friendships.findFriendIdsAmong(owner, others));
+			for (UserProfile p : ready) {
+				if (p.getUserId() == owner || friendIds.contains(p.getUserId())) {
+					String id = String.valueOf(p.getUserId());
+					result.put(new Ref(PROFILE, id),
+							new SourceCharacter("profile:" + id, p.getCharacterAppearance(), url(p.getCharacterKey())));
+				}
+			}
 		}
 		return result;
 	}
@@ -151,17 +153,12 @@ public class CharacterViews {
 		}
 		boolean self = userId == owner;
 		if (!self) {
-			Boolean friends = jdbc.queryForObject("""
-					select exists (select 1 from friendships where status = 'ACCEPTED'
-					  and ((requester_id = :a and addressee_id = :b) or (requester_id = :b and addressee_id = :a)))
-					""", new MapSqlParameterSource("a", owner).addValue("b", userId), Boolean.class);
-			if (!Boolean.TRUE.equals(friends)) {
+			if (!friendships.areFriends(owner, userId)) {
 				throw unknown(field);
 			}
 		}
-		List<String> key = jdbc.queryForList("select character_key from user_profiles where user_id = :id",
-				Map.of("id", userId), String.class);
-		if (key.isEmpty() || key.getFirst() == null) {
+		String key = profiles.findById(userId).map(UserProfile::getCharacterKey).orElse(null);
+		if (key == null) {
 			throw new ApiException(ErrorCode.CHARACTER_NOT_READY);
 		}
 	}

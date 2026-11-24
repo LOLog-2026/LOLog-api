@@ -2,6 +2,8 @@ package com.lolog.api.domain.character.service;
 
 import com.lolog.api.domain.job.entity.Job;
 import com.lolog.api.domain.job.repository.JobRepository;
+import com.lolog.api.domain.user.entity.UserProfile;
+import com.lolog.api.domain.user.repository.UserProfileRepository;
 import java.time.OffsetDateTime;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -9,7 +11,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.connection.stream.StreamRecords;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -32,12 +33,12 @@ public class VoiceClonePublisher {
 	private final StringRedisTemplate redis;
 	private final ObjectMapper objectMapper;
 	private final TransactionTemplate tx;
-	private final JdbcTemplate jdbc;
+	private final UserProfileRepository profiles;
 
 	public VoiceClonePublisher(@Value("${lolog.voice-clone.queue-enabled:false}") boolean enabled, JobRepository jobs,
 			StringRedisTemplate redis, ObjectMapper objectMapper, PlatformTransactionManager transactionManager,
-			JdbcTemplate jdbc) {
-		this.jdbc = jdbc;
+			UserProfileRepository profiles) {
+		this.profiles = profiles;
 		this.enabled = enabled;
 		this.jobs = jobs;
 		this.redis = redis;
@@ -82,8 +83,7 @@ public class VoiceClonePublisher {
 			if (job.getAttempts() > 0 || job.isFinished()) {
 				return;
 			}
-			String text = jdbc.queryForList("select voice_clone_text from user_profiles where user_id = ?", String.class,
-					job.getUserId()).stream().findFirst().orElse(null);
+			String text = profiles.findById(job.getUserId()).map(UserProfile::getVoiceCloneText).orElse(null);
 			VoiceCloneMessage message = new VoiceCloneMessage(job.getId(), "voice_clone", job.getUserId(), text);
 			redis.opsForStream().add(StreamRecords.string(
 					Map.of("payload", objectMapper.writeValueAsString(message))).withStreamKey(STREAM));

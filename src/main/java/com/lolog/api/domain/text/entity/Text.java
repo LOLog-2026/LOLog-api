@@ -14,7 +14,7 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 
 // 카드로 만들 글 하나(texts.md 7장). 직접 쓴 글이거나 가져온 블로그 글이다.
-// 글 상태는 칸으로 두지 않고 카드·작업으로 채운다(TextService.statuses).
+// 글 상태는 칸으로 두지 않고 카드·작업으로 채운다(TextRepository.STATUS_JPQL).
 @Entity
 @Table(name = "texts")
 @Getter

@@ -3,14 +3,16 @@ package com.lolog.api.domain.character.service;
 import com.lolog.api.domain.job.entity.Job;
 import com.lolog.api.domain.job.repository.JobRepository;
 import com.lolog.api.domain.notification.service.PushService;
+import com.lolog.api.domain.recording.repository.RecordingRepository;
+import com.lolog.api.domain.user.entity.UserProfile;
+import com.lolog.api.domain.user.repository.UserProfileRepository;
 import com.lolog.api.global.error.ApiException;
 import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.storage.ImageStorage;
 import com.lolog.api.global.util.SafeLog;
-import java.util.List;
+import java.time.OffsetDateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -36,16 +38,18 @@ public class VoiceCloneService {
 	// 최장 녹음 시간. 이 안에 시작해 마지막 묶음이 안 온 녹음이 있으면 녹음 중으로 본다(초안).
 	static final int MAX_RECORDING_HOURS = 3;
 
-	private final JdbcTemplate jdbc;
+	private final UserProfileRepository profiles;
+	private final RecordingRepository recordings;
 	private final ImageStorage storage;
 	private final JobRepository jobs;
 	private final VoiceClonePublisher publisher;
 	private final PushService push;
 	private final CharacterViews views;
 
-	public VoiceCloneService(JdbcTemplate jdbc, ImageStorage storage, JobRepository jobs, VoiceClonePublisher publisher,
-			PushService push, CharacterViews views) {
-		this.jdbc = jdbc;
+	public VoiceCloneService(UserProfileRepository profiles, RecordingRepository recordings, ImageStorage storage,
+			JobRepository jobs, VoiceClonePublisher publisher, PushService push, CharacterViews views) {
+		this.profiles = profiles;
+		this.recordings = recordings;
 		this.storage = storage;
 		this.jobs = jobs;
 		this.publisher = publisher;
@@ -57,8 +61,14 @@ public class VoiceCloneService {
 	public record VoiceCloneView(String status, String previewUrl, String failReason, boolean shareWithFriends) {
 	}
 
-	// DB에서 읽은 내 목소리 상태와 파일 키.
+	// 바꾸기 전에 읽어 둔 내 목소리 상태와 파일 키.
 	private record State(String status, String sampleKey, String previewKey) {
+
+		// 프로필에서 읽는다.
+		static State of(UserProfile p) {
+			return new State(p.getVoiceCloneStatus(), p.getVoiceCloneKey(), p.getVoiceClonePreviewKey());
+		}
+
 	}
 
 	// 녹음 파일 확장자와 Content-Type.
@@ -88,23 +98,16 @@ public class VoiceCloneService {
 			throw new ApiException(ErrorCode.RECORDING_IN_PROGRESS);
 		}
 		// 목소리는 프로필 캐릭터가 있을 때만 고를 수 있어서 만들기도 같다(FR-CHAR-04).
-		List<String> character = jdbc.queryForList("select character_key from user_profiles where user_id = ? for update",
-				String.class, userId);
-		if (character.isEmpty() || character.getFirst() == null) {
-			throw new ApiException(ErrorCode.CHARACTER_NOT_FOUND);
-		}
-		State state = state(userId);
-		if ("PROCESSING".equals(state.status())) {
+		UserProfile profile = profiles.findByIdForUpdate(userId)
+			.filter(p -> p.getCharacterKey() != null)
+			.orElseThrow(() -> new ApiException(ErrorCode.CHARACTER_NOT_FOUND));
+		State state = State.of(profile);
+		if (UserProfile.CHARACTER_PROCESSING.equals(state.status())) {
 			throw new ApiException(ErrorCode.VOICE_CLONE_IN_PROGRESS);
 		}
 		String key = ImageStorage.voiceCloneSampleKey(userId, type.ext());
 		storage.put(key, audio, type.contentType());
-		jdbc.update("""
-				update user_profiles set voice_clone_status = 'PROCESSING', voice_clone_key = ?, voice_clone_preview_key = null,
-				    voice_clone_text = ?, voice_clone_fail_reason = null, voice_clone_consented_at = current_timestamp,
-				    voice_clone_updated_at = current_timestamp, updated_at = current_timestamp
-				where user_id = ?
-				""", key, RECORD_SENTENCE, userId);
+		profile.startVoiceClone(key, RECORD_SENTENCE);
 		long jobId = jobs.save(Job.voiceClone(userId)).getId();
 		afterCommit(() -> {
 			// 확장자가 바뀌었으면 예전 원본, 그리고 예전 미리 듣기를 지운다.
@@ -122,24 +125,14 @@ public class VoiceCloneService {
 	// 내 목소리 지우기. 없어도 204. 골랐던 목소리가 "self"면 null로 바꾼다. 프로필 캐릭터를 지울 때도 부른다.
 	@Transactional
 	public void delete(long userId) {
-		List<State> found = jdbc.query("""
-				select voice_clone_status, voice_clone_key, voice_clone_preview_key from user_profiles where user_id = ? for update
-				""", (rs, n) -> new State(rs.getString(1), rs.getString(2), rs.getString(3)), userId);
-		if (found.isEmpty() || found.getFirst().status() == null) {
+		UserProfile profile = profiles.findByIdForUpdate(userId).orElse(null);
+		if (profile == null || profile.getVoiceCloneStatus() == null) {
 			return;
 		}
-		State state = found.getFirst();
-		jdbc.update("""
-				update user_profiles set voice_clone_status = null, voice_clone_key = null, voice_clone_preview_key = null,
-				    voice_clone_consented_at = null, voice_clone_fail_reason = null, voice_clone_share_friends = false,
-				    voice_clone_text = null, voice_clone_updated_at = current_timestamp,
-				    character_voice = case when character_voice = 'self' then null else character_voice end,
-				    updated_at = current_timestamp
-				where user_id = ?
-				""", userId);
+		State state = State.of(profile);
+		profile.removeVoiceClone();
 		// 만드는 중이던 작업은 실패로 둔다. 워커가 나중에 녹음을 찾으면 404라 그 메시지를 버린다.
-		jdbc.update("update jobs set status = 'FAILED', fail_reason = '내 목소리를 지움', updated_at = current_timestamp "
-				+ "where user_id = ? and job_type = 'VOICE_CLONE' and status = 'QUEUED'", userId);
+		jobs.failQueued(userId, "VOICE_CLONE", "내 목소리를 지움");
 		afterCommit(() -> {
 			if (state.sampleKey() != null) {
 				deleteQuietly(state.sampleKey());
@@ -156,27 +149,23 @@ public class VoiceCloneService {
 		if (shareWithFriends == null) {
 			throw ApiException.invalid("shareWithFriends");
 		}
-		int updated = jdbc.update("""
-				update user_profiles set voice_clone_share_friends = ?, updated_at = current_timestamp
-				where user_id = ? and voice_clone_status is not null
-				""", shareWithFriends, userId);
-		if (updated == 0) {
-			throw notFound();
-		}
+		// 지우기와 겹쳐도 지운 뒤에 동의가 남지 않게 행을 잠그고 본다.
+		profiles.findByIdForUpdate(userId)
+			.filter(p -> p.getVoiceCloneStatus() != null)
+			.orElseThrow(VoiceCloneService::notFound)
+			.shareVoiceClone(shareWithFriends);
 	}
 
 	// 워커가 원본 녹음을 받는다. 만드는 중이거나 만든 목소리가 있을 때만(쇼츠의 참조 음성으로도 쓴다).
 	@Transactional(readOnly = true)
 	public ImageStorage.StoredObject sample(long userId) {
-		List<String> key = jdbc.queryForList("""
-				select voice_clone_key from user_profiles
-				where user_id = ? and voice_clone_status in ('PROCESSING', 'READY') and voice_clone_key is not null
-				""", String.class, userId);
-		if (key.isEmpty()) {
-			throw notFound();
-		}
+		String key = profiles.findById(userId)
+			.filter(p -> UserProfile.CHARACTER_PROCESSING.equals(p.getVoiceCloneStatus())
+					|| UserProfile.CHARACTER_READY.equals(p.getVoiceCloneStatus()))
+			.map(UserProfile::getVoiceCloneKey)
+			.orElseThrow(VoiceCloneService::notFound);
 		try {
-			return storage.getObject(key.getFirst());
+			return storage.getObject(key);
 		}
 		catch (software.amazon.awssdk.services.s3.model.NoSuchKeyException e) {
 			throw notFound();
@@ -192,19 +181,13 @@ public class VoiceCloneService {
 		if (wav.length > MAX_AUDIO_BYTES) {
 			throw new ApiException(ErrorCode.PAYLOAD_TOO_LARGE);
 		}
-		State state = lockedState(userId);
-		if (state == null || !"PROCESSING".equals(state.status())) {
-			throw notFound();
-		}
+		UserProfile profile = profiles.findByIdForUpdate(userId)
+			.filter(p -> UserProfile.CHARACTER_PROCESSING.equals(p.getVoiceCloneStatus()))
+			.orElseThrow(VoiceCloneService::notFound);
 		String key = ImageStorage.voiceClonePreviewKey(userId);
 		storage.put(key, wav, "audio/wav");
-		jdbc.update("""
-				update user_profiles set voice_clone_status = 'READY', voice_clone_preview_key = ?,
-				    voice_clone_updated_at = current_timestamp, updated_at = current_timestamp
-				where user_id = ?
-				""", key, userId);
-		jdbc.update("update jobs set status = 'DONE', updated_at = current_timestamp "
-				+ "where user_id = ? and job_type = 'VOICE_CLONE' and status = 'QUEUED'", userId);
+		profile.voiceCloneReady(key);
+		jobs.completeQueued(userId, "VOICE_CLONE");
 		push.notify(userId, PushService.voiceCloneReady());
 	}
 
@@ -218,21 +201,16 @@ public class VoiceCloneService {
 		}
 		job.fail(reason);
 		long userId = job.getUserId();
-		State state = lockedState(userId);
-		if (state == null || !"PROCESSING".equals(state.status())) {
+		UserProfile profile = profiles.findByIdForUpdate(userId).orElse(null);
+		if (profile == null || !UserProfile.CHARACTER_PROCESSING.equals(profile.getVoiceCloneStatus())) {
 			return;
 		}
+		State state = State.of(profile);
 		String text = reason == null || reason.isBlank() ? null : reason.strip();
 		if (text != null && text.length() > MAX_FAIL_REASON) {
 			text = text.substring(0, MAX_FAIL_REASON);
 		}
-		jdbc.update("""
-				update user_profiles set voice_clone_status = 'FAILED', voice_clone_fail_reason = ?, voice_clone_key = null,
-				    voice_clone_preview_key = null, voice_clone_text = null, voice_clone_updated_at = current_timestamp,
-				    character_voice = case when character_voice = 'self' then null else character_voice end,
-				    updated_at = current_timestamp
-				where user_id = ?
-				""", text, userId);
+		profile.voiceCloneFailed(text);
 		afterCommit(() -> {
 			if (state.sampleKey() != null) {
 				deleteQuietly(state.sampleKey());
@@ -244,27 +222,7 @@ public class VoiceCloneService {
 	// 대화 녹음 중인지(초안): 최장 녹음 시간(3시간) 안에 시작했고 마지막 묶음(isLast)이 아직 안 온 녹음이 있으면 녹음 중이다.
 	// 녹음 첫 묶음이 오기 전(첫 1시간)은 서버가 모르니 앱이 막는다.
 	boolean recording(long userId) {
-		Boolean found = jdbc.queryForObject("""
-				select exists (select 1 from recordings r where r.user_id = ?
-				  and r.started_at > current_timestamp - make_interval(hours => ?)
-				  and not exists (select 1 from recording_parts p where p.recording_id = r.id and p.is_last))
-				""", Boolean.class, userId, MAX_RECORDING_HOURS);
-		return Boolean.TRUE.equals(found);
-	}
-
-	// 내 목소리 상태를 읽는다.
-	private State state(long userId) {
-		return jdbc.queryForObject(
-				"select voice_clone_status, voice_clone_key, voice_clone_preview_key from user_profiles where user_id = ?",
-				(rs, n) -> new State(rs.getString(1), rs.getString(2), rs.getString(3)), userId);
-	}
-
-	// 프로필 행을 잠그고 내 목소리 상태를 읽는다. 없으면 null.
-	private State lockedState(long userId) {
-		List<State> found = jdbc.query("""
-				select voice_clone_status, voice_clone_key, voice_clone_preview_key from user_profiles where user_id = ? for update
-				""", (rs, n) -> new State(rs.getString(1), rs.getString(2), rs.getString(3)), userId);
-		return found.isEmpty() ? null : found.getFirst();
+		return recordings.existsUnfinishedSince(userId, OffsetDateTime.now().minusHours(MAX_RECORDING_HOURS));
 	}
 
 	// 첫 바이트로 wav(RIFF....WAVE)·m4a(....ftyp)를 가린다. 둘 다 아니면 null.

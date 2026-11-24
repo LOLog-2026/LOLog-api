@@ -2,6 +2,7 @@ package com.lolog.api.domain.card.repository;
 
 import com.lolog.api.domain.card.entity.Card;
 import jakarta.persistence.LockModeType;
+import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -55,9 +56,15 @@ public interface CardRepository extends JpaRepository<Card, Long> {
 	@Query(value = "update cards set video_count = video_count - 1 where id = :id and video_count > 0", nativeQuery = true)
 	int decrementVideoCount(@Param("id") Long id);
 
-	// 글마다 그 글로 만든 첫 카드의 ID. [글 ID, 카드 ID] 줄이고, 카드가 없는 글은 빠진다.
-	@Query("select c.textId, min(c.id) from Card c where c.textId in :textIds group by c.textId")
-	List<Object[]> findFirstCardIdsByTextIds(@Param("textIds") Collection<Long> textIds);
+	// 블로그 글 카드가 하나라도 있는지 본다(보관함 새 소식 점, texts.md 2장).
+	@Query("select count(c) > 0 from Card c where c.userId = :userId "
+			+ "and c.textId in (select t.id from Text t where t.source = com.lolog.api.domain.text.entity.TextSource.BLOG)")
+	boolean existsBlogCard(@Param("userId") Long userId);
+
+	// since 뒤에 생긴 블로그 글 카드가 있는지 본다.
+	@Query("select count(c) > 0 from Card c where c.userId = :userId and c.createdAt > :since "
+			+ "and c.textId in (select t.id from Text t where t.source = com.lolog.api.domain.text.entity.TextSource.BLOG)")
+	boolean existsBlogCardSince(@Param("userId") Long userId, @Param("since") OffsetDateTime since);
 
 	// 녹음의 카드 중 아직 구간 음성이 없는 카드(id 순서).
 	@Query("select c.id from Card c where c.recordingId = :recordingId and c.audioKey is null order by c.id")
@@ -73,8 +80,51 @@ public interface CardRepository extends JpaRepository<Card, Long> {
 			""", nativeQuery = true)
 	int attachAudio(@Param("id") Long id, @Param("audioKey") String audioKey, @Param("durationMs") Long durationMs);
 
+	// 모든 카드 화자에서 이 프로필 캐릭터(회원 ID를 글자로)를 뗀다.
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query("""
+			update CardSpeaker s set s.characterType = null, s.characterId = null, s.updatedAt = current_timestamp
+			where s.characterType = 'PROFILE' and s.characterId = :characterId
+			""")
+	int detachProfileCharacter(@Param("characterId") String characterId);
+
+	// 두 사람이 서로의 카드 화자에서 빠진다. a·b는 회원 ID, aId·bId는 같은 ID를 글자로 적은 것이다.
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query("""
+			update CardSpeaker s set s.characterType = null, s.characterId = null, s.updatedAt = current_timestamp
+			where s.characterType = 'PROFILE' and exists (select c.id from Card c where c.id = s.card.id
+			  and ((c.userId = :a and s.characterId = :bId) or (c.userId = :b and s.characterId = :aId)))
+			""")
+	int detachProfileCharactersBetween(@Param("a") Long a, @Param("aId") String aId, @Param("b") Long b,
+			@Param("bId") String bId);
+
 	// 카드마다 대사 수를 센다.
 	@Query("select l.card.id, count(l) from CardLine l where l.card.id in :cardIds group by l.card.id")
 	List<Object[]> countLinesByCardIds(@Param("cardIds") Collection<Long> cardIds);
+
+	// 카드의 화자 key를 모두 읽는다.
+	@Query("select s.speakerKey from CardSpeaker s where s.card.id = :cardId")
+	List<String> findSpeakerKeys(@Param("cardId") Long cardId);
+
+	// 카드 한 장에서 화자 key를 바꾼다. 그 화자의 대사는 renameLineSpeaker로 함께 바꾼다.
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query("""
+			update CardSpeaker s set s.speakerKey = :to, s.updatedAt = current_timestamp
+			where s.card.id = :cardId and s.speakerKey = :from
+			""")
+	int renameSpeaker(@Param("cardId") Long cardId, @Param("from") String from, @Param("to") String to);
+
+	// 카드 한 장에서 그 화자의 대사 key를 바꾼다.
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query("""
+			update CardLine l set l.speakerKey = :to, l.updatedAt = current_timestamp
+			where l.card.id = :cardId and l.speakerKey = :from
+			""")
+	int renameLineSpeaker(@Param("cardId") Long cardId, @Param("from") String from, @Param("to") String to);
+
+	// 회원의 카드를 모두 지운다(탈퇴). 화자·대사는 DB가 함께 지운다(ON DELETE CASCADE).
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query("delete from Card c where c.userId = :userId")
+	int deleteAllByUserId(@Param("userId") Long userId);
 
 }

@@ -3,12 +3,14 @@ package com.lolog.api.domain.recording.repository;
 import com.lolog.api.domain.recording.entity.Recording;
 import com.lolog.api.domain.recording.entity.RecordingStatus;
 import jakarta.persistence.LockModeType;
+import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -41,8 +43,20 @@ public interface RecordingRepository extends JpaRepository<Recording, Long> {
 	List<Recording> findPage(@Param("userId") Long userId, @Param("statuses") Collection<RecordingStatus> statuses,
 			@Param("before") Long before, Limit limit);
 
+	// since 뒤에 시작했고 마지막 묶음(isLast)이 아직 안 온 이 회원의 녹음이 있는지 본다.
+	@Query("""
+			select count(r) > 0 from Recording r where r.userId = :userId and r.startedAt > :since
+			  and not exists (select p.id from RecordingPart p where p.recording = r and p.last = true)
+			""")
+	boolean existsUnfinishedSince(@Param("userId") Long userId, @Param("since") OffsetDateTime since);
+
 	// 목록의 cardCount. 녹음마다 따로 세지 않고 한 번에 센다.
 	@Query(value = "select recording_id, count(*) from cards where recording_id in (:ids) group by recording_id", nativeQuery = true)
 	List<Object[]> countCardsByRecordingIds(@Param("ids") Collection<Long> ids);
+
+	// 회원의 녹음을 모두 지운다(탈퇴).
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query("delete from Recording r where r.userId = :userId")
+	int deleteAllByUserId(@Param("userId") Long userId);
 
 }
