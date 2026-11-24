@@ -15,7 +15,7 @@ import com.lolog.api.domain.video.repository.VideoRepository;
 import com.lolog.api.global.error.ApiException;
 import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.storage.ImageStorage;
-import com.lolog.api.global.transaction.AfterCommit;
+import com.lolog.api.global.storage.StorageDeletions;
 import com.lolog.api.global.web.PageRequestParams;
 import com.lolog.api.global.web.PageSort;
 import java.util.ArrayList;
@@ -38,16 +38,18 @@ public class VideoService {
 	private final JobRepository jobs;
 	private final VideoPublisher publisher;
 	private final ImageStorage storage;
+	private final StorageDeletions deletions;
 	private final PushService push;
 	private final TransactionTemplate tx;
 
 	public VideoService(VideoRepository videos, CardRepository cards, JobRepository jobs, VideoPublisher publisher,
-			ImageStorage storage, PushService push, TransactionTemplate tx) {
+			ImageStorage storage, StorageDeletions deletions, PushService push, TransactionTemplate tx) {
 		this.videos = videos;
 		this.cards = cards;
 		this.jobs = jobs;
 		this.publisher = publisher;
 		this.storage = storage;
+		this.deletions = deletions;
 		this.push = push;
 		this.tx = tx;
 	}
@@ -108,7 +110,7 @@ public class VideoService {
 	public void delete(long userId, long videoId) {
 		Video video = videos.findByIdAndUserId(videoId, userId).orElseThrow(VideoService::notFound);
 		videos.delete(video);
-		AfterCommit.run(() -> storage.deletePrefix(ImageStorage.videoPrefix(userId, videoId)));
+		deletions.schedulePrefix(ImageStorage.videoPrefix(userId, videoId));
 	}
 
 	// 카드 자세히의 videos[]. 최근 것이 앞.
@@ -153,7 +155,7 @@ public class VideoService {
 			}
 			push.notify(video.getUserId(), PushService.videoFailed(video.getId(), video.getCardId()));
 			if (audioKey != null) {
-				AfterCommit.run(() -> storage.delete(audioKey));
+				deletions.schedule(audioKey);
 			}
 		});
 	}

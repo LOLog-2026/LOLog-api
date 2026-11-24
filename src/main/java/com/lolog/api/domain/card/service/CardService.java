@@ -25,8 +25,7 @@ import com.lolog.api.domain.text.service.TextService.TextOrigin;
 import com.lolog.api.domain.video.service.VideoService;
 import com.lolog.api.global.error.ApiException;
 import com.lolog.api.global.error.ErrorCode;
-import com.lolog.api.global.storage.ImageStorage;
-import com.lolog.api.global.util.SafeLog;
+import com.lolog.api.global.storage.StorageDeletions;
 import com.lolog.api.global.web.PageRequestParams;
 import com.lolog.api.global.web.PageSort;
 import jakarta.persistence.EntityManager;
@@ -38,13 +37,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 // 카드 목록·상세·고치기·지우기를 맡는다.
 @Service
@@ -57,18 +52,16 @@ public class CardService {
 	static final int MAX_SPEAKERS = 4;
 	static final String SPEAKER_PREFIX = "화자";
 
-	private static final Logger log = LoggerFactory.getLogger(CardService.class);
-
 	private final CardRepository cards;
 	private final ComicRepository comics;
 	private final TextService texts;
-	private final ImageStorage storage;
+	private final StorageDeletions deletions;
 	private final CharacterViews characters;
 	private final CardAudioViews audio;
 	private final EntityManager entityManager;
 	private final VideoService videos;
 
-	public CardService(CardRepository cards, ComicRepository comics, TextService texts, ImageStorage storage,
+	public CardService(CardRepository cards, ComicRepository comics, TextService texts, StorageDeletions deletions,
 			CharacterViews characters, CardAudioViews audio, EntityManager entityManager, VideoService videos) {
 		this.videos = videos;
 		this.entityManager = entityManager;
@@ -76,7 +69,7 @@ public class CardService {
 		this.cards = cards;
 		this.comics = comics;
 		this.texts = texts;
-		this.storage = storage;
+		this.deletions = deletions;
 		this.characters = characters;
 	}
 
@@ -304,17 +297,7 @@ public class CardService {
 			texts.delete(textId);
 		}
 		if (audioKey != null) {
-			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-				@Override
-				public void afterCommit() {
-					try {
-						storage.delete(audioKey);
-					}
-					catch (Exception e) {
-						log.warn("지운 카드 {}의 구간 음성 파일을 지우지 못했습니다.", id, SafeLog.withoutMessages(e));
-					}
-				}
-			});
+			deletions.schedule(audioKey);
 		}
 	}
 

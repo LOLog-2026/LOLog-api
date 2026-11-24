@@ -2,6 +2,7 @@ package com.lolog.api.domain.notification.service;
 
 import com.lolog.api.domain.notification.repository.NotificationRepository;
 import com.lolog.api.global.push.PushSender;
+import com.lolog.api.global.transaction.AfterCommit;
 import com.lolog.api.global.util.SafeLog;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -12,8 +13,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.databind.ObjectMapper;
 
 // 카드·만화 결과, 친구 요청, 방 소식을 사용자의 모든 폰에 알린다(FR-NOTI, API DTO 명세 3장).
@@ -138,17 +137,7 @@ public class PushService implements DisposableBean {
 		if (!sender.enabled()) {
 			return;
 		}
-		if (TransactionSynchronizationManager.isSynchronizationActive()) {
-			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-				@Override
-				public void afterCommit() {
-					executor.execute(() -> deliver(userId, data));
-				}
-			});
-		}
-		else {
-			executor.execute(() -> deliver(userId, data));
-		}
+		AfterCommit.run(() -> executor.execute(() -> deliver(userId, data)));
 	}
 
 	// 알림 목록에 남긴다. data는 type을 뺀 나머지 값이다.

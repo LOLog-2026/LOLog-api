@@ -16,7 +16,7 @@ import com.lolog.api.domain.video.service.VideoPublisher;
 import com.lolog.api.global.error.ApiException;
 import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.storage.ImageStorage;
-import com.lolog.api.global.transaction.AfterCommit;
+import com.lolog.api.global.storage.StorageDeletions;
 import com.lolog.api.internal.comic.ComicWorkerDtos.Line;
 import com.lolog.api.internal.video.VideoWorkerDtos.SourceCharacter;
 import com.lolog.api.internal.video.VideoWorkerDtos.Speaker;
@@ -45,6 +45,7 @@ public class VideoWorkerService {
 	private final JobRepository jobs;
 	private final CharacterViews characters;
 	private final ImageStorage storage;
+	private final StorageDeletions deletions;
 	private final ObjectMapper objectMapper;
 	private final TransactionTemplate tx;
 	private final VideoPublisher publisher;
@@ -52,7 +53,7 @@ public class VideoWorkerService {
 	private final DefaultCharacterService defaultCharacters;
 
 	public VideoWorkerService(UserProfileRepository profiles, VideoRepository videos, CardRepository cards, JobRepository jobs,
-			CharacterViews characters, ImageStorage storage, ObjectMapper objectMapper, TransactionTemplate tx,
+			CharacterViews characters, ImageStorage storage, StorageDeletions deletions, ObjectMapper objectMapper, TransactionTemplate tx,
 			VideoPublisher publisher, PushService push, DefaultCharacterService defaultCharacters) {
 		this.profiles = profiles;
 		this.videos = videos;
@@ -60,6 +61,7 @@ public class VideoWorkerService {
 		this.jobs = jobs;
 		this.characters = characters;
 		this.storage = storage;
+		this.deletions = deletions;
 		this.objectMapper = objectMapper;
 		this.tx = tx;
 		this.publisher = publisher;
@@ -221,7 +223,7 @@ public class VideoWorkerService {
 			completeJob(videoId, "VIDEO_DRAW");
 			push.notify(video.getUserId(), PushService.videoDone(videoId, video.getCardId()));
 			if (audioKey != null) {
-				AfterCommit.run(() -> storage.delete(audioKey));
+				deletions.schedule(audioKey);
 			}
 		});
 	}

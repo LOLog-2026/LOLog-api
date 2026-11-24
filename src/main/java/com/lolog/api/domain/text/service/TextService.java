@@ -19,14 +19,13 @@ import com.lolog.api.domain.text.repository.TextRepository;
 import com.lolog.api.domain.text.repository.TextView;
 import com.lolog.api.global.error.ApiException;
 import com.lolog.api.global.error.ErrorCode;
+import com.lolog.api.global.transaction.AfterCommit;
 import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 // 글로 카드 만들기(texts.md, FR-TEXT-01). 글을 저장해 큐에 넣고, 워커가 보낸 카드 한 장을 받는다.
 // 글 상태는 칸으로 두지 않고 카드·작업으로 채운다(texts.md 2장 "상태 채우기").
@@ -85,12 +84,7 @@ public class TextService {
 	// 작업을 만들고 커밋 뒤에 큐에 넣는다.
 	private void queue(long textId, long userId) {
 		long jobId = jobs.save(Job.text(textId, userId)).getId();
-		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-			@Override
-			public void afterCommit() {
-				publisher.publishQuietly(jobId);
-			}
-		});
+		AfterCommit.run(() -> publisher.publishQuietly(jobId));
 	}
 
 	// 내 글 하나를 상태와 함께 돌려준다.

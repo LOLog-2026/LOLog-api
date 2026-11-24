@@ -1,8 +1,5 @@
 package com.lolog.api.internal.comic;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import com.lolog.api.domain.card.entity.Card;
 import com.lolog.api.domain.card.repository.CardRepository;
 import com.lolog.api.domain.character.service.CharacterViews.Ref;
@@ -15,6 +12,7 @@ import com.lolog.api.domain.notification.service.PushService;
 import com.lolog.api.global.error.ApiException;
 import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.storage.ImageStorage;
+import com.lolog.api.global.storage.StorageDeletions;
 import com.lolog.api.internal.comic.ComicWorkerDtos.ComicSource;
 import com.lolog.api.internal.comic.ComicWorkerDtos.Line;
 import com.lolog.api.internal.comic.ComicWorkerDtos.Speaker;
@@ -30,8 +28,6 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class ComicWorkerService {
 
-	private static final Logger log = LoggerFactory.getLogger(ComicWorkerService.class);
-
 	static final int WIDTH = 800;
 	static final int HEIGHT = 3152;
 	static final long MAX_BYTES = 20L * 1024 * 1024;
@@ -41,18 +37,20 @@ public class ComicWorkerService {
 	private final CardRepository cards;
 	private final JobRepository jobs;
 	private final ImageStorage storage;
+	private final StorageDeletions deletions;
 	private final ObjectMapper objectMapper;
 	private final TransactionTemplate tx;
 	private final PushService push;
 	private final CharacterViews characters;
 
 	public ComicWorkerService(ComicRepository comics, CardRepository cards, JobRepository jobs, ImageStorage storage,
-			ObjectMapper objectMapper, TransactionTemplate tx, PushService push, CharacterViews characters) {
+			StorageDeletions deletions, ObjectMapper objectMapper, TransactionTemplate tx, PushService push, CharacterViews characters) {
 		this.characters = characters;
 		this.comics = comics;
 		this.cards = cards;
 		this.jobs = jobs;
 		this.storage = storage;
+		this.deletions = deletions;
 		this.objectMapper = objectMapper;
 		this.tx = tx;
 		this.push = push;
@@ -108,25 +106,24 @@ public class ComicWorkerService {
 		// 올린 뒤에 상태를 바꾼다. 같은 키라 다시 올려도 덮어쓴다.
 		String key = ImageStorage.comicKey(found.getUserId(), found.getId());
 		storage.putPng(key, png);
-		tx.executeWithoutResult(status -> {
+		Boolean gone = tx.execute(status -> {
 			Comic comic = comics.findByIdForUpdate(comicId).orElse(null);
 			if (comic == null) {
-				// 올리는 사이에 만화가 지워졌으면 방금 올린 그림도 지운다. 지우지 못해도 404는 그대로 준다.
-				try {
-					storage.delete(key);
-				}
-				catch (RuntimeException e) {
-					log.warn("지운 만화 {}의 그림을 지우지 못했습니다.", comicId, e);
-				}
-				throw notFound();
+				// 올리는 사이에 만화가 지워졌으면 방금 올린 그림도 지운다. 지울 줄이 남게 커밋한 뒤 404를 준다.
+				deletions.schedule(key);
+				return true;
 			}
 			if (comic.isFinished()) {
-				return;
+				return false;
 			}
 			comic.finish(key);
 			jobs.findByComicId(comic.getId()).ifPresent(job -> job.complete());
 			push.notify(comic.getUserId(), PushService.comicDone(comic.getId(), comic.getCardId()));
+			return false;
 		});
+		if (Boolean.TRUE.equals(gone)) {
+			throw notFound();
+		}
 	}
 
 	// 기본만 본다: JSON 객체, version 1, comicId·cardId가 이 만화와 같음, panels 4개. 나머지 규칙은 워커가 검사한다.

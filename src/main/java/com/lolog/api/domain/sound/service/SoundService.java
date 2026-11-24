@@ -5,24 +5,18 @@ import com.lolog.api.domain.sound.repository.SoundRepository;
 import com.lolog.api.global.error.ApiException;
 import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.storage.ImageStorage;
-import com.lolog.api.global.util.SafeLog;
+import com.lolog.api.global.storage.StorageDeletions;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 // 쇼츠 효과음·배경음(sounds.md 5장, FR-EXT-03). 수집 스크립트가 Freesound CC0 소리를 넣고,
 // 워커(3호)가 콘티가 고른 검색어 값(door_slam, bgm_comic 등)으로 그 소리 목록을 받아 jobId로 하나를 고른다.
 // 파일은 서비스가 모아 둔 공용 파일이라 기본 화자 그림처럼 10분 서명 주소로 준다.
 @Service
 public class SoundService {
-
-	private static final Logger log = LoggerFactory.getLogger(SoundService.class);
 
 	public static final long MAX_FILE_BYTES = 5L * 1024 * 1024;
 	static final int MAX_TITLE = 200;
@@ -34,11 +28,13 @@ public class SoundService {
 
 	private final SoundRepository repository;
 	private final ImageStorage storage;
+	private final StorageDeletions deletions;
 
 	// 리포지토리와 저장소를 받는다.
-	public SoundService(SoundRepository repository, ImageStorage storage) {
+	public SoundService(SoundRepository repository, ImageStorage storage, StorageDeletions deletions) {
 		this.repository = repository;
 		this.storage = storage;
+		this.deletions = deletions;
 	}
 
 	// 워커에 주는 소리 한 개.
@@ -102,14 +98,7 @@ public class SoundService {
 		if (sound != null) {
 			String key = sound.getObjectKey();
 			repository.delete(sound);
-			afterCommit(() -> {
-				try {
-					storage.delete(key);
-				}
-				catch (Exception e) {
-					log.warn("소리 파일을 지우지 못했습니다.", SafeLog.withoutMessages(e));
-				}
-			});
+			deletions.schedule(key);
 		}
 	}
 
@@ -143,21 +132,6 @@ public class SoundService {
 	// Ogg 페이지는 "OggS"로 시작한다.
 	static boolean isOgg(byte[] bytes) {
 		return bytes.length >= 4 && bytes[0] == 'O' && bytes[1] == 'g' && bytes[2] == 'g' && bytes[3] == 'S';
-	}
-
-	// 트랜잭션이 커밋된 뒤에 할 일을 돌린다. 트랜잭션이 없으면 바로 돌린다.
-	private static void afterCommit(Runnable task) {
-		if (TransactionSynchronizationManager.isSynchronizationActive()) {
-			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-				@Override
-				public void afterCommit() {
-					task.run();
-				}
-			});
-		}
-		else {
-			task.run();
-		}
 	}
 
 }

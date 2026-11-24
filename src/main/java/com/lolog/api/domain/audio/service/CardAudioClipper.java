@@ -7,6 +7,8 @@ import com.lolog.api.domain.recording.entity.Recording;
 import com.lolog.api.domain.recording.repository.RecordingPartRepository;
 import com.lolog.api.domain.recording.repository.RecordingRepository;
 import com.lolog.api.global.storage.ImageStorage;
+import com.lolog.api.global.storage.StorageDeletions;
+import com.lolog.api.global.transaction.AfterCommit;
 import com.lolog.api.global.util.SafeLog;
 import java.io.ByteArrayOutputStream;
 import java.util.List;
@@ -16,8 +18,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 // 카드 구간 음성을 전체 녹음 파일에서 잘라 따로 둔다(audio.md 4장). 전체 파일은 7일 뒤 지워지기 때문이다.
 // 카드가 생겼을 때와 음성 파일이 올라왔을 때 모두 부르고, 둘 다 갖춰진 쪽에서 잘린다.
@@ -37,16 +37,18 @@ public class CardAudioClipper implements DisposableBean {
 	private final RecordingPartRepository parts;
 	private final RecordingAudioFileRepository audioFiles;
 	private final ImageStorage storage;
+	private final StorageDeletions deletions;
 	// 응답을 붙잡지 않게 따로 자른다. 빈으로 두지 않는다(Spring 기본 작업 실행기를 대신하지 않게).
 	private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
 	public CardAudioClipper(CardRepository cards, RecordingRepository recordings, RecordingPartRepository parts,
-			RecordingAudioFileRepository audioFiles, ImageStorage storage) {
+			RecordingAudioFileRepository audioFiles, ImageStorage storage, StorageDeletions deletions) {
 		this.cards = cards;
 		this.recordings = recordings;
 		this.parts = parts;
 		this.audioFiles = audioFiles;
 		this.storage = storage;
+		this.deletions = deletions;
 	}
 
 	// 서버가 꺼질 때 자르기 작업 실행기를 닫는다.
@@ -61,18 +63,7 @@ public class CardAudioClipper implements DisposableBean {
 
 	// 녹음의 카드 중 아직 음성이 없는 카드를 모두 자른다. 트랜잭션 안에서 부르면 커밋된 뒤에 시작한다.
 	public void clipRecordingLater(long recordingId) {
-		Runnable task = () -> executor.execute(() -> clipRecording(recordingId));
-		if (TransactionSynchronizationManager.isSynchronizationActive()) {
-			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-				@Override
-				public void afterCommit() {
-					task.run();
-				}
-			});
-		}
-		else {
-			task.run();
-		}
+		AfterCommit.run(() -> executor.execute(() -> clipRecording(recordingId)));
 	}
 
 	// 녹음의 카드 중 음성이 없는 카드를 바로 자른다.
@@ -150,8 +141,9 @@ public class CardAudioClipper implements DisposableBean {
 		storage.putAac(key, clip.toByteArray());
 		int updated = cards.attachAudio(card.getId(), key, Math.round(durationUs / 1000.0));
 		// 그 사이 카드가 지워졌으면(탈퇴 포함) 올린 파일도 지운다. 다른 쪽이 먼저 잘랐으면 같은 키라 그대로 둔다.
+		// 카드가 없어 다시 자르기가 이 카드를 찾지 않으니, 못 지우면 지울 줄로 남겨 다시 지운다.
 		if (updated == 0 && !cards.existsById(card.getId())) {
-			storage.delete(key);
+			deletions.schedule(key);
 			return false;
 		}
 		return updated > 0;

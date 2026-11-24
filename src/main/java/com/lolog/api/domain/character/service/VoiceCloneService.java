@@ -9,14 +9,11 @@ import com.lolog.api.domain.user.repository.UserProfileRepository;
 import com.lolog.api.global.error.ApiException;
 import com.lolog.api.global.error.ErrorCode;
 import com.lolog.api.global.storage.ImageStorage;
-import com.lolog.api.global.util.SafeLog;
+import com.lolog.api.global.storage.StorageDeletions;
+import com.lolog.api.global.transaction.AfterCommit;
 import java.time.OffsetDateTime;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 // 내 목소리(characters.md "내 목소리 (FR-CHAR-05)"). 상태와 파일 키는 user_profiles.voice_clone_*에 있다.
 // 녹음 → PROCESSING + VOICE_CLONE 작업(lolog:video, kind "voice_clone") → 워커가 미리 듣기를 보내면 READY, 실패하면 FAILED.
@@ -24,8 +21,6 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 // 다시 녹음하면 원본을 바꾸고 미리 듣기는 새로 만든다. 실패하면 쓸 수 있는 목소리가 없으니 녹음·미리 듣기를 지운다(초안).
 @Service
 public class VoiceCloneService {
-
-	private static final Logger log = LoggerFactory.getLogger(VoiceCloneService.class);
 
 	// 문장 하나 5~15초면 wav도 2MB 안팎이다. Nginx 한도(5MB) 안으로 둔다(초안).
 	public static final long MAX_AUDIO_BYTES = 4L * 1024 * 1024;
@@ -41,16 +36,18 @@ public class VoiceCloneService {
 	private final UserProfileRepository profiles;
 	private final RecordingRepository recordings;
 	private final ImageStorage storage;
+	private final StorageDeletions deletions;
 	private final JobRepository jobs;
 	private final VoiceClonePublisher publisher;
 	private final PushService push;
 	private final CharacterViews views;
 
 	public VoiceCloneService(UserProfileRepository profiles, RecordingRepository recordings, ImageStorage storage,
-			JobRepository jobs, VoiceClonePublisher publisher, PushService push, CharacterViews views) {
+			StorageDeletions deletions, JobRepository jobs, VoiceClonePublisher publisher, PushService push, CharacterViews views) {
 		this.profiles = profiles;
 		this.recordings = recordings;
 		this.storage = storage;
+		this.deletions = deletions;
 		this.jobs = jobs;
 		this.publisher = publisher;
 		this.push = push;
@@ -106,19 +103,19 @@ public class VoiceCloneService {
 			throw new ApiException(ErrorCode.VOICE_CLONE_IN_PROGRESS);
 		}
 		String key = ImageStorage.voiceCloneSampleKey(userId, type.ext());
+		// 예전 녹음을 아직 못 지웠으면 그 지우기를 빼고 올린다(새 녹음이 지워지지 않게).
+		deletions.cancel(key);
 		storage.put(key, audio, type.contentType());
 		profile.startVoiceClone(key, RECORD_SENTENCE);
 		long jobId = jobs.save(Job.voiceClone(userId)).getId();
-		afterCommit(() -> {
-			// 확장자가 바뀌었으면 예전 원본, 그리고 예전 미리 듣기를 지운다.
-			if (state.sampleKey() != null && !state.sampleKey().equals(key)) {
-				deleteQuietly(state.sampleKey());
-			}
-			if (state.previewKey() != null) {
-				deleteQuietly(state.previewKey());
-			}
-			publisher.publishQuietly(jobId);
-		});
+		// 확장자가 바뀌었으면 예전 원본, 그리고 예전 미리 듣기를 지운다. 지우기를 먼저 맡겨 큐에 넣기보다 먼저 지운다.
+		if (state.sampleKey() != null && !state.sampleKey().equals(key)) {
+			deletions.schedule(state.sampleKey());
+		}
+		if (state.previewKey() != null) {
+			deletions.schedule(state.previewKey());
+		}
+		AfterCommit.run(() -> publisher.publishQuietly(jobId));
 		return views.profileResponse(userId);
 	}
 
@@ -133,14 +130,12 @@ public class VoiceCloneService {
 		profile.removeVoiceClone();
 		// 만드는 중이던 작업은 실패로 둔다. 워커가 나중에 녹음을 찾으면 404라 그 메시지를 버린다.
 		jobs.failQueued(userId, "VOICE_CLONE", "내 목소리를 지움");
-		afterCommit(() -> {
-			if (state.sampleKey() != null) {
-				deleteQuietly(state.sampleKey());
-			}
-			if (state.previewKey() != null) {
-				deleteQuietly(state.previewKey());
-			}
-		});
+		if (state.sampleKey() != null) {
+			deletions.schedule(state.sampleKey());
+		}
+		if (state.previewKey() != null) {
+			deletions.schedule(state.previewKey());
+		}
 	}
 
 	// 친구 쇼츠 동의(③)만 바꾼다. 녹음은 그대로. 만든 적이 없으면 404 VOICE_CLONE_NOT_FOUND(초안).
@@ -185,6 +180,8 @@ public class VoiceCloneService {
 			.filter(p -> UserProfile.CHARACTER_PROCESSING.equals(p.getVoiceCloneStatus()))
 			.orElseThrow(VoiceCloneService::notFound);
 		String key = ImageStorage.voiceClonePreviewKey(userId);
+		// 예전 미리 듣기를 아직 못 지웠으면 그 지우기를 빼고 올린다.
+		deletions.cancel(key);
 		storage.put(key, wav, "audio/wav");
 		profile.voiceCloneReady(key);
 		jobs.completeQueued(userId, "VOICE_CLONE");
@@ -211,11 +208,9 @@ public class VoiceCloneService {
 			text = text.substring(0, MAX_FAIL_REASON);
 		}
 		profile.voiceCloneFailed(text);
-		afterCommit(() -> {
-			if (state.sampleKey() != null) {
-				deleteQuietly(state.sampleKey());
-			}
-		});
+		if (state.sampleKey() != null) {
+			deletions.schedule(state.sampleKey());
+		}
 		push.notify(userId, PushService.voiceCloneFailed());
 	}
 
@@ -240,31 +235,6 @@ public class VoiceCloneService {
 	static boolean isWav(byte[] bytes) {
 		return bytes.length >= 12 && bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F'
 				&& bytes[8] == 'W' && bytes[9] == 'A' && bytes[10] == 'V' && bytes[11] == 'E';
-	}
-
-	// 저장소 파일을 지운다. 실패하면 로그만 남긴다.
-	private void deleteQuietly(String key) {
-		try {
-			storage.delete(key);
-		}
-		catch (Exception e) {
-			log.warn("내 목소리 파일을 지우지 못했습니다.", SafeLog.withoutMessages(e));
-		}
-	}
-
-	// 트랜잭션이 커밋된 뒤에 할 일을 맡긴다. 트랜잭션 밖이면 바로 한다.
-	private static void afterCommit(Runnable task) {
-		if (TransactionSynchronizationManager.isSynchronizationActive()) {
-			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-				@Override
-				public void afterCommit() {
-					task.run();
-				}
-			});
-		}
-		else {
-			task.run();
-		}
 	}
 
 	// VOICE_CLONE_NOT_FOUND 예외를 만든다.
