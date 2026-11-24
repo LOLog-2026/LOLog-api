@@ -9,8 +9,8 @@ import jakarta.persistence.Table;
 import java.time.OffsetDateTime;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.annotations.Generated;
+import org.hibernate.generator.EventType;
 
 // 모든 사용자에게 보이는 공지 하나(inbox.md 2장). 운영자가 쓰고 고친다(admin.md).
 @Entity
@@ -29,12 +29,14 @@ public class Notice {
 	@Column(nullable = false, columnDefinition = "text")
 	private String body;
 
-	@CreationTimestamp
-	@Column(name = "created_at", nullable = false, updatable = false)
+	// DB 시계(clock_timestamp, V22)로 넣고, 넣은 뒤 다시 읽는다. 알림함에서 알림(DB 시계)과 시각 순으로 섞어 보여 주기 때문이다.
+	@Generated
+	@Column(name = "created_at", nullable = false, insertable = false, updatable = false)
 	private OffsetDateTime createdAt;
 
-	@UpdateTimestamp
-	@Column(name = "updated_at", nullable = false)
+	// 처음에는 DB 기본값이고, 고치면 edit이 바꾼다. 응답에만 쓰고 다른 시각과 비교하지 않는다.
+	@Generated(event = EventType.INSERT)
+	@Column(name = "updated_at", nullable = false, insertable = false)
 	private OffsetDateTime updatedAt;
 
 	// 새 공지를 만든다.
@@ -43,10 +45,11 @@ public class Notice {
 		this.body = body;
 	}
 
-	// 제목과 본문을 고친다.
+	// 제목과 본문을 고친다. 같은 값이어도 수정 일시는 지금으로 바뀐다.
 	public void edit(String title, String body) {
 		this.title = title;
 		this.body = body;
+		this.updatedAt = OffsetDateTime.now();
 	}
 
 }
