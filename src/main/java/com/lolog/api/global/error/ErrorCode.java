@@ -8,6 +8,7 @@ public enum ErrorCode {
 
 	// ---- 400 BAD_REQUEST ----
 	CANNOT_FRIEND_SELF(HttpStatus.BAD_REQUEST, "나에게는 할 수 없어요."),
+	CATEGORY_NOT_SELECTABLE(HttpStatus.BAD_REQUEST, "이 블로그는 카테고리를 고를 수 없어요."),
 	DUPLICATE_CHARACTER(HttpStatus.BAD_REQUEST, "한 카드에서 같은 그림을 두 화자에 붙일 수 없어요."),
 	INVALID_BLOG(HttpStatus.BAD_REQUEST, "블로그를 읽지 못했습니다."),
 	INVALID_REQUEST(HttpStatus.BAD_REQUEST, "요청 형식이 올바르지 않습니다."),

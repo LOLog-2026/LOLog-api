@@ -193,7 +193,9 @@ public class BlogService {
 	// 연결 끊기: blog_sources 줄만 지운다. 가져온 글(blog_posts)은 source_id만 비워져 남고, 만든 카드도 남는다.
 	@Transactional
 	public void delete(long userId, long id) {
-		sources.delete(sources.findByIdAndUserId(id, userId).orElseThrow(BlogService::notFound));
+		if (sources.deleteMine(id, userId) == 0) {
+			throw notFound();
+		}
 	}
 
 	// 가져온 글 목록. 최신 글(나중에 가져온 글)부터이고, 커서는 마지막 글의 ID다.
@@ -319,10 +321,11 @@ public class BlogService {
 		return result;
 	}
 
-	// Medium·velog처럼 카테고리가 없는 블로그에 카테고리를 고르면 거절한다(초안, texts.md 4장 "플랫폼별 카테고리").
+	// Medium·velog처럼 카테고리가 없는 블로그에 카테고리를 고르면 400 CATEGORY_NOT_SELECTABLE(field categories)로 거절한다
+	// (texts.md 4장 "플랫폼별 카테고리").
 	private static void requireSelectable(Categories rule, List<String> categories) {
 		if (!rule.selectable() && !categories.isEmpty()) {
-			throw ApiException.invalid("categories");
+			throw new ApiException(ErrorCode.CATEGORY_NOT_SELECTABLE, "categories");
 		}
 	}
 
