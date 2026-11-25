@@ -94,7 +94,17 @@ public class Card {
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
 
-	// 녹음으로 만든 카드.
+	/**
+	 * 녹음으로 만든 카드.
+	 *
+	 * @param recordingId 카드를 만든 녹음 ID
+	 * @param userId 카드 주인 회원 ID
+	 * @param kind 이야기 종류
+	 * @param summary 요약
+	 * @param startMs 녹음 안 시작 위치(ms)
+	 * @param endMs 녹음 안 끝 위치(ms)
+	 * @param recordedAt 녹음 시작 시각 + startMs
+	 */
 	public Card(Long recordingId, Long userId, String kind, String summary, long startMs, long endMs,
 			OffsetDateTime recordedAt) {
 		this.recordingId = recordingId;
@@ -106,7 +116,17 @@ public class Card {
 		this.recordedAt = recordedAt;
 	}
 
-	// 글 하나로 만든 카드(texts.md). 시간 값은 없고, 장소는 글에 적은 장소다.
+	/**
+	 * 글 하나로 만든 카드(texts.md). 시간 값은 없고, 장소는 글에 적은 장소다.
+	 *
+	 * @param textId 카드를 만든 글 ID
+	 * @param userId 카드 주인 회원 ID
+	 * @param kind 이야기 종류
+	 * @param summary 요약
+	 * @param place 글에 적은 장소(null 가능)
+	 * @param recordedAt 직접 쓴 글은 올린 시각, 블로그 글은 쓴 시각
+	 * @return 새 글 카드(저장 전)
+	 */
 	public static Card fromText(Long textId, Long userId, String kind, String summary, String place,
 			OffsetDateTime recordedAt) {
 		Card card = new Card();
@@ -119,12 +139,24 @@ public class Card {
 		return card;
 	}
 
-	// 화자 이름은 비어 있는 채로 시작한다. 앱은 이름 대신 key("화자1")를 보여 준다.
+	/**
+	 * 화자 이름은 비어 있는 채로 시작한다. 앱은 이름 대신 key("화자1")를 보여 준다.
+	 *
+	 * @param key 화자 key(예: 화자1)
+	 */
 	public void addSpeaker(String key) {
 		speakers.add(new CardSpeaker(this, key));
 	}
 
-	// 대사를 한 줄 더한다.
+	/**
+	 * 대사를 한 줄 더한다.
+	 *
+	 * @param lineNo 대사 줄 번호
+	 * @param speakerKey 말한 화자 key
+	 * @param text 대사 내용
+	 * @param startMs 대사 시작 위치(ms, 모르면 null)
+	 * @param endMs 대사 끝 위치(ms, 모르면 null)
+	 */
 	public void addLine(int lineNo, String speakerKey, String text, Long startMs, Long endMs) {
 		lines.add(new CardLine(this, lineNo, speakerKey, text, startMs, endMs));
 	}

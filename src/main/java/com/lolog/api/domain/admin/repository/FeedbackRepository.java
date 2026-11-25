@@ -12,23 +12,53 @@ import org.springframework.data.repository.query.Param;
 // 오류 신고·의견 DB 조회.
 public interface FeedbackRepository extends JpaRepository<Feedback, Long> {
 
-	// 트랜잭션이 끝날 때까지 회원 한 명의 보내기를 잠근다(PostgreSQL advisory lock). JPA로 쓸 수 없어 native query로 둔다.
+	/**
+	 * 트랜잭션이 끝날 때까지 회원 한 명의 보내기를 잠근다(PostgreSQL advisory lock). JPA로 쓸 수 없어 native query로 둔다.
+	 *
+	 * @param key1 잠금 종류를 나누는 첫 번째 키
+	 * @param key2 잠글 회원을 나타내는 두 번째 키(회원 ID에서 만든 값)
+	 * @return 잠금을 얻으면 1
+	 */
 	@Query(value = "select 1 from pg_advisory_xact_lock(:key1, :key2)", nativeQuery = true)
 	Integer lockSender(@Param("key1") int key1, @Param("key2") int key2);
 
-	// since 뒤에 이 회원이 보낸 수.
+	/**
+	 * since 뒤에 이 회원이 보낸 수.
+	 *
+	 * @param userId 보낸 회원 ID
+	 * @param since 이 일시 뒤에 보낸 것만 센다(이 일시는 빼고)
+	 * @return 보낸 오류 신고·의견 수
+	 */
 	@Query("select count(f) from Feedback f where f.userId = :userId and f.createdAt > :since")
 	long countSentSince(@Param("userId") Long userId, @Param("since") OffsetDateTime since);
 
-	// 최신순(id 내림차순). before가 null이면 처음부터.
+	/**
+	 * 최신순(id 내림차순). before가 null이면 처음부터.
+	 *
+	 * @param before 이 ID보다 작은 것만. null이면 처음부터
+	 * @param limit 가져올 최대 수
+	 * @return 오류 신고·의견 목록
+	 */
 	@Query("select f from Feedback f where (:before is null or f.id < :before) order by f.id desc")
 	List<Feedback> findPage(@Param("before") Long before, Limit limit);
 
-	// 처리 상태가 status인 것만 최신순으로.
+	/**
+	 * 처리 상태가 status인 것만 최신순으로.
+	 *
+	 * @param status 처리 상태(OPEN·DONE)
+	 * @param before 이 ID보다 작은 것만. null이면 처음부터
+	 * @param limit 가져올 최대 수
+	 * @return 오류 신고·의견 목록
+	 */
 	@Query("select f from Feedback f where f.status = :status and (:before is null or f.id < :before) order by f.id desc")
 	List<Feedback> findPageByStatus(@Param("status") String status, @Param("before") Long before, Limit limit);
 
-	// 보낸 사람을 비운다(탈퇴). user_id는 엔티티로 바꾸지 않는 칸이라 일괄 UPDATE로 바꾼다.
+	/**
+	 * 보낸 사람을 비운다(탈퇴). user_id는 엔티티로 바꾸지 않는 칸이라 일괄 UPDATE로 바꾼다.
+	 *
+	 * @param userId 탈퇴한 회원 ID
+	 * @return 바꾼 행 수
+	 */
 	@Modifying(flushAutomatically = true, clearAutomatically = true)
 	@Query("update Feedback f set f.userId = null, f.updatedAt = current_timestamp where f.userId = :userId")
 	int clearUser(@Param("userId") Long userId);

@@ -24,8 +24,14 @@ public interface PushSender {
 		return true;
 	}
 
-	// tokens에 data 메시지를 보내고, FCM이 무효라고 답한 토큰을 돌려준다.
-	// 요청 전체가 실패하면(네트워크, FCM 오류) 예외를 던진다.
+	/**
+	 * tokens에 data 메시지를 보내고, FCM이 무효라고 답한 토큰을 돌려준다.
+	 * 요청 전체가 실패하면(네트워크, FCM 오류) 예외를 던진다.
+	 *
+	 * @param tokens 보낼 기기의 FCM 토큰
+	 * @param data data 메시지의 키·값
+	 * @return FCM이 무효라고 답한 토큰(없으면 빈 목록)
+	 */
 	List<String> send(List<String> tokens, Map<String, String> data) throws Exception;
 
 }

@@ -25,6 +25,7 @@ class WordPressPlatform implements BlogPlatform {
 	private final BlogFetcher fetcher;
 	private final ObjectMapper objectMapper;
 
+	/** 쓰는 도구를 받는다. */
 	WordPressPlatform(BlogFetcher fetcher, ObjectMapper objectMapper) {
 		this.fetcher = fetcher;
 		this.objectMapper = objectMapper;
@@ -35,22 +36,47 @@ class WordPressPlatform implements BlogPlatform {
 		return Platform.WORDPRESS;
 	}
 
+	/**
+	 * {이름}.wordpress.com 주소인지 본다.
+	 *
+	 * @param siteUrl 사용자가 넣은 블로그 주소
+	 * @return wordpress.com 주소면 true
+	 */
 	@Override
 	public boolean supports(URI siteUrl) {
 		return BlogPlatform.host(siteUrl).endsWith(".wordpress.com");
 	}
 
+	/**
+	 * 피드의 generator에 wordpress.org나 wordpress.com이 있는지 본다.
+	 *
+	 * @param feed 찾은 피드
+	 * @return WordPress 피드면 true
+	 */
 	@Override
 	public boolean supportsFeed(Feed feed) {
 		String generator = BlogPlatform.generator(feed);
 		return generator.contains("wordpress.org") || generator.contains("wordpress.com");
 	}
 
+	/**
+	 * 호스트 뒤에 /feed/를 붙인 주소를 만든다.
+	 *
+	 * @param siteUrl 사용자가 넣은 블로그 주소
+	 * @return 먼저 읽어 볼 RSS 주소
+	 */
 	@Override
 	public List<String> feedCandidates(URI siteUrl) {
 		return List.of("https://" + BlogPlatform.host(siteUrl) + "/feed/");
 	}
 
+	/**
+	 * REST로 진짜 카테고리 이름을 받아 규칙을 만든다. 받지 못하면 {@code <category>}를 그대로 보는 규칙이다.
+	 *
+	 * @param siteUrl 사용자가 넣은 블로그 주소
+	 * @param feed 읽은 피드(REST 주소를 정할 때 link·generator를 본다)
+	 * @return 진짜 카테고리 이름만 보는 규칙. 받지 못했으면 {@code <category>} 그대로 보는 규칙
+	 */
 	@Override
 	public Categories categories(URI siteUrl, Feed feed) {
 		try {
@@ -74,7 +100,13 @@ class WordPressPlatform implements BlogPlatform {
 		}
 	}
 
-	// wordpress.com 블로그는 공용 REST, 자체 설치는 블로그 첫 화면 주소(channel link, 없으면 넣은 주소) 뒤 /wp-json
+	/**
+	 * wordpress.com 블로그는 공용 REST, 자체 설치는 블로그 첫 화면 주소(channel link, 없으면 넣은 주소) 뒤 /wp-json
+	 *
+	 * @param siteUrl 사용자가 넣은 블로그 주소
+	 * @param feed 읽은 피드
+	 * @return 카테고리 목록을 받을 REST 주소
+	 */
 	static String restUrl(URI siteUrl, Feed feed) {
 		URI home = siteUrl;
 		if (feed.link() != null) {

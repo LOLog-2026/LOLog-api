@@ -16,8 +16,13 @@ final class UnauthorizedWriter {
 	private UnauthorizedWriter() {
 	}
 
-	// 토큰이 없거나 틀리면 UNAUTHORIZED, 만료된 액세스 토큰이면 TOKEN_EXPIRED(앱은 이때만 갱신),
-	// 토큰을 확인하는 중에 서버 쪽 문제(Redis)가 생기면 INTERNAL_ERROR(앱은 로그인을 풀지 않고 다시 시도한다).
+	/**
+	 * 토큰이 없거나 틀리면 UNAUTHORIZED, 만료된 액세스 토큰이면 TOKEN_EXPIRED(앱은 이때만 갱신),
+	 * 토큰을 확인하는 중에 서버 쪽 문제(Redis)가 생기면 INTERNAL_ERROR(앱은 로그인을 풀지 않고 다시 시도한다).
+	 *
+	 * @param response 오류 본문을 쓸 응답
+	 * @param code 답할 오류 코드(HTTP 상태와 문구도 이 코드가 정한다)
+	 */
 	static void write(HttpServletResponse response, ErrorCode code) throws IOException {
 		response.setStatus(code.status().value());
 		response.setContentType(MediaType.APPLICATION_JSON_VALUE);

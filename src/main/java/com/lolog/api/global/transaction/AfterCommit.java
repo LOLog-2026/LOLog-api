@@ -18,7 +18,11 @@ public final class AfterCommit {
 	private AfterCommit() {
 	}
 
-	// 커밋 뒤에 할 일을 등록한다.
+	/**
+	 * 커밋 뒤에 할 일을 등록한다.
+	 *
+	 * @param work 커밋 뒤에 할 일. 실패해도 예외를 밖으로 던지지 않고 로그만 남긴다
+	 */
 	public static void run(Runnable work) {
 		Runnable quiet = () -> {
 			try {

@@ -28,7 +28,7 @@ public class AudioRetentionJob {
 	private final ImageStorage storage;
 	private final CardAudioClipper clipper;
 
-	// 리포지토리, 저장소, 자르기를 받는다.
+	/** 리포지토리, 저장소, 자르기를 받는다. */
 	public AudioRetentionJob(RecordingAudioFileRepository files, ImageStorage storage, CardAudioClipper clipper) {
 		this.files = files;
 		this.storage = storage;

@@ -44,6 +44,21 @@ public class DetectResultService {
 	private final CardAudioClipper audioClipper;
 	private final long latePartMinutes;
 
+	/**
+	 * 쓰는 저장소와 도구, 늦게 온 묶음 기준 시간을 받는다.
+	 *
+	 * @param recordings 녹음 저장소
+	 * @param parts 녹음 묶음 저장소
+	 * @param jobs 작업 저장소
+	 * @param cards 카드 저장소
+	 * @param recordingService 다음 묶음을 고르는 녹음 서비스
+	 * @param publisher 감지 작업을 큐에 넣는 도구
+	 * @param objectMapper 대화 글 JSON 변환기
+	 * @param tx 트랜잭션 템플릿
+	 * @param push 푸시 서비스
+	 * @param audioClipper 카드 구간 음성을 자르는 도구
+	 * @param latePartMinutes 다음 묶음을 기다리는 시간(분, lolog.detect.late-part-minutes, 기본 70). 넘으면 넘겨 둔 부분만 따로 감지한다
+	 */
 	public DetectResultService(RecordingRepository recordings, RecordingPartRepository parts, JobRepository jobs,
 			CardRepository cards, RecordingService recordingService, DetectPublisher publisher, ObjectMapper objectMapper,
 			TransactionTemplate tx, PushService push, CardAudioClipper audioClipper,
@@ -61,7 +76,12 @@ public class DetectResultService {
 		this.latePartMinutes = latePartMinutes;
 	}
 
-	// 감지 결과를 카드로 저장하고 다음 묶음을 큐에 넣는다.
+	/**
+	 * 감지 결과를 카드로 저장하고 다음 묶음을 큐에 넣는다.
+	 *
+	 * @param recordingId 녹음 ID
+	 * @param result 워커가 보낸 묶음 하나의 감지 결과
+	 */
 	public void receive(long recordingId, DetectResult result) {
 		List<Long> next = tx.execute(status -> {
 			Recording recording = recordings.findByIdForUpdate(recordingId)
@@ -104,7 +124,12 @@ public class DetectResultService {
 		next.forEach(publisher::publishQuietly);
 	}
 
-	// 감지 작업 실패를 기록하고 다음 묶음을 큐에 넣는다.
+	/**
+	 * 감지 작업 실패를 기록하고 다음 묶음을 큐에 넣는다.
+	 *
+	 * @param jobId 실패한 감지 작업 ID
+	 * @param reason 워커가 보낸 실패 이유
+	 */
 	public void fail(long jobId, String reason) {
 		List<Long> next = tx.execute(status -> {
 			Long recordingId = jobs.findRecordingIdByJobId(jobId)
@@ -132,7 +157,11 @@ public class DetectResultService {
 		dispatchLateCarries(OffsetDateTime.now().minusMinutes(latePartMinutes));
 	}
 
-	// 다음 묶음이 오지 않은 채 before보다 오래된 묶음의 넘겨 둔 부분만 따로 감지한다(늦게 온 묶음 규칙).
+	/**
+	 * 다음 묶음이 오지 않은 채 before보다 오래된 묶음의 넘겨 둔 부분만 따로 감지한다(늦게 온 묶음 규칙).
+	 *
+	 * @param before 이 시각보다 먼저 만든 묶음만 본다
+	 */
 	void dispatchLateCarries(OffsetDateTime before) {
 		for (Long recordingId : parts.findRecordingIdsWaitingTooLong(before).stream().distinct().toList()) {
 			List<Long> jobIds = tx.execute(status -> {
@@ -157,7 +186,11 @@ public class DetectResultService {
 		}
 	}
 
-	// 명세의 제한 중 어노테이션으로 못 보는 것. 틀리면 400 INVALID_REQUEST와 틀린 칸의 경로.
+	/**
+	 * 명세의 제한 중 어노테이션으로 못 보는 것. 틀리면 400 INVALID_REQUEST와 틀린 칸의 경로.
+	 *
+	 * @param detected 워커가 보낸 카드
+	 */
 	private void validate(List<DetectedCard> detected) {
 		for (int i = 0; i < detected.size(); i++) {
 			DetectedCard card = detected.get(i);
@@ -182,9 +215,15 @@ public class DetectResultService {
 		}
 	}
 
-	// 앞 묶음에서 이미 카드가 된 이야기는 버린다(기능 명세 "묶음 경계" ③, API DTO 명세 DetectResult).
-	// 넘긴 글에 그 이야기가 섞여 다시 감지된 경우라, 같은 녹음의 카드와 시간 범위가 겹치면 같은 이야기로 본다.
-	// 이번 결과 안의 카드끼리는 비교하지 않는다(워커가 겹치지 않게 고른다).
+	/**
+	 * 앞 묶음에서 이미 카드가 된 이야기는 버린다(기능 명세 "묶음 경계" ③, API DTO 명세 DetectResult).
+	 * 넘긴 글에 그 이야기가 섞여 다시 감지된 경우라, 같은 녹음의 카드와 시간 범위가 겹치면 같은 이야기로 본다.
+	 * 이번 결과 안의 카드끼리는 비교하지 않는다(워커가 겹치지 않게 고른다).
+	 *
+	 * @param recordingId 녹음 ID
+	 * @param detected 워커가 보낸 카드
+	 * @return 이 녹음의 기존 카드와 시간 범위가 겹치지 않는 카드
+	 */
 	private List<DetectedCard> fresh(long recordingId, List<DetectedCard> detected) {
 		List<Card> existing = cards.findByRecordingIdOrderById(recordingId);
 		return detected.stream()
@@ -192,7 +231,13 @@ public class DetectResultService {
 			.toList();
 	}
 
-	// 감지한 카드를 저장할 Card로 바꾼다.
+	/**
+	 * 감지한 카드를 저장할 Card로 바꾼다.
+	 *
+	 * @param recording 카드를 만든 녹음
+	 * @param detected 감지한 카드
+	 * @return 저장할 카드(화자·대사 포함)
+	 */
 	private Card toCard(Recording recording, DetectedCard detected) {
 		Card card = new Card(recording.getId(), recording.getUserId(), detected.kind(), detected.summary(),
 				detected.startMs(), detected.endMs(), recording.getStartedAt().plusNanos(detected.startMs() * 1_000_000));
@@ -202,7 +247,12 @@ public class DetectResultService {
 		return card;
 	}
 
-	// 감지가 끝난 대화 글을 지운다(FR-CARD-04). part까지의 묶음에서 carry 이후 구간만 다음 묶음을 위해 남긴다.
+	/**
+	 * 감지가 끝난 대화 글을 지운다(FR-CARD-04). part까지의 묶음에서 carry 이후 구간만 다음 묶음을 위해 남긴다.
+	 *
+	 * @param part 이번에 처리한 묶음
+	 * @param carry 다음 묶음에 남길 구간의 시작(ms), null이면 모두 지운다
+	 */
 	private void pruneUpTo(RecordingPart part, Long carry) {
 		for (RecordingPart p : parts.findByRecordingIdOrderByPartNo(part.getRecording().getId())) {
 			if (p.getPartNo() > part.getPartNo() || p.getSentences() == null) {

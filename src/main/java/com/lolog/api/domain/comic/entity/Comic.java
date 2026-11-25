@@ -63,7 +63,13 @@ public class Comic {
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
 
-	// 카드로 새 만화를 만든다. 처음 상태는 QUEUED다.
+	/**
+	 * 카드로 새 만화를 만든다. 처음 상태는 QUEUED다.
+	 *
+	 * @param cardId 만화로 만들 카드 ID
+	 * @param userId 만화를 요청한 회원 ID
+	 * @param cardSummary 요청할 때의 카드 요약
+	 */
 	public Comic(Long cardId, Long userId, String cardSummary) {
 		this.cardId = cardId;
 		this.userId = userId;
@@ -80,19 +86,31 @@ public class Comic {
 		status = ComicStatus.STORYBOARD;
 	}
 
-	// 콘티를 저장하고 그리기 단계로 넘긴다.
+	/**
+	 * 콘티를 저장하고 그리기 단계로 넘긴다.
+	 *
+	 * @param json 워커가 보낸 콘티 JSON
+	 */
 	public void saveStoryboard(String json) {
 		storyboard = json;
 		status = ComicStatus.DRAWING;
 	}
 
-	// 이미지 키를 저장하고 완료로 바꾼다.
+	/**
+	 * 이미지 키를 저장하고 완료로 바꾼다.
+	 *
+	 * @param key 저장소에 올린 만화 이미지 객체 키
+	 */
 	public void finish(String key) {
 		imageKey = key;
 		status = ComicStatus.DONE;
 	}
 
-	// 실패로 바꾸고 이유를 남긴다.
+	/**
+	 * 실패로 바꾸고 이유를 남긴다.
+	 *
+	 * @param reason 남길 실패 이유(서버 기록용)
+	 */
 	public void fail(String reason) {
 		status = ComicStatus.FAILED;
 		failReason = reason;

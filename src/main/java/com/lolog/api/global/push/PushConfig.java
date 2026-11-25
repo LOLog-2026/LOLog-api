@@ -24,7 +24,12 @@ public class PushConfig {
 	// 같은 JVM에서 컨텍스트가 여러 번 떠도(테스트) 이름이 겹치지 않게 FcmPushSender가 끝날 때 지운다.
 	private static final String APP_NAME = "lolog-api";
 
-	// 키 파일이 있으면 FCM 발송기를, 없으면 꺼 둔 발송기를 만든다.
+	/**
+	 * 키 파일이 있으면 FCM 발송기를, 없으면 꺼 둔 발송기를 만든다.
+	 *
+	 * @param credentialsPath FCM 서비스 계정 키 파일 경로(lolog.fcm.credentials-path, 환경 변수 FCM_CREDENTIALS_PATH), 비면 푸시를 끈다
+	 * @return FCM 발송기, 경로가 비면 꺼 둔 발송기(DISABLED)
+	 */
 	@Bean
 	PushSender pushSender(@Value("${lolog.fcm.credentials-path:}") String credentialsPath) throws IOException {
 		if (!StringUtils.hasText(credentialsPath)) {

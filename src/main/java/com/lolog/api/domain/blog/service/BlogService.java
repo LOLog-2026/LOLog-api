@@ -58,6 +58,7 @@ public class BlogService {
 	private final BlogFetcher fetcher;
 	private final BlogPlatforms platforms;
 
+	/** 쓰는 저장소와 도구를 받는다. */
 	public BlogService(BlogSourceRepository sources, BlogPostRepository blogPosts, FeedLocator locator,
 			TextService texts, ObjectMapper objectMapper, TransactionTemplate tx, BlogFetcher fetcher,
 			BlogPlatforms platforms) {
@@ -71,8 +72,13 @@ public class BlogService {
 		this.objectMapper = objectMapper;
 	}
 
-	// 링크 확인 버튼: RSS를 찾아 그 플랫폼 방식으로 읽은 카테고리를 돌려준다. 저장하지 않는다.
-	// Medium·velog는 카테고리를 고를 수 없어 빈 목록, WordPress는 REST로 받은 진짜 카테고리 전체다.
+	/**
+	 * 링크 확인 버튼: RSS를 찾아 그 플랫폼 방식으로 읽은 카테고리를 돌려준다. 저장하지 않는다.
+	 * Medium·velog는 카테고리를 고를 수 없어 빈 목록, WordPress는 REST로 받은 진짜 카테고리 전체다.
+	 *
+	 * @param url 사용자가 넣은 블로그 주소
+	 * @return 찾은 RSS 주소, 고를 수 있는 카테고리, 따로 맞춘 플랫폼인지
+	 */
 	public BlogCheck check(String url) {
 		String siteUrl = normalize(url);
 		Located located = locate(siteUrl);
@@ -87,8 +93,15 @@ public class BlogService {
 		return new BlogCheck(located.feedUrl(), categories, located.platform().platform().optimized());
 	}
 
-	// 블로그 등록. 고른 카테고리마다 최근 글 3개를 바로 카드로 만든다(정함 11-14).
-	// 피드를 받는 동안 DB 연결을 붙잡지 않게, 받은 뒤에 트랜잭션을 연다.
+	/**
+	 * 블로그 등록. 고른 카테고리마다 최근 글 3개를 바로 카드로 만든다(정함 11-14).
+	 * 피드를 받는 동안 DB 연결을 붙잡지 않게, 받은 뒤에 트랜잭션을 연다.
+	 *
+	 * @param userId 연결하는 회원 ID(토큰의 sub)
+	 * @param url 사용자가 넣은 블로그 주소
+	 * @param requested 고른 카테고리(3개까지). null이거나 비면 전부 받기
+	 * @return 연결한 블로그
+	 */
 	public Blog create(long userId, String url, List<String> requested) {
 		List<String> categories = categories(requested);
 		String siteUrl = normalize(url);
@@ -109,7 +122,17 @@ public class BlogService {
 		return tx.execute(status -> save(userId, siteUrl, title, categories, located, rule));
 	}
 
-	// 블로그를 저장하고 처음 글을 가져온다.
+	/**
+	 * 블로그를 저장하고 처음 글을 가져온다.
+	 *
+	 * @param userId 연결하는 회원 ID
+	 * @param siteUrl 정리한 블로그 주소
+	 * @param title 블로그 이름(200자로 자름). 없으면 null
+	 * @param categories 검사한 고른 카테고리
+	 * @param located 찾은 RSS 주소, 피드, 플랫폼
+	 * @param rule 이 피드의 카테고리 규칙
+	 * @return 연결한 블로그
+	 */
 	private Blog save(long userId, String siteUrl, String title, List<String> categories, Located located,
 			Categories rule) {
 		Platform platform = located.platform().platform();
@@ -127,7 +150,12 @@ public class BlogService {
 		return new Blog(id, siteUrl, title, categories, platform.optimized());
 	}
 
-	// 내 블로그 목록을 돌려준다.
+	/**
+	 * 내 블로그 목록을 돌려준다.
+	 *
+	 * @param userId 요청한 회원 ID
+	 * @return 연결한 순서대로 내 블로그
+	 */
 	@Transactional(readOnly = true)
 	public List<Blog> list(long userId) {
 		return sources.findAllByUserIdOrderById(userId).stream()
@@ -136,9 +164,16 @@ public class BlogService {
 			.toList();
 	}
 
-	// 가져올 카테고리를 바꾼다. 새로 더한 카테고리마다 최근 글 3개를 바로 카드로 만든다(정함 11-14).
-	// 카테고리를 모두 빼서 "전부 받기"가 되면 블로그 전체에서 최근 3개다(초안). 빼기만 하면 피드를 읽지 않는다.
-	// 피드를 받는 동안 DB 연결을 붙잡지 않게, 받은 뒤에 트랜잭션을 연다. 피드를 받지 못하면 400 INVALID_BLOG이고 바꾸지 않는다(초안).
+	/**
+	 * 가져올 카테고리를 바꾼다. 새로 더한 카테고리마다 최근 글 3개를 바로 카드로 만든다(정함 11-14).
+	 * 카테고리를 모두 빼서 "전부 받기"가 되면 블로그 전체에서 최근 3개다(초안). 빼기만 하면 피드를 읽지 않는다.
+	 * 피드를 받는 동안 DB 연결을 붙잡지 않게, 받은 뒤에 트랜잭션을 연다. 피드를 받지 못하면 400 INVALID_BLOG이고 바꾸지 않는다(초안).
+	 *
+	 * @param userId 요청한 회원 ID
+	 * @param id 바꿀 내 블로그 ID
+	 * @param requested 새로 고른 카테고리 전체(3개까지). 비면 전부 받기, null이면 INVALID_REQUEST
+	 * @return 바꾼 뒤의 블로그
+	 */
 	public Blog update(long userId, long id, List<String> requested) {
 		if (requested == null) {
 			throw ApiException.invalid("categories");
@@ -163,7 +198,13 @@ public class BlogService {
 		});
 	}
 
-	// 새로 더한 카테고리. 없으면 null(피드를 읽지 않음). 카테고리를 모두 빼서 전부 받기가 되면 빈 목록(블로그 전체).
+	/**
+	 * 새로 더한 카테고리. 없으면 null(피드를 읽지 않음). 카테고리를 모두 빼서 전부 받기가 되면 빈 목록(블로그 전체).
+	 *
+	 * @param before 바꾸기 전 카테고리
+	 * @param after 바꾼 뒤 카테고리
+	 * @return 새로 더한 카테고리. 없으면 null, 전부 받기가 되면 빈 목록
+	 */
 	private static List<String> added(List<String> before, List<String> after) {
 		if (after.isEmpty()) {
 			return before.isEmpty() ? null : List.of();
@@ -176,7 +217,12 @@ public class BlogService {
 		return added.isEmpty() ? null : added;
 	}
 
-	// 피드를 받아 읽는다. 못 읽으면 INVALID_BLOG.
+	/**
+	 * 피드를 받아 읽는다. 못 읽으면 INVALID_BLOG.
+	 *
+	 * @param feedUrl RSS 주소
+	 * @return 읽은 피드
+	 */
 	private Feed feed(String feedUrl) {
 		try {
 			Feed feed = FeedParser.parse(fetcher.get(feedUrl).body());
@@ -190,7 +236,12 @@ public class BlogService {
 		}
 	}
 
-	// 연결 끊기: blog_sources 줄만 지운다. 가져온 글(blog_posts)은 source_id만 비워져 남고, 만든 카드도 남는다.
+	/**
+	 * 연결 끊기: blog_sources 줄만 지운다. 가져온 글(blog_posts)은 source_id만 비워져 남고, 만든 카드도 남는다.
+	 *
+	 * @param userId 요청한 회원 ID
+	 * @param id 끊을 내 블로그 ID
+	 */
 	@Transactional
 	public void delete(long userId, long id) {
 		if (sources.deleteMine(id, userId) == 0) {
@@ -198,7 +249,15 @@ public class BlogService {
 		}
 	}
 
-	// 가져온 글 목록. 최신 글(나중에 가져온 글)부터이고, 커서는 마지막 글의 ID다.
+	/**
+	 * 가져온 글 목록. 최신 글(나중에 가져온 글)부터이고, 커서는 마지막 글의 ID다.
+	 *
+	 * @param userId 요청한 회원 ID
+	 * @param id 글을 볼 내 블로그 ID
+	 * @param cursor 앞 페이지에서 받은 nextCursor. null이면 처음부터
+	 * @param size 한 페이지 글 수(1~50). null이면 20
+	 * @return 글 목록 한 페이지와 다음 cursor(마지막 페이지면 null)
+	 */
 	@Transactional(readOnly = true)
 	public BlogPostPage posts(long userId, long id, String cursor, Integer size) {
 		PageRequestParams params = PageRequestParams.of(cursor, size);
@@ -216,15 +275,32 @@ public class BlogService {
 				more ? String.valueOf(shown.getLast().id()) : null);
 	}
 
-	// 글 목록 한 줄과 커서로 쓸 ID.
+	/**
+	 * 글 목록 한 줄과 커서로 쓸 ID.
+	 *
+	 * @param id 가져온 글(blog_posts) ID. 커서로 쓴다
+	 * @param post 응답에 넣을 글 한 줄
+	 */
 	private record Row(long id, BlogPost post) {
 	}
 
-	// 피드의 글 중 고른 카테고리(비면 전부)의 글을 저장하고 카드 작업을 큐에 넣는다. 넣은 글 수를 돌려준다.
-	// 오래된 글부터 넣어서 가져온 글 목록(ID 내림차순)이 최신 글부터 보이게 한다.
-	// initial이 null이면 주기적으로 읽을 때라 처음 보는 글을 모두 넣는다.
-	// initial이 있으면 연결·카테고리 추가 때라(texts.md 4장 "가져오는 때", 정함 11-14) 그 카테고리마다 최근 글 3개만 카드로 만들고,
-	// 더 옛 글은 다음에 새 글로 잡히지 않게 guid만 적어 둔다(skipped). initial이 빈 목록이면 블로그 전체에서 최근 3개다.
+	/**
+	 * 피드의 글 중 고른 카테고리(비면 전부)의 글을 저장하고 카드 작업을 큐에 넣는다. 넣은 글 수를 돌려준다.
+	 * 오래된 글부터 넣어서 가져온 글 목록(ID 내림차순)이 최신 글부터 보이게 한다.
+	 * initial이 null이면 주기적으로 읽을 때라 처음 보는 글을 모두 넣는다.
+	 * initial이 있으면 연결·카테고리 추가 때라(texts.md 4장 "가져오는 때", 정함 11-14) 그 카테고리마다 최근 글 3개만 카드로 만들고,
+	 * 더 옛 글은 다음에 새 글로 잡히지 않게 guid만 적어 둔다(skipped). initial이 빈 목록이면 블로그 전체에서 최근 3개다.
+	 *
+	 * @param sourceId 글을 가져올 블로그 ID
+	 * @param userId 블로그 주인 회원 ID
+	 * @param blogTitle 글에 복사해 둘 블로그 이름
+	 * @param categories 고른 카테고리 전체. 비면 전부 받기
+	 * @param feed 읽은 피드
+	 * @param platform 본문 칸을 고를 플랫폼 구현
+	 * @param rule 이 피드의 카테고리 규칙
+	 * @param initial 이번에 새로 더한 카테고리. 주기적으로 읽을 때는 null
+	 * @return 새로 넣어 카드 작업을 맡긴 글 수
+	 */
 	@Transactional
 	public int importPosts(long sourceId, long userId, String blogTitle, List<String> categories, Feed feed,
 			BlogPlatform platform, Categories rule, List<String> initial) {
@@ -282,7 +358,18 @@ public class BlogService {
 		return added;
 	}
 
-	// 주기적으로 읽을 때: 피드를 받는 사이 연결을 끊었으면 넣지 않는다. 블로그 줄을 잠가 끊기와 엇갈리지 않게 한다.
+	/**
+	 * 주기적으로 읽을 때: 피드를 받는 사이 연결을 끊었으면 넣지 않는다. 블로그 줄을 잠가 끊기와 엇갈리지 않게 한다.
+	 *
+	 * @param sourceId 글을 가져올 블로그 ID
+	 * @param userId 블로그 주인 회원 ID
+	 * @param blogTitle 글에 복사해 둘 블로그 이름
+	 * @param categories 고른 카테고리 전체. 비면 전부 받기
+	 * @param feed 읽은 피드
+	 * @param platform 본문 칸을 고를 플랫폼 구현
+	 * @param rule 이 피드의 카테고리 규칙
+	 * @return 새로 넣은 글 수. 그사이 연결을 끊었으면 0
+	 */
 	@Transactional
 	public int importIfConnected(long sourceId, long userId, String blogTitle, List<String> categories, Feed feed,
 			BlogPlatform platform, Categories rule) {
@@ -292,7 +379,14 @@ public class BlogService {
 		return importPosts(sourceId, userId, blogTitle, categories, feed, platform, rule, null);
 	}
 
-	// 카테고리마다(initial이 비면 블로그 전체에서) 최근 글 3개. items는 오래된 글부터다. 두 카테고리에 든 글은 한 번이다.
+	/**
+	 * 카테고리마다(initial이 비면 블로그 전체에서) 최근 글 3개. items는 오래된 글부터다. 두 카테고리에 든 글은 한 번이다.
+	 *
+	 * @param items 오래된 글부터 정렬한 피드 글
+	 * @param initial 이번에 새로 더한 카테고리. 비면 블로그 전체
+	 * @param rule 이 피드의 카테고리 규칙
+	 * @return 카드로 만들 최근 글(객체 동일성으로 비교하는 집합)
+	 */
 	private static Set<Item> recent(List<Item> items, List<String> initial, Categories rule) {
 		Set<Item> result = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 		List<Item> newest = new ArrayList<>(items);
@@ -310,7 +404,14 @@ public class BlogService {
 		return result;
 	}
 
-	// 이번에 불러올 범위: initial 카테고리 중 하나에 드는 글(initial이 비면 전부)
+	/**
+	 * 이번에 불러올 범위: initial 카테고리 중 하나에 드는 글(initial이 비면 전부)
+	 *
+	 * @param items 피드 글
+	 * @param initial 이번에 새로 더한 카테고리. 비면 전부
+	 * @param rule 이 피드의 카테고리 규칙
+	 * @return 범위에 드는 글(객체 동일성으로 비교하는 집합)
+	 */
 	private static Set<Item> inScope(List<Item> items, List<String> initial, Categories rule) {
 		Set<Item> result = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 		for (Item item : items) {
@@ -321,15 +422,25 @@ public class BlogService {
 		return result;
 	}
 
-	// Medium·velog처럼 카테고리가 없는 블로그에 카테고리를 고르면 400 CATEGORY_NOT_SELECTABLE(field categories)로 거절한다
-	// (texts.md 4장 "플랫폼별 카테고리").
+	/**
+	 * Medium·velog처럼 카테고리가 없는 블로그에 카테고리를 고르면 400 CATEGORY_NOT_SELECTABLE(field categories)로 거절한다
+	 * (texts.md 4장 "플랫폼별 카테고리").
+	 *
+	 * @param rule 이 블로그의 카테고리 규칙
+	 * @param categories 고른 카테고리
+	 */
 	private static void requireSelectable(Categories rule, List<String> categories) {
 		if (!rule.selectable() && !categories.isEmpty()) {
 			throw new ApiException(ErrorCode.CATEGORY_NOT_SELECTABLE, "categories");
 		}
 	}
 
-	// 1~30자, 앞뒤 공백을 뺀 값. 같은 이름(대소문자 무시)은 두 번 넣지 못한다. 3개까지다(정함 11-14, 넘으면 400은 초안).
+	/**
+	 * 1~30자, 앞뒤 공백을 뺀 값. 같은 이름(대소문자 무시)은 두 번 넣지 못한다. 3개까지다(정함 11-14, 넘으면 400은 초안).
+	 *
+	 * @param requested 요청에 온 카테고리. null이면 빈 목록
+	 * @return 앞뒤 공백을 뺀 카테고리
+	 */
 	private static List<String> categories(List<String> requested) {
 		if (requested == null) {
 			return List.of();
@@ -353,7 +464,12 @@ public class BlogService {
 		return result;
 	}
 
-	// url은 normalize한 주소
+	/**
+	 * url은 normalize한 주소
+	 *
+	 * @param url normalize한 블로그 주소
+	 * @return 찾은 RSS 주소, 피드, 플랫폼. 못 찾으면 INVALID_BLOG
+	 */
 	private Located locate(String url) {
 		try {
 			return locator.locate(url);
@@ -363,7 +479,12 @@ public class BlogService {
 		}
 	}
 
-	// 빠지거나 빈 주소는 다른 빠진 칸처럼 400 INVALID_REQUEST(field url)이다(api-dto.md). 주소 모양이 틀리면 INVALID_BLOG.
+	/**
+	 * 빠지거나 빈 주소는 다른 빠진 칸처럼 400 INVALID_REQUEST(field url)이다(api-dto.md). 주소 모양이 틀리면 INVALID_BLOG.
+	 *
+	 * @param url 사용자가 넣은 블로그 주소
+	 * @return 앞뒤 공백을 빼고 https를 붙인 주소
+	 */
 	private static String normalize(String url) {
 		if (url == null || url.isBlank()) {
 			throw ApiException.invalid("url");
@@ -376,13 +497,24 @@ public class BlogService {
 		}
 	}
 
-	// JSON 카테고리 목록을 읽는다.
+	/**
+	 * JSON 카테고리 목록을 읽는다.
+	 *
+	 * @param json blog_sources.categories의 JSON 배열
+	 * @return 카테고리 목록
+	 */
 	private List<String> read(String json) {
 		return objectMapper.readValue(json, new TypeReference<List<String>>() {
 		});
 	}
 
-	// 앞뒤 공백을 빼고 max자를 넘으면 자른다.
+	/**
+	 * 앞뒤 공백을 빼고 max자를 넘으면 자른다.
+	 *
+	 * @param value 다듬을 값. null이면 null을 돌려준다
+	 * @param max 최대 글자 수(코드포인트 기준)
+	 * @return 다듬은 값
+	 */
 	static String cut(String value, int max) {
 		if (value == null) {
 			return null;
@@ -412,12 +544,23 @@ public class BlogService {
 		private TextServiceLength() {
 		}
 
-		// 글자 수를 센다.
+		/**
+		 * 글자 수를 센다.
+		 *
+		 * @param value 셀 글자
+		 * @return 코드포인트 수
+		 */
 		static int of(String value) {
 			return value.codePointCount(0, value.length());
 		}
 
-		// 앞에서 max자만 남긴다.
+		/**
+		 * 앞에서 max자만 남긴다.
+		 *
+		 * @param value 자를 글자
+		 * @param max 남길 글자 수(코드포인트 기준)
+		 * @return 앞 max자
+		 */
 		static String head(String value, int max) {
 			return value.substring(0, value.offsetByCodePoints(0, max));
 		}

@@ -16,11 +16,17 @@ public class JobWorkerController {
 
 	private final JobFailService jobFails;
 
+	/** 쓰는 서비스를 받는다. */
 	public JobWorkerController(JobFailService jobFails) {
 		this.jobFails = jobFails;
 	}
 
-	// 작업이 실패했다고 받는다.
+	/**
+	 * 작업이 실패했다고 받는다.
+	 *
+	 * @param id 실패한 작업 ID(경로)
+	 * @param request 본문 { reason }
+	 */
 	@PostMapping("/internal/jobs/{id}/fail")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void fail(@PathVariable Long id, @Valid @RequestBody JobFailRequest request) {

@@ -32,16 +32,31 @@ public class BlogFetcher {
 		.connectTimeout(Duration.ofSeconds(5))
 		.build();
 
-	// 테스트에서만 true로 켠다(내 컴퓨터에 띄운 가짜 블로그를 부르려고). 배포에서는 늘 false다.
+	/**
+	 * 테스트에서만 true로 켠다(내 컴퓨터에 띄운 가짜 블로그를 부르려고). 배포에서는 늘 false다.
+	 *
+	 * @param allowPrivateHosts 내부 주소도 부를지(lolog.blog.allow-private-hosts, 기본 false)
+	 */
 	public BlogFetcher(@Value("${lolog.blog.allow-private-hosts:false}") boolean allowPrivateHosts) {
 		this.allowPrivateHosts = allowPrivateHosts;
 	}
 
-	// 받은 본문과 리다이렉트를 따라간 뒤의 최종 주소
+	/**
+	 * 받은 본문과 리다이렉트를 따라간 뒤의 최종 주소
+	 *
+	 * @param uri 리다이렉트를 따라간 뒤의 최종 주소
+	 * @param body 받은 본문(3MB까지)
+	 * @param contentType 응답의 Content-Type. 없으면 빈 글자
+	 */
 	public record Fetched(URI uri, byte[] body, String contentType) {
 	}
 
-	// 받지 못하면(내부 주소, 연결 실패, 200이 아님, 너무 큼) FetchException
+	/**
+	 * 받지 못하면(내부 주소, 연결 실패, 200이 아님, 너무 큼) FetchException
+	 *
+	 * @param url 받아 올 http·https 주소
+	 * @return 받은 본문과 최종 주소
+	 */
 	public Fetched get(String url) {
 		URI uri = parse(url);
 		for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
@@ -79,7 +94,12 @@ public class BlogFetcher {
 		throw new FetchException("리다이렉트가 너무 많습니다.");
 	}
 
-	// http·https 주소인지 확인해 URI로 바꾼다.
+	/**
+	 * http·https 주소인지 확인해 URI로 바꾼다.
+	 *
+	 * @param url 확인할 주소
+	 * @return 바꾼 URI. http·https가 아니거나 모양이 틀리면 FetchException
+	 */
 	public static URI parse(String url) {
 		try {
 			URI uri = new URI(url);
@@ -94,7 +114,11 @@ public class BlogFetcher {
 		}
 	}
 
-	// 호스트가 가리키는 IP가 하나라도 내부 주소면 거절한다.
+	/**
+	 * 호스트가 가리키는 IP가 하나라도 내부 주소면 거절한다.
+	 *
+	 * @param uri 부르려는 주소
+	 */
 	private void check(URI uri) {
 		if (allowPrivateHosts) {
 			return;
@@ -113,7 +137,12 @@ public class BlogFetcher {
 		}
 	}
 
-	// 루프백·사설·링크 로컬·멀티캐스트·0.0.0.0/8·CGNAT(100.64/10)·IPv6 ULA(fc00::/7)
+	/**
+	 * 루프백·사설·링크 로컬·멀티캐스트·0.0.0.0/8·CGNAT(100.64/10)·IPv6 ULA(fc00::/7)
+	 *
+	 * @param address 확인할 IP
+	 * @return 내부 주소면 true
+	 */
 	static boolean isInternal(InetAddress address) {
 		if (address.isAnyLocalAddress() || address.isLoopbackAddress() || address.isLinkLocalAddress()
 				|| address.isSiteLocalAddress() || address.isMulticastAddress()) {
@@ -131,7 +160,12 @@ public class BlogFetcher {
 		return false;
 	}
 
-	// 응답 본문을 크기 한도까지 읽는다.
+	/**
+	 * 응답 본문을 크기 한도까지 읽는다.
+	 *
+	 * @param response 받은 응답
+	 * @return 본문 바이트. 한도를 넘으면 FetchException
+	 */
 	private static byte[] read(HttpResponse<InputStream> response) {
 		try (InputStream in = response.body()) {
 			byte[] bytes = in.readNBytes(MAX_BYTES + 1);
@@ -145,7 +179,11 @@ public class BlogFetcher {
 		}
 	}
 
-	// 쓰지 않을 응답 본문을 닫는다.
+	/**
+	 * 쓰지 않을 응답 본문을 닫는다.
+	 *
+	 * @param response 닫을 응답
+	 */
 	private static void close(HttpResponse<InputStream> response) {
 		try {
 			response.body().close();
@@ -160,12 +198,21 @@ public class BlogFetcher {
 
 		private final boolean internal;
 
-		// 내부 주소 거절이 아닌 실패.
+		/**
+		 * 내부 주소 거절이 아닌 실패.
+		 *
+		 * @param message 실패 까닭(로그용)
+		 */
 		public FetchException(String message) {
 			this(message, false);
 		}
 
-		// internal이 true면 내부 주소라 거절한 것이다.
+		/**
+		 * internal이 true면 내부 주소라 거절한 것이다.
+		 *
+		 * @param message 실패 까닭(로그용)
+		 * @param internal 내부 주소라 거절했으면 true
+		 */
 		public FetchException(String message, boolean internal) {
 			super(message);
 			this.internal = internal;

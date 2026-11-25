@@ -19,7 +19,12 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class RoomMember {
 
-	// 기본 키(room_id, user_id)
+	/**
+	 * 기본 키(room_id, user_id)
+	 *
+	 * @param roomId 방 ID
+	 * @param userId 멤버 회원 ID
+	 */
 	public record Key(Long roomId, Long userId) implements Serializable {
 	}
 

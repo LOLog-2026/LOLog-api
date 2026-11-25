@@ -10,7 +10,20 @@ import org.springframework.data.repository.query.Param;
 // 기본 화자 DB 조회.
 public interface DefaultCharacterRepository extends JpaRepository<DefaultCharacter, String> {
 
-	// 기본 화자 하나를 넣거나 바꾼다. voiceKey가 null이면 지금 붙어 있는 목소리를 그대로 둔다.
+	/**
+	 * 기본 화자 하나를 넣거나 바꾼다. voiceKey가 null이면 지금 붙어 있는 목소리를 그대로 둔다.
+	 *
+	 * @param id 기본 화자 id(예: young-f-02)
+	 * @param ageGroup 나이대(CHILD, YOUNG, MIDDLE)
+	 * @param gender 성별(F, M)
+	 * @param glasses 안경을 썼으면 true
+	 * @param label 앱에 보여 줄 화자 이름(50자 이하)
+	 * @param appearance 그림 모델용 생김새 설명(200자 이하)
+	 * @param imageKey 원본 그림 저장소 키
+	 * @param thumbKey 줄인 그림 저장소 키
+	 * @param voiceKey 목소리 파일 저장소 키(null이면 지금 목소리를 그대로 둠)
+	 * @param sortOrder 목록에서의 순서
+	 */
 	@Modifying(flushAutomatically = true, clearAutomatically = true)
 	@Query(value = """
 			insert into default_characters (id, age_group, gender, glasses, label, appearance, image_key, thumb_key,
@@ -30,7 +43,12 @@ public interface DefaultCharacterRepository extends JpaRepository<DefaultCharact
 	// 정한 순서(sort_order, id)대로 모두.
 	List<DefaultCharacter> findAllByOrderBySortOrderAscIdAsc();
 
-	// 목소리가 붙어 있는 기본 화자인지 본다.
+	/**
+	 * 목소리가 붙어 있는 기본 화자인지 본다.
+	 *
+	 * @param id 기본 화자 id
+	 * @return 목소리가 붙어 있으면 true
+	 */
 	boolean existsByIdAndVoiceKeyIsNotNull(String id);
 
 }

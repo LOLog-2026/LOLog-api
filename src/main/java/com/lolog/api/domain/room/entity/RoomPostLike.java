@@ -19,7 +19,12 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class RoomPostLike {
 
-	// 기본 키(post_id, user_id)
+	/**
+	 * 기본 키(post_id, user_id)
+	 *
+	 * @param postId 올린 만화 ID
+	 * @param userId 좋아요를 누른 회원 ID
+	 */
 	public record Key(Long postId, Long userId) implements Serializable {
 	}
 

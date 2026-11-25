@@ -9,12 +9,23 @@ public final class SafeLog {
 	private SafeLog() {
 	}
 
-	// 메시지를 뺀 예외 복사본을 돌려준다.
+	/**
+	 * 메시지를 뺀 예외 복사본을 돌려준다.
+	 *
+	 * @param e 메시지를 뺄 예외(원인 예외까지)
+	 * @return 예외 종류 이름만 메시지로 가진 복사본(스택은 그대로)
+	 */
 	public static RuntimeException withoutMessages(Throwable e) {
 		return copy(e, 0);
 	}
 
-	// 원인 예외까지 메시지 없이 하나씩 복사한다.
+	/**
+	 * 원인 예외까지 메시지 없이 하나씩 복사한다.
+	 *
+	 * @param e 복사할 예외
+	 * @param depth 지금까지 따라간 원인 단계(10단계까지만 복사)
+	 * @return 메시지를 뺀 복사본
+	 */
 	private static RuntimeException copy(Throwable e, int depth) {
 		Throwable cause = e.getCause();
 		RuntimeException copy = new RuntimeException(e.getClass().getName(),

@@ -42,6 +42,7 @@ public class VideoService {
 	private final PushService push;
 	private final TransactionTemplate tx;
 
+	/** 쓰는 저장소와 도구를 받는다. */
 	public VideoService(VideoRepository videos, CardRepository cards, JobRepository jobs, VideoPublisher publisher,
 			ImageStorage storage, StorageDeletions deletions, PushService push, TransactionTemplate tx) {
 		this.videos = videos;
@@ -54,7 +55,13 @@ public class VideoService {
 		this.tx = tx;
 	}
 
-	// 만드는 중인 영상이 먼저다(만화와 같음). 커밋한 뒤 3호 큐(lolog:video)에 넣는다.
+	/**
+	 * 만드는 중인 영상이 먼저다(만화와 같음). 커밋한 뒤 3호 큐(lolog:video)에 넣는다.
+	 *
+	 * @param userId 요청한 회원 ID(토큰의 sub)
+	 * @param cardId 영상으로 만들 내 카드 ID
+	 * @return 만든 영상 ID와 상태(QUEUED)
+	 */
 	public VideoAccepted request(long userId, long cardId) {
 		VideoAccepted[] created = new VideoAccepted[1];
 		Long jobId = tx.execute(status -> {
@@ -82,7 +89,15 @@ public class VideoService {
 		return created[0];
 	}
 
-	// sort는 만화 목록과 같다(latest 기본, oldest). 커서는 마지막으로 받은 영상 ID라 다음 페이지도 같은 sort로 부른다.
+	/**
+	 * sort는 만화 목록과 같다(latest 기본, oldest). 커서는 마지막으로 받은 영상 ID라 다음 페이지도 같은 sort로 부른다.
+	 *
+	 * @param userId 요청한 회원 ID(토큰의 sub)
+	 * @param cursor 앞 페이지의 nextCursor. null이면 처음부터
+	 * @param size 페이지 크기. null이면 20
+	 * @param sort latest 또는 oldest. null이면 latest
+	 * @return 영상 목록과 다음 cursor
+	 */
 	@Transactional(readOnly = true)
 	public VideoPage list(long userId, String cursor, Integer size, String sort) {
 		PageSort order = PageSort.of(sort);
@@ -99,13 +114,24 @@ public class VideoService {
 		return new VideoPage(items, next);
 	}
 
-	// 내 영상 하나를 돌려준다.
+	/**
+	 * 내 영상 하나를 돌려준다.
+	 *
+	 * @param userId 요청한 회원 ID(토큰의 sub)
+	 * @param videoId 영상 ID
+	 * @return 영상 상태와 파일 주소
+	 */
 	@Transactional(readOnly = true)
 	public VideoResponse get(long userId, long videoId) {
 		return videos.findByIdAndUserId(videoId, userId).map(this::response).orElseThrow(VideoService::notFound);
 	}
 
-	// 만드는 중이어도 지울 수 있다. 작업도 같이 지워져 워커의 다음 요청은 404·400이 된다(만화와 같음). 횟수는 돌아오지 않는다.
+	/**
+	 * 만드는 중이어도 지울 수 있다. 작업도 같이 지워져 워커의 다음 요청은 404·400이 된다(만화와 같음). 횟수는 돌아오지 않는다.
+	 *
+	 * @param userId 요청한 회원 ID(토큰의 sub)
+	 * @param videoId 지울 영상 ID
+	 */
 	@Transactional
 	public void delete(long userId, long videoId) {
 		Video video = videos.findByIdAndUserId(videoId, userId).orElseThrow(VideoService::notFound);
@@ -113,7 +139,12 @@ public class VideoService {
 		deletions.schedulePrefix(ImageStorage.videoPrefix(userId, videoId));
 	}
 
-	// 카드 자세히의 videos[]. 최근 것이 앞.
+	/**
+	 * 카드 자세히의 videos[]. 최근 것이 앞.
+	 *
+	 * @param cardId 카드 ID
+	 * @return 영상 ID와 상태 목록
+	 */
 	@Transactional(readOnly = true)
 	public List<VideoRef> refs(long cardId) {
 		return videos.findByCardIdOrderByIdDesc(cardId)
@@ -122,18 +153,33 @@ public class VideoService {
 			.toList();
 	}
 
-	// 이 카드로 더 만들 수 있는 영상 수(0~2). 만화의 comicRemaining처럼 지운 영상도 세고 실패한 영상은 세지 않는다(정함 11-13).
+	/**
+	 * 이 카드로 더 만들 수 있는 영상 수(0~2). 만화의 comicRemaining처럼 지운 영상도 세고 실패한 영상은 세지 않는다(정함 11-13).
+	 *
+	 * @param cardId 카드 ID
+	 * @return 더 만들 수 있는 영상 수(0~2)
+	 */
 	public int remaining(long cardId) {
 		int used = cards.findById(cardId).map(Card::getVideoCount).orElse(0);
 		return Math.max(0, MAX_VIDEOS - used);
 	}
 
-	// 카드 내용을 아직 쓰는 영상 작업이 있는지 본다.
+	/**
+	 * 카드 내용을 아직 쓰는 영상 작업이 있는지 본다.
+	 *
+	 * @param cardId 카드 ID
+	 * @return QUEUED·VOICE인 영상이 있으면 true
+	 */
 	public boolean hasRunningBeforeDrawing(long cardId) {
 		return videos.existsByCardIdAndStatusIn(cardId, VideoStatus.BEFORE_DRAWING);
 	}
 
-	// 워커가 영상 작업(목소리·그림 어느 단계든)의 실패를 알렸을 때. 같은 jobId가 다시 오면 무시한다.
+	/**
+	 * 워커가 영상 작업(목소리·그림 어느 단계든)의 실패를 알렸을 때. 같은 jobId가 다시 오면 무시한다.
+	 *
+	 * @param jobId 실패한 영상 작업 ID
+	 * @param reason 워커가 보낸 실패 이유
+	 */
 	public void fail(long jobId, String reason) {
 		tx.executeWithoutResult(status -> {
 			Long videoId = jobs.findVideoIdById(jobId)
@@ -160,7 +206,12 @@ public class VideoService {
 		});
 	}
 
-	// 영상을 응답 모양으로 바꾼다. 파일 주소는 DONE일 때만 준다.
+	/**
+	 * 영상을 응답 모양으로 바꾼다. 파일 주소는 DONE일 때만 준다.
+	 *
+	 * @param video 바꿀 영상
+	 * @return 영상 응답
+	 */
 	private VideoResponse response(Video video) {
 		boolean done = video.getStatus() == VideoStatus.DONE;
 		String summary = video.getCardSummary();
@@ -169,7 +220,12 @@ public class VideoService {
 				done ? video.getDurationMs() : null, video.getCreatedAt());
 	}
 
-	// 저장소 키를 서명 주소로 바꾼다.
+	/**
+	 * 저장소 키를 서명 주소로 바꾼다.
+	 *
+	 * @param key 저장소 키(null 가능)
+	 * @return 서명 주소. key가 null이면 null
+	 */
 	private String url(String key) {
 		return key == null ? null : storage.presignedUrl(key).toString();
 	}

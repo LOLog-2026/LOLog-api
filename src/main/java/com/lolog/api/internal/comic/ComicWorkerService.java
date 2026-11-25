@@ -43,6 +43,7 @@ public class ComicWorkerService {
 	private final PushService push;
 	private final CharacterViews characters;
 
+	/** 쓰는 저장소와 도구를 받는다. */
 	public ComicWorkerService(ComicRepository comics, CardRepository cards, JobRepository jobs, ImageStorage storage,
 			StorageDeletions deletions, ObjectMapper objectMapper, TransactionTemplate tx, PushService push, CharacterViews characters) {
 		this.characters = characters;
@@ -56,7 +57,12 @@ public class ComicWorkerService {
 		this.push = push;
 	}
 
-	// 만화를 만들 카드 내용을 주고 콘티 단계로 바꾼다.
+	/**
+	 * 만화를 만들 카드 내용을 주고 콘티 단계로 바꾼다.
+	 *
+	 * @param comicId 만화 ID
+	 * @return 카드 내용과 화자마다 그림
+	 */
 	public ComicSource source(long comicId) {
 		return tx.execute(status -> {
 			Comic comic = comics.findByIdForUpdate(comicId).filter(c -> !c.isFinished()).orElseThrow(ComicWorkerService::notFound);
@@ -80,7 +86,12 @@ public class ComicWorkerService {
 		});
 	}
 
-	// 콘티를 검사해 저장한다.
+	/**
+	 * 콘티를 검사해 저장한다.
+	 *
+	 * @param comicId 만화 ID
+	 * @param body 워커가 보낸 콘티 JSON
+	 */
 	public void storyboard(long comicId, JsonNode body) {
 		tx.executeWithoutResult(status -> {
 			Comic comic = comics.findByIdForUpdate(comicId).orElseThrow(ComicWorkerService::notFound);
@@ -92,7 +103,12 @@ public class ComicWorkerService {
 		});
 	}
 
-	// 완성 이미지를 올리고 만화를 끝낸 뒤 푸시를 보낸다.
+	/**
+	 * 완성 이미지를 올리고 만화를 끝낸 뒤 푸시를 보낸다.
+	 *
+	 * @param comicId 만화 ID
+	 * @param png 완성 이미지 파일 내용(800×3152 PNG, 20MB 이하)
+	 */
 	public void image(long comicId, byte[] png) {
 		Comic found = comics.findById(comicId).orElseThrow(ComicWorkerService::notFound);
 		if (found.isFinished()) {
@@ -126,7 +142,12 @@ public class ComicWorkerService {
 		}
 	}
 
-	// 기본만 본다: JSON 객체, version 1, comicId·cardId가 이 만화와 같음, panels 4개. 나머지 규칙은 워커가 검사한다.
+	/**
+	 * 기본만 본다: JSON 객체, version 1, comicId·cardId가 이 만화와 같음, panels 4개. 나머지 규칙은 워커가 검사한다.
+	 *
+	 * @param comic 콘티를 받을 만화
+	 * @param body 워커가 보낸 콘티 JSON
+	 */
 	private static void checkStoryboard(Comic comic, JsonNode body) {
 		if (body == null || !body.isObject()) {
 			throw ApiException.invalid(null);
@@ -146,7 +167,11 @@ public class ComicWorkerService {
 		}
 	}
 
-	// PNG 서명과 IHDR의 가로·세로(800×3152)를 본다.
+	/**
+	 * PNG 서명과 IHDR의 가로·세로(800×3152)를 본다.
+	 *
+	 * @param png 받은 이미지 파일 내용
+	 */
 	private static void checkPng(byte[] png) {
 		boolean header = png.length >= 24 && java.util.Arrays.equals(png, 0, 8, PNG_SIGNATURE, 0, 8)
 				&& png[12] == 'I' && png[13] == 'H' && png[14] == 'D' && png[15] == 'R';
@@ -158,7 +183,13 @@ public class ComicWorkerService {
 		}
 	}
 
-	// 4바이트를 정수로 읽는다.
+	/**
+	 * 4바이트를 정수로 읽는다.
+	 *
+	 * @param b 읽을 바이트
+	 * @param at 읽기 시작할 위치
+	 * @return 앞 바이트부터 읽은(빅엔디언) 정수
+	 */
 	private static int readInt(byte[] b, int at) {
 		return ((b[at] & 0xFF) << 24) | ((b[at + 1] & 0xFF) << 16) | ((b[at + 2] & 0xFF) << 8) | (b[at + 3] & 0xFF);
 	}

@@ -26,6 +26,7 @@ public class CharacterWorkerController {
 	private final DefaultCharacterService defaults;
 	private final VoiceCloneService voiceClones;
 
+	/** 쓰는 서비스를 받는다. */
 	public CharacterWorkerController(ProfileCharacterService profileCharacters, DefaultCharacterService defaults,
 			VoiceCloneService voiceClones) {
 		this.voiceClones = voiceClones;
@@ -33,14 +34,25 @@ public class CharacterWorkerController {
 		this.defaults = defaults;
 	}
 
-	// 원본 사진. Content-Type은 올린 그대로(JPEG·PNG). 사진은 로그에 남기지 않는다.
+	/**
+	 * 원본 사진. Content-Type은 올린 그대로(JPEG·PNG). 사진은 로그에 남기지 않는다.
+	 *
+	 * @param userId 사진 주인 회원 ID(경로)
+	 * @return 원본 사진
+	 */
 	@GetMapping("/internal/users/{userId}/character/photo")
 	public ResponseEntity<byte[]> photo(@PathVariable Long userId) {
 		StoredObject photo = profileCharacters.photo(userId);
 		return ResponseEntity.ok().contentType(MediaType.parseMediaType(photo.contentType())).body(photo.bytes());
 	}
 
-	// 워커가 만든 프로필 캐릭터 그림을 받는다.
+	/**
+	 * 워커가 만든 프로필 캐릭터 그림을 받는다.
+	 *
+	 * @param userId 캐릭터 주인 회원 ID(경로)
+	 * @param file 그림 파트 file(768×768 PNG)
+	 * @param appearance 외모 글(200자 이하), 비면 400
+	 */
 	@PostMapping("/internal/users/{userId}/character/avatar")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void avatar(@PathVariable Long userId, @RequestPart("file") MultipartFile file,
@@ -48,21 +60,44 @@ public class CharacterWorkerController {
 		profileCharacters.avatar(userId, file.getBytes(), appearance);
 	}
 
-	// 내 목소리 원본 녹음(초안). 내 목소리를 만들 때와 쇼츠에서 "self"를 읽을 때 쓴다. Content-Type은 wav(audio/wav) 또는 m4a(audio/mp4)
+	/**
+	 * 내 목소리 원본 녹음(초안). 내 목소리를 만들 때와 쇼츠에서 "self"를 읽을 때 쓴다. Content-Type은 wav(audio/wav) 또는 m4a(audio/mp4)
+	 *
+	 * @param userId 목소리 주인 회원 ID(경로)
+	 * @return 원본 녹음
+	 */
 	@GetMapping("/internal/users/{userId}/voice-clone/sample")
 	public ResponseEntity<byte[]> voiceCloneSample(@PathVariable Long userId) {
 		StoredObject sample = voiceClones.sample(userId);
 		return ResponseEntity.ok().contentType(MediaType.parseMediaType(sample.contentType())).body(sample.bytes());
 	}
 
-	// 워커가 만든 미리 듣기 wav(초안). 받으면 READY, 푸시
+	/**
+	 * 워커가 만든 미리 듣기 wav(초안). 받으면 READY, 푸시
+	 *
+	 * @param userId 목소리 주인 회원 ID(경로)
+	 * @param file 미리 듣기 파트 file(wav)
+	 */
 	@PutMapping("/internal/users/{userId}/voice-clone/preview")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void voiceClonePreview(@PathVariable Long userId, @RequestPart("file") MultipartFile file) throws IOException {
 		voiceClones.preview(userId, file.getBytes());
 	}
 
-	// 기본 화자 넣기·바꾸기. image·thumbnail은 이미 저장소에 있으면 빼도 된다. voice(wav)는 선택이다.
+	/**
+	 * 기본 화자 넣기·바꾸기. image·thumbnail은 이미 저장소에 있으면 빼도 된다. voice(wav)는 선택이다.
+	 *
+	 * @param id 기본 화자 ID(경로, 영어 소문자·숫자·- 1~20자)
+	 * @param image 그림(768×768 PNG), 빼도 된다
+	 * @param thumbnail 줄인 그림(WebP), 빼도 된다
+	 * @param voice 목소리(wav), 빼면 지금 목소리를 그대로 둔다
+	 * @param ageGroup 나이대(CHILD, YOUNG, MIDDLE)
+	 * @param gender 성별(F, M)
+	 * @param glasses 안경을 썼는지
+	 * @param label 기본 화자 이름(50자 이하)
+	 * @param appearance 그림 모델용 생김새 설명(200자 이하)
+	 * @param sortOrder 목록 순서
+	 */
 	@PutMapping("/internal/characters/defaults/{id}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void upsertDefault(@PathVariable String id,

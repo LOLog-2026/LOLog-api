@@ -52,7 +52,15 @@ public class Feedback {
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
 
-	// 새 오류 신고·의견을 만든다.
+	/**
+	 * 새 오류 신고·의견을 만든다.
+	 *
+	 * @param userId 보낸 회원 ID
+	 * @param category 분류(BUG·OPINION)
+	 * @param text 내용
+	 * @param appVersion 보낸 앱 버전
+	 * @param deviceModel 보낸 기기 모델
+	 */
 	public Feedback(Long userId, String category, String text, String appVersion, String deviceModel) {
 		this.userId = userId;
 		this.category = category;
@@ -61,7 +69,11 @@ public class Feedback {
 		this.deviceModel = deviceModel;
 	}
 
-	// 처리 상태를 바꾼다.
+	/**
+	 * 처리 상태를 바꾼다.
+	 *
+	 * @param status 새 처리 상태(OPEN·DONE)
+	 */
 	public void mark(String status) {
 		this.status = status;
 	}

@@ -36,6 +36,16 @@ public class VoiceClonePublisher {
 	private final TransactionTemplate tx;
 	private final UserProfileRepository profiles;
 
+	/**
+	 * 쓰는 저장소와 도구, 큐에 넣기를 켰는지를 받는다.
+	 *
+	 * @param enabled lolog.voice-clone.queue-enabled 값(기본 false). true일 때만 큐에 넣는다
+	 * @param jobs 작업 저장소
+	 * @param redis 큐(Redis 스트림)에 넣을 도구
+	 * @param objectMapper 메시지를 JSON으로 바꿀 도구
+	 * @param transactionManager 넣음 표시를 새 트랜잭션으로 저장할 트랜잭션 관리자
+	 * @param profiles 녹음 문장을 읽을 프로필 저장소
+	 */
 	public VoiceClonePublisher(@Value("${lolog.voice-clone.queue-enabled:false}") boolean enabled, JobRepository jobs,
 			StringRedisTemplate redis, ObjectMapper objectMapper, PlatformTransactionManager transactionManager,
 			UserProfileRepository profiles) {
@@ -49,7 +59,14 @@ public class VoiceClonePublisher {
 		this.tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
 	}
 
-	// 큐에 넣는 내 목소리 작업 메시지.
+	/**
+	 * 큐에 넣는 내 목소리 작업 메시지.
+	 *
+	 * @param jobId 내 목소리 작업 ID
+	 * @param kind 작업 종류(항상 voice_clone)
+	 * @param userId 목소리를 만들 회원 ID
+	 * @param text 사용자가 읽은 녹음 문장(워커가 ref_text로 씀, 없으면 null)
+	 */
 	record VoiceCloneMessage(Long jobId, String kind, Long userId, String text) {
 	}
 
@@ -58,7 +75,11 @@ public class VoiceClonePublisher {
 		return enabled;
 	}
 
-	// 작업을 큐에 넣는다. 실패하면 로그만 남기고 다음에 다시 넣는다.
+	/**
+	 * 작업을 큐에 넣는다. 실패하면 로그만 남기고 다음에 다시 넣는다.
+	 *
+	 * @param jobId 큐에 넣을 VOICE_CLONE 작업 ID
+	 */
 	public void publishQuietly(Long jobId) {
 		if (!enabled) {
 			return;
@@ -79,7 +100,11 @@ public class VoiceClonePublisher {
 		}
 	}
 
-	// 작업을 한 번만 큐에 넣고 넣었다고 표시한다.
+	/**
+	 * 작업을 한 번만 큐에 넣고 넣었다고 표시한다.
+	 *
+	 * @param jobId 큐에 넣을 작업 ID(이미 넣었거나 끝났으면 아무것도 하지 않음)
+	 */
 	private void publish(Long jobId) {
 		tx.executeWithoutResult(status -> {
 			Job job = jobs.findById(jobId).orElseThrow();

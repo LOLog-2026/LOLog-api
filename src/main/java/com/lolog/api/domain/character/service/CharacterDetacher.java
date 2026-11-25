@@ -11,16 +11,26 @@ public class CharacterDetacher {
 
 	private final CardRepository cards;
 
+	/** 카드 저장소를 받는다. */
 	public CharacterDetacher(CardRepository cards) {
 		this.cards = cards;
 	}
 
-	// 캐릭터 지우기·탈퇴: 모든 카드에서 그 사람의 캐릭터를 뺀다.
+	/**
+	 * 캐릭터 지우기·탈퇴: 모든 카드에서 그 사람의 캐릭터를 뺀다.
+	 *
+	 * @param userId 캐릭터를 뺄 회원 ID(캐릭터를 지우거나 탈퇴한 회원)
+	 */
 	public void detachEverywhere(long userId) {
 		cards.detachProfileCharacter(String.valueOf(userId));
 	}
 
-	// 친구 끊기·차단: 두 사람이 서로의 카드에서 빠진다. 본인 카드에 붙인 본인 캐릭터는 그대로다.
+	/**
+	 * 친구 끊기·차단: 두 사람이 서로의 카드에서 빠진다. 본인 카드에 붙인 본인 캐릭터는 그대로다.
+	 *
+	 * @param a 친구를 끊거나 차단한 두 회원 중 한 명의 ID
+	 * @param b 다른 한 명의 회원 ID
+	 */
 	public void detachBetween(long a, long b) {
 		cards.detachProfileCharactersBetween(a, String.valueOf(a), b, String.valueOf(b));
 	}

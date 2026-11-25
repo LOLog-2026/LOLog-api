@@ -19,18 +19,32 @@ public class DefaultCharacterService {
 	private final DefaultCharacterRepository repository;
 	private final ImageStorage storage;
 
-	// 리포지토리와 저장소를 받는다.
+	/** 리포지토리와 저장소를 받는다. */
 	public DefaultCharacterService(DefaultCharacterRepository repository, ImageStorage storage) {
 		this.repository = repository;
 		this.storage = storage;
 	}
 
-	// appearance는 그림 모델용이라 앱에 보내지 않는다. voiceUrl은 목소리 파일의 10분 서명 주소이고, 없으면 null(FR-CHAR-03).
+	/**
+	 * appearance는 그림 모델용이라 앱에 보내지 않는다. voiceUrl은 목소리 파일의 10분 서명 주소이고, 없으면 null(FR-CHAR-03).
+	 *
+	 * @param id 기본 화자 id
+	 * @param label 화자 이름
+	 * @param ageGroup 나이대(CHILD, YOUNG, MIDDLE)
+	 * @param gender 성별(F, M)
+	 * @param glasses 안경을 썼으면 true
+	 * @param thumbnailUrl 줄인 그림의 10분 서명 주소
+	 * @param voiceUrl 목소리 파일의 10분 서명 주소(없으면 null)
+	 */
 	public record DefaultCharacterItem(String id, String label, String ageGroup, String gender, boolean glasses,
 			String thumbnailUrl, String voiceUrl) {
 	}
 
-	// 기본 화자 목록 응답.
+	/**
+	 * 기본 화자 목록 응답.
+	 *
+	 * @param characters 기본 화자 목록(정한 순서대로)
+	 */
 	public record DefaultCharacterList(List<DefaultCharacterItem> characters) {
 	}
 
@@ -44,9 +58,22 @@ public class DefaultCharacterService {
 				.toList());
 	}
 
-	// 기본 화자 하나를 넣거나 바꾼다(PUT /internal/characters/defaults/{id}, 스크립트용).
-	// image·thumbnail을 보내면 저장소에 올리고, 빼면 이미 올라가 있다고 보고 목록만 넣는다.
-	// voice(wav)는 보내면 올리고 목소리를 붙인다. 빼면 지금 붙어 있는 목소리를 그대로 둔다(처음이면 없음).
+	/**
+	 * 기본 화자 하나를 넣거나 바꾼다(PUT /internal/characters/defaults/{id}, 스크립트용).
+	 * image·thumbnail을 보내면 저장소에 올리고, 빼면 이미 올라가 있다고 보고 목록만 넣는다.
+	 * voice(wav)는 보내면 올리고 목소리를 붙인다. 빼면 지금 붙어 있는 목소리를 그대로 둔다(처음이면 없음).
+	 *
+	 * @param id 기본 화자 id(영어 소문자·숫자·-, 20자 이하)
+	 * @param image 원본 그림(PNG 768×768, null이면 올리지 않음)
+	 * @param thumbnail 줄인 그림(WebP, null이면 올리지 않음)
+	 * @param voice 목소리 파일(wav, null이면 지금 목소리를 그대로 둠)
+	 * @param ageGroup 나이대(CHILD, YOUNG, MIDDLE)
+	 * @param gender 성별(F, M)
+	 * @param glasses 안경을 썼으면 true(null이면 400)
+	 * @param label 화자 이름(50자 이하)
+	 * @param appearance 그림 모델용 생김새 설명(200자 이하)
+	 * @param sortOrder 목록에서의 순서(null이면 400)
+	 */
 	@Transactional
 	public void upsert(String id, byte[] image, byte[] thumbnail, byte[] voice, String ageGroup, String gender,
 			Boolean glasses, String label, String appearance, Integer sortOrder) {
@@ -98,14 +125,26 @@ public class DefaultCharacterService {
 				sortOrder);
 	}
 
-	// 목소리가 붙어 있는 기본 화자인지 본다(TTS 참조 음성으로 쓸 수 있는지).
+	/**
+	 * 목소리가 붙어 있는 기본 화자인지 본다(TTS 참조 음성으로 쓸 수 있는지).
+	 *
+	 * @param id 기본 화자 id
+	 * @return 목소리가 붙어 있으면 true
+	 */
 	@Transactional(readOnly = true)
 	public boolean hasVoice(String id) {
 		return repository.existsByIdAndVoiceKeyIsNotNull(id);
 	}
 
-	// RIFF....WAVE 머리말
-	// PNG 머리말과 IHDR의 가로·세로
+	/**
+	 * RIFF....WAVE 머리말
+	 * PNG 머리말과 IHDR의 가로·세로
+	 *
+	 * @param b 살펴볼 파일 바이트
+	 * @param width 맞아야 할 가로 픽셀
+	 * @param height 맞아야 할 세로 픽셀
+	 * @return PNG이고 크기가 맞으면 true
+	 */
 	static boolean isPng(byte[] b, int width, int height) {
 		byte[] signature = { (byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n' };
 		if (b.length < 24 || !java.util.Arrays.equals(b, 0, 8, signature, 0, 8) || b[12] != 'I' || b[13] != 'H'
@@ -115,18 +154,34 @@ public class DefaultCharacterService {
 		return readInt(b, 16) == width && readInt(b, 20) == height;
 	}
 
-	// RIFF 머리말과 WEBP 표시. 크기는 VP8·VP8L·VP8X마다 적는 곳이 달라 보지 않는다.
+	/**
+	 * RIFF 머리말과 WEBP 표시. 크기는 VP8·VP8L·VP8X마다 적는 곳이 달라 보지 않는다.
+	 *
+	 * @param b 살펴볼 파일 바이트
+	 * @return WebP면 true
+	 */
 	static boolean isWebp(byte[] b) {
 		return b.length >= 12 && b[0] == 'R' && b[1] == 'I' && b[2] == 'F' && b[3] == 'F' && b[8] == 'W' && b[9] == 'E'
 				&& b[10] == 'B' && b[11] == 'P';
 	}
 
-	// 4바이트를 큰 수 먼저(big-endian) int로 읽는다.
+	/**
+	 * 4바이트를 큰 수 먼저(big-endian) int로 읽는다.
+	 *
+	 * @param b 읽을 바이트
+	 * @param at 읽기 시작할 위치
+	 * @return 읽은 int 값
+	 */
 	private static int readInt(byte[] b, int at) {
 		return ((b[at] & 0xFF) << 24) | ((b[at + 1] & 0xFF) << 16) | ((b[at + 2] & 0xFF) << 8) | (b[at + 3] & 0xFF);
 	}
 
-	// wav 머리말(RIFF....WAVE)인지 본다.
+	/**
+	 * wav 머리말(RIFF....WAVE)인지 본다.
+	 *
+	 * @param bytes 살펴볼 파일 바이트
+	 * @return wav 머리말이면 true
+	 */
 	static boolean isWav(byte[] bytes) {
 		return bytes.length >= 12 && bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F'
 				&& bytes[8] == 'W' && bytes[9] == 'A' && bytes[10] == 'V' && bytes[11] == 'E';

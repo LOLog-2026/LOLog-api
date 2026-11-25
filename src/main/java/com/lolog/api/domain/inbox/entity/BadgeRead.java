@@ -19,7 +19,12 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class BadgeRead {
 
-	// 기본 키(user_id, kind)
+	/**
+	 * 기본 키(user_id, kind)
+	 *
+	 * @param userId 회원 ID
+	 * @param kind 새 소식 점 종류
+	 */
 	public record Key(Long userId, String kind) implements Serializable {
 	}
 

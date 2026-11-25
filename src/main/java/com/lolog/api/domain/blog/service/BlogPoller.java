@@ -29,6 +29,7 @@ public class BlogPoller {
 	private final ObjectMapper objectMapper;
 	private final BlogPlatforms platforms;
 
+	/** 쓰는 저장소와 도구를 받는다. */
 	public BlogPoller(BlogSourceRepository sources, BlogFetcher fetcher, BlogService blogs, ObjectMapper objectMapper,
 			BlogPlatforms platforms) {
 		this.platforms = platforms;
@@ -52,7 +53,12 @@ public class BlogPoller {
 		}
 	}
 
-	// 블로그 하나를 읽는다. 그사이 연결을 끊었으면 넘어간다.
+	/**
+	 * 블로그 하나를 읽는다. 그사이 연결을 끊었으면 넘어간다.
+	 *
+	 * @param sourceId 읽을 블로그 ID
+	 * @return 새로 가져온 글 수. 읽지 못했으면 0
+	 */
 	public int poll(long sourceId) {
 		BlogSource source = sources.findById(sourceId).orElse(null);
 		if (source == null) {

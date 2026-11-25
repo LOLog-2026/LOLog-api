@@ -73,7 +73,13 @@ public class Video {
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
 
-	// 카드로 새 영상 요청을 만든다.
+	/**
+	 * 카드로 새 영상 요청을 만든다.
+	 *
+	 * @param cardId 영상을 만들 카드 ID
+	 * @param userId 요청한 회원 ID
+	 * @param cardSummary 요청할 때의 카드 요약(복사해 둔다)
+	 */
 	public Video(Long cardId, Long userId, String cardSummary) {
 		this.cardId = cardId;
 		this.userId = userId;
@@ -92,7 +98,11 @@ public class Video {
 		}
 	}
 
-	// 3호가 보낸 콘티를 저장한다.
+	/**
+	 * 3호가 보낸 콘티를 저장한다.
+	 *
+	 * @param json 콘티 JSON
+	 */
 	public void saveStoryboard(String json) {
 		storyboard = json;
 	}
@@ -102,7 +112,12 @@ public class Video {
 		return storyboard != null;
 	}
 
-	// 대사 음성을 받았을 때. 처음 받은 것이면 DRAWING이 되고 true를 돌려준다(2호 작업을 넣어야 함). 다시 받으면 파일만 바뀐다.
+	/**
+	 * 대사 음성을 받았을 때. 처음 받은 것이면 DRAWING이 되고 true를 돌려준다(2호 작업을 넣어야 함). 다시 받으면 파일만 바뀐다.
+	 *
+	 * @param key 대사 음성(wav)의 저장소 키
+	 * @return 처음 받아 DRAWING이 됐으면 true
+	 */
 	public boolean attachAudio(String key) {
 		audioKey = key;
 		if (status == VideoStatus.DRAWING) {
@@ -112,7 +127,13 @@ public class Video {
 		return true;
 	}
 
-	// 완성. 중간 음성 파일 키는 비운다(파일은 부른 쪽이 커밋 뒤에 지운다).
+	/**
+	 * 완성. 중간 음성 파일 키는 비운다(파일은 부른 쪽이 커밋 뒤에 지운다).
+	 *
+	 * @param videoKey 완성 영상(mp4)의 저장소 키
+	 * @param thumbKey 목록용 그림(jpeg)의 저장소 키
+	 * @param durationMs 영상 길이(ms)
+	 */
 	public void finish(String videoKey, String thumbKey, long durationMs) {
 		this.videoKey = videoKey;
 		this.thumbKey = thumbKey;
@@ -121,7 +142,11 @@ public class Video {
 		this.status = VideoStatus.DONE;
 	}
 
-	// 실패. 중간 음성 파일 키는 비운다(파일은 부른 쪽이 커밋 뒤에 지운다).
+	/**
+	 * 실패. 중간 음성 파일 키는 비운다(파일은 부른 쪽이 커밋 뒤에 지운다).
+	 *
+	 * @param reason 워커가 보낸 실패 이유(서버 기록용)
+	 */
 	public void fail(String reason) {
 		this.failReason = reason;
 		this.audioKey = null;

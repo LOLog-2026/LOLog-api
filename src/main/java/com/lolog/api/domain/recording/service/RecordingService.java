@@ -41,7 +41,7 @@ public class RecordingService {
 	private final ObjectMapper objectMapper;
 	private final TransactionTemplate tx;
 
-	// 녹음 처리에 필요한 저장소와 도구를 받는다.
+	/** 녹음 처리에 필요한 저장소와 도구를 받는다. */
 	public RecordingService(RecordingRepository recordings, RecordingPartRepository parts, JobRepository jobs,
 			DetectPublisher publisher, ObjectMapper objectMapper, TransactionTemplate tx) {
 		this.recordings = recordings;
@@ -52,7 +52,13 @@ public class RecordingService {
 		this.tx = tx;
 	}
 
-	// 녹음 묶음을 확인해 저장하고 감지 작업을 큐에 넣는다.
+	/**
+	 * 녹음 묶음을 확인해 저장하고 감지 작업을 큐에 넣는다.
+	 *
+	 * @param userId 업로드한 회원 ID(토큰의 sub)
+	 * @param request 받은 녹음 묶음
+	 * @return 녹음 ID와 지금 상태
+	 */
 	public UploadResponse upload(long userId, UploadRequest request) {
 		validate(request);
 		Saved saved;
@@ -67,14 +73,28 @@ public class RecordingService {
 		return saved.response();
 	}
 
-	// 내 녹음 하나의 상태와 카드 수를 돌려준다.
+	/**
+	 * 내 녹음 하나의 상태와 카드 수를 돌려준다.
+	 *
+	 * @param userId 요청한 회원 ID(토큰의 sub)
+	 * @param id 녹음 ID
+	 * @return 녹음 상태와 카드 수
+	 */
 	public StatusResponse status(long userId, long id) {
 		Recording recording = recordings.findByIdAndUserId(id, userId)
 			.orElseThrow(() -> new ApiException(ErrorCode.RECORDING_NOT_FOUND));
 		return new StatusResponse(recording.getId(), recording.getStatus(), Math.toIntExact(recordings.countCards(id)));
 	}
 
-	// 내 녹음 목록을 상태로 걸러 페이지로 돌려준다.
+	/**
+	 * 내 녹음 목록을 상태로 걸러 페이지로 돌려준다.
+	 *
+	 * @param userId 요청한 회원 ID(토큰의 sub)
+	 * @param cursor 앞 페이지의 nextCursor. null이면 처음부터
+	 * @param size 페이지 크기. null이면 20
+	 * @param status 쉼표로 이은 상태 이름. null이거나 비면 전부
+	 * @return 녹음 목록과 다음 cursor
+	 */
 	@Transactional(readOnly = true)
 	public RecordingPage list(long userId, String cursor, Integer size, String status) {
 		PageRequestParams params = PageRequestParams.of(cursor, size);
@@ -93,7 +113,12 @@ public class RecordingService {
 		return new RecordingPage(items, more ? String.valueOf(shown.getLast().getId()) : null);
 	}
 
-	// ?status=RECEIVED,DETECTING 처럼 쉼표로 잇는다. 빼거나 비우면 전부. 없는 상태 이름은 400.
+	/**
+	 * ?status=RECEIVED,DETECTING 처럼 쉼표로 잇는다. 빼거나 비우면 전부. 없는 상태 이름은 400.
+	 *
+	 * @param status 쉼표로 이은 상태 이름(null 가능)
+	 * @return 걸러 볼 상태 집합
+	 */
 	private static Set<RecordingStatus> parseStatuses(String status) {
 		if (status == null || status.isBlank()) {
 			return EnumSet.allOf(RecordingStatus.class);
@@ -110,7 +135,11 @@ public class RecordingService {
 		return result;
 	}
 
-	// 앞 묶음의 감지가 끝났을 때 다음 묶음을 넣는다. 워커 결과는 DetectResultService가 같은 트랜잭션 안에서 dispatch를 부른다.
+	/**
+	 * 앞 묶음의 감지가 끝났을 때 다음 묶음을 넣는다. 워커 결과는 DetectResultService가 같은 트랜잭션 안에서 dispatch를 부른다.
+	 *
+	 * @param recordingId 다음 묶음을 넣을 녹음 ID
+	 */
 	public void dispatchNext(long recordingId) {
 		List<Long> jobIds = tx.execute(status -> {
 			Recording recording = recordings.findByIdForUpdate(recordingId).orElseThrow();
@@ -119,7 +148,11 @@ public class RecordingService {
 		jobIds.forEach(publisher::publishQuietly);
 	}
 
-	// 문장 수와 각 문장의 시각을 확인한다.
+	/**
+	 * 문장 수와 각 문장의 시각을 확인한다.
+	 *
+	 * @param request 확인할 녹음 묶음
+	 */
 	private void validate(UploadRequest request) {
 		if (request.sentences().size() > MAX_SENTENCES) {
 			throw new ApiException(ErrorCode.PAYLOAD_TOO_LARGE);
@@ -131,7 +164,13 @@ public class RecordingService {
 		}
 	}
 
-	// 녹음과 묶음을 저장하고 넣을 감지 작업을 만든다.
+	/**
+	 * 녹음과 묶음을 저장하고 넣을 감지 작업을 만든다.
+	 *
+	 * @param userId 업로드한 회원 ID
+	 * @param request 받은 녹음 묶음
+	 * @return 업로드 응답과 큐에 넣을 작업 ID
+	 */
 	private Saved save(long userId, UploadRequest request) {
 		Recording recording = recordings.findByUserIdAndClientRecordingId(userId, request.clientRecordingId())
 			.orElseGet(() -> recordings.saveAndFlush(
@@ -159,8 +198,13 @@ public class RecordingService {
 		return new Saved(response(recording), jobIds);
 	}
 
-	// 앞 묶음이 모두 끝났으면 다음 묶음을 큐에 넣을 작업으로 만든다. 앞 묶음의 carryFromMs를 알아야 해서 한 번에 하나만 넣는다.
-	// 넣을 묶음이 없고 마지막 묶음까지 끝났으면 녹음 상태를 정한다. 부르는 쪽이 녹음 행을 잠근 트랜잭션 안에서 부른다.
+	/**
+	 * 앞 묶음이 모두 끝났으면 다음 묶음을 큐에 넣을 작업으로 만든다. 앞 묶음의 carryFromMs를 알아야 해서 한 번에 하나만 넣는다.
+	 * 넣을 묶음이 없고 마지막 묶음까지 끝났으면 녹음 상태를 정한다. 부르는 쪽이 녹음 행을 잠근 트랜잭션 안에서 부른다.
+	 *
+	 * @param recording 잠근 녹음
+	 * @return 큐에 넣을 작업 ID(없거나 하나)
+	 */
 	public List<Long> dispatch(Recording recording) {
 		List<RecordingPart> all = parts.findByRecordingIdOrderByPartNo(recording.getId());
 		boolean running = all.stream().anyMatch(p -> p.getStatus() == RecordingStatus.DETECTING);
@@ -184,7 +228,12 @@ public class RecordingService {
 		return List.of();
 	}
 
-	// 마지막 묶음까지 끝났으면 DONE. 감지한 묶음이 모두 실패했을 때만 FAILED다(하나라도 성공했으면 DONE).
+	/**
+	 * 마지막 묶음까지 끝났으면 DONE. 감지한 묶음이 모두 실패했을 때만 FAILED다(하나라도 성공했으면 DONE).
+	 *
+	 * @param recording 상태를 정할 녹음
+	 * @param all 이 녹음의 묶음 전부(partNo 순)
+	 */
 	private void finishIfLastDone(Recording recording, List<RecordingPart> all) {
 		if (all.isEmpty()) {
 			return;
@@ -205,12 +254,22 @@ public class RecordingService {
 		recording.setStatus(anyFailed && !anyDetected ? RecordingStatus.FAILED : RecordingStatus.DONE);
 	}
 
-	// 녹음을 업로드 응답 모양으로 바꾼다.
+	/**
+	 * 녹음을 업로드 응답 모양으로 바꾼다.
+	 *
+	 * @param recording 바꿀 녹음
+	 * @return 녹음 ID와 상태
+	 */
 	private UploadResponse response(Recording recording) {
 		return new UploadResponse(recording.getId(), recording.getStatus());
 	}
 
-	// save 결과. 응답과 큐에 넣을 작업 ID.
+	/**
+	 * save 결과. 응답과 큐에 넣을 작업 ID.
+	 *
+	 * @param response 앱에 돌려줄 업로드 응답
+	 * @param jobIds 커밋 뒤 큐에 넣을 작업 ID
+	 */
 	private record Saved(UploadResponse response, List<Long> jobIds) {
 	}
 

@@ -53,6 +53,7 @@ public class ProfileCharacterService {
 	private final VoiceCloneService voiceClones;
 	private final DefaultCharacterService defaultCharacters;
 
+	/** 쓰는 저장소와 도구, 캐릭터 관련 서비스를 받는다. */
 	public ProfileCharacterService(UserProfileRepository userProfiles, ImageStorage storage, StorageDeletions deletions,
 			ProfileService profiles, JobRepository jobs, ComicPublisher publisher, PushService push, CharacterDetacher detacher,
 			CharacterViews views, VoiceCloneService voiceClones, DefaultCharacterService defaultCharacters) {
@@ -69,14 +70,28 @@ public class ProfileCharacterService {
 		this.views = views;
 	}
 
-	// PUT의 응답이자 ProfileResponse의 character. 만든 적이 없거나 지웠으면 null.
-	// voice는 고른 목소리(기본 화자 id 또는 내 목소리 "self"), 안 골랐으면 null(FR-CHAR-04·05).
-	// voiceClone은 내 목소리 상태이고 만든 적이 없으면 null(FR-CHAR-05).
+	/**
+	 * PUT의 응답이자 ProfileResponse의 character. 만든 적이 없거나 지웠으면 null.
+	 * voice는 고른 목소리(기본 화자 id 또는 내 목소리 "self"), 안 골랐으면 null(FR-CHAR-04·05).
+	 * voiceClone은 내 목소리 상태이고 만든 적이 없으면 null(FR-CHAR-05).
+	 *
+	 * @param status 프로필 캐릭터 상태(가장 최근에 올린 사진의 것)
+	 * @param thumbnailUrl 256 그림의 10분 서명 주소(그림이 없으면 null)
+	 * @param updatedAt 프로필 캐릭터를 마지막으로 바꾼 시각
+	 * @param voice 고른 목소리(기본 화자 id 또는 "self", 안 골랐으면 null)
+	 * @param voiceClone 내 목소리 상태(만든 적이 없으면 null)
+	 */
 	public record ProfileCharacterResponse(String status, String thumbnailUrl, OffsetDateTime updatedAt, String voice,
 			VoiceCloneService.VoiceCloneView voiceClone) {
 	}
 
-	// 사진을 올려 만들기·다시 만들기. 닉네임은 없어도 된다.
+	/**
+	 * 사진을 올려 만들기·다시 만들기. 닉네임은 없어도 된다.
+	 *
+	 * @param userId 사진을 올린 회원 ID
+	 * @param photo 사진 바이트(JPEG 또는 PNG, 5MB 이하)
+	 * @return 만들기를 받은 뒤의 프로필 캐릭터
+	 */
 	@Transactional
 	public ProfileCharacterResponse upload(long userId, byte[] photo) {
 		if (photo == null || photo.length == 0) {
@@ -111,8 +126,12 @@ public class ProfileCharacterService {
 		return response(userId);
 	}
 
-	// 지우기. 없어도 204. 내 카드와 친구들 카드의 화자에서 이 캐릭터를 뺀다(이미 만든 만화는 그대로).
-	// 내 목소리도 함께 지운다(characters.md "내 목소리" 보관과 삭제).
+	/**
+	 * 지우기. 없어도 204. 내 카드와 친구들 카드의 화자에서 이 캐릭터를 뺀다(이미 만든 만화는 그대로).
+	 * 내 목소리도 함께 지운다(characters.md "내 목소리" 보관과 삭제).
+	 *
+	 * @param userId 캐릭터를 지울 회원 ID
+	 */
 	@Transactional
 	public void delete(long userId) {
 		voiceClones.delete(userId);
@@ -129,7 +148,12 @@ public class ProfileCharacterService {
 		deletions.schedule(ImageStorage.profilePhotoKey(userId));
 	}
 
-	// 워커가 원본 사진을 받는다. 만드는 중이 아니면(이미 끝남, 지움, 회원 없음) 404 CHARACTER_NOT_FOUND.
+	/**
+	 * 워커가 원본 사진을 받는다. 만드는 중이 아니면(이미 끝남, 지움, 회원 없음) 404 CHARACTER_NOT_FOUND.
+	 *
+	 * @param userId 사진을 올린 회원 ID
+	 * @return 저장소의 원본 사진
+	 */
 	@Transactional(readOnly = true)
 	public ImageStorage.StoredObject photo(long userId) {
 		String status = userProfiles.findById(userId).map(UserProfile::getCharacterStatus).orElse(null);
@@ -144,7 +168,13 @@ public class ProfileCharacterService {
 		}
 	}
 
-	// 워커가 그림(768 PNG)과 외모 글을 보낸다. READY로 바꾸고 256 그림을 만들고 원본 사진을 지운 뒤 본인에게 알린다.
+	/**
+	 * 워커가 그림(768 PNG)과 외모 글을 보낸다. READY로 바꾸고 256 그림을 만들고 원본 사진을 지운 뒤 본인에게 알린다.
+	 *
+	 * @param userId 캐릭터 주인 회원 ID
+	 * @param png 워커가 만든 그림(PNG 768×768)
+	 * @param appearance 그림 모델용 외모 글(앞뒤 공백을 빼고 1~200자)
+	 */
 	@Transactional
 	public void avatar(long userId, byte[] png, String appearance) {
 		BufferedImage image = readPng(png);
@@ -171,8 +201,13 @@ public class ProfileCharacterService {
 		push.notify(userId, PushService.profileCharacterReady());
 	}
 
-	// avatar 작업 fail(POST /internal/jobs/{id}/fail). FAILED로 바꾸고(예전 그림은 그대로) 원본 사진을 지우고 알린다.
-	// 이미 결과나 fail을 받은 작업이면 무시한다.
+	/**
+	 * avatar 작업 fail(POST /internal/jobs/{id}/fail). FAILED로 바꾸고(예전 그림은 그대로) 원본 사진을 지우고 알린다.
+	 * 이미 결과나 fail을 받은 작업이면 무시한다.
+	 *
+	 * @param jobId 실패한 AVATAR 작업 ID
+	 * @param reason 워커가 보낸 실패 이유
+	 */
 	@Transactional
 	public void fail(long jobId, String reason) {
 		Job job = jobs.findByIdForUpdate(jobId).orElseThrow(() -> ApiException.invalid(null));
@@ -190,9 +225,14 @@ public class ProfileCharacterService {
 		push.notify(userId, PushService.profileCharacterFailed());
 	}
 
-	// 프로필 캐릭터 목소리 고르기(초안). 기본 화자 목소리 중 하나나 내 목소리("self", 정함 11-14)이고 null이면 지운다.
-	// 프로필 캐릭터가 없으면 404 CHARACTER_NOT_FOUND, 없거나 목소리가 없는 기본 화자 id면 400 UNKNOWN_CHARACTER.
-	// "self"는 내 목소리를 다 만들었을 때(READY)만 고를 수 있고, 아니면 409 VOICE_CLONE_NOT_READY(초안).
+	/**
+	 * 프로필 캐릭터 목소리 고르기(초안). 기본 화자 목소리 중 하나나 내 목소리("self", 정함 11-14)이고 null이면 지운다.
+	 * 프로필 캐릭터가 없으면 404 CHARACTER_NOT_FOUND, 없거나 목소리가 없는 기본 화자 id면 400 UNKNOWN_CHARACTER.
+	 * "self"는 내 목소리를 다 만들었을 때(READY)만 고를 수 있고, 아니면 409 VOICE_CLONE_NOT_READY(초안).
+	 *
+	 * @param userId 목소리를 고르는 회원 ID
+	 * @param voice 기본 화자 id, 내 목소리면 "self", 지우려면 null
+	 */
 	@Transactional
 	public void chooseVoice(long userId, String voice) {
 		// "프로필 캐릭터가 있을 때"는 쓸 수 있는 그림이 있을 때다. 다시 만드는 중·실패여도 예전 그림이 있으면 고를 수 있다.
@@ -212,17 +252,32 @@ public class ProfileCharacterService {
 		profile.chooseVoice(voice);
 	}
 
-	// ProfileResponse.character와 같은 값
+	/**
+	 * ProfileResponse.character와 같은 값
+	 *
+	 * @param userId 프로필 캐릭터 주인 회원 ID
+	 * @return 프로필 캐릭터 응답(만든 적이 없으면 null)
+	 */
 	public ProfileCharacterResponse response(long userId) {
 		return views.profileResponse(userId);
 	}
 
-	// 프로필 행을 잠그고 읽는다.
+	/**
+	 * 프로필 행을 잠그고 읽는다.
+	 *
+	 * @param userId 프로필 주인 회원 ID
+	 * @return 잠근 프로필
+	 */
 	private UserProfile lock(long userId) {
 		return userProfiles.findByIdForUpdate(userId).orElseThrow();
 	}
 
-	// 첫 바이트로 JPEG·PNG를 가린다. 둘 다 아니면 null.
+	/**
+	 * 첫 바이트로 JPEG·PNG를 가린다. 둘 다 아니면 null.
+	 *
+	 * @param bytes 살펴볼 파일 바이트
+	 * @return image/jpeg 또는 image/png(둘 다 아니면 null)
+	 */
 	static String photoType(byte[] bytes) {
 		if (bytes.length >= 3 && (bytes[0] & 0xFF) == 0xFF && (bytes[1] & 0xFF) == 0xD8 && (bytes[2] & 0xFF) == 0xFF) {
 			return "image/jpeg";
@@ -233,7 +288,12 @@ public class ProfileCharacterService {
 		return null;
 	}
 
-	// PNG면 그림으로 읽는다. 아니거나 못 읽으면 null.
+	/**
+	 * PNG면 그림으로 읽는다. 아니거나 못 읽으면 null.
+	 *
+	 * @param bytes 읽을 파일 바이트(null 가능)
+	 * @return 읽은 그림(PNG가 아니거나 못 읽으면 null)
+	 */
 	private static BufferedImage readPng(byte[] bytes) {
 		if (bytes == null || !"image/png".equals(photoType(bytes))) {
 			return null;
@@ -246,7 +306,12 @@ public class ProfileCharacterService {
 		}
 	}
 
-	// 768 그림을 256 PNG로 줄인다(characters.md 3장).
+	/**
+	 * 768 그림을 256 PNG로 줄인다(characters.md 3장).
+	 *
+	 * @param image 줄일 768 그림
+	 * @return 256×256 PNG 바이트
+	 */
 	static byte[] thumbnail(BufferedImage image) {
 		BufferedImage small = new BufferedImage(THUMB_SIZE, THUMB_SIZE, BufferedImage.TYPE_INT_ARGB);
 		var g = small.createGraphics();

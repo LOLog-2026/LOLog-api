@@ -18,7 +18,12 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class UserBlock {
 
-	// 기본 키(blocker_id, blocked_id)
+	/**
+	 * 기본 키(blocker_id, blocked_id)
+	 *
+	 * @param blockerId 차단한 회원 ID
+	 * @param blockedId 차단된 회원 ID
+	 */
 	public record Key(Long blockerId, Long blockedId) implements Serializable {
 	}
 
@@ -37,14 +42,24 @@ public class UserBlock {
 	@Column(name = "created_at", nullable = false, insertable = false, updatable = false)
 	private OffsetDateTime createdAt;
 
-	// blocker가 blocked를 차단한다.
+	/**
+	 * blocker가 blocked를 차단한다.
+	 *
+	 * @param blockerId 차단한 회원 ID
+	 * @param blockedId 차단된 회원 ID
+	 * @param hideInRooms 같은 방에서 그 사람 글을 숨길지
+	 */
 	public UserBlock(Long blockerId, Long blockedId, boolean hideInRooms) {
 		this.blockerId = blockerId;
 		this.blockedId = blockedId;
 		this.hideInRooms = hideInRooms;
 	}
 
-	// 방에서 그 사람 글 숨기기 설정을 바꾼다.
+	/**
+	 * 방에서 그 사람 글 숨기기 설정을 바꾼다.
+	 *
+	 * @param hideInRooms 같은 방에서 그 사람 글을 숨길지
+	 */
 	public void changeHideInRooms(boolean hideInRooms) {
 		this.hideInRooms = hideInRooms;
 	}

@@ -28,6 +28,7 @@ public class CharacterController {
 	private final VoiceCloneService voiceClones;
 	private final CurrentUserProvider currentUser;
 
+	/** 캐릭터 서비스들과 현재 사용자 정보를 받는다. */
 	public CharacterController(DefaultCharacterService defaults, ProfileCharacterService profileCharacters,
 			VoiceCloneService voiceClones, CurrentUserProvider currentUser) {
 		this.voiceClones = voiceClones;
@@ -42,26 +43,45 @@ public class CharacterController {
 		return defaults.list();
 	}
 
-	// 사진을 올려 프로필 캐릭터를 만들거나 다시 만든다.
+	/**
+	 * 사진을 올려 프로필 캐릭터를 만들거나 다시 만든다.
+	 *
+	 * @param photo multipart photo 파트의 사진(JPEG 또는 PNG, 5MB 이하)
+	 * @return 만들기를 받은 뒤의 프로필 캐릭터(202)
+	 */
 	@PutMapping("/api/me/profile/character")
 	@ResponseStatus(HttpStatus.ACCEPTED)
 	public ProfileCharacterResponse upload(@RequestPart("photo") MultipartFile photo) throws IOException {
 		return profileCharacters.upload(currentUser.currentUserId(), photo.getBytes());
 	}
 
-	// 프로필 캐릭터 목소리 고르기(초안). { voice: 기본 화자 id | "self" | null }
+	/**
+	 * 프로필 캐릭터 목소리 고르기(초안). { voice: 기본 화자 id | "self" | null }
+	 *
+	 * @param request 고를 목소리를 담은 요청 본문
+	 */
 	@PatchMapping("/api/me/profile/character/voice")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void chooseVoice(@RequestBody VoiceRequest request) {
 		profileCharacters.chooseVoice(currentUser.currentUserId(), request.voice());
 	}
 
-	// 목소리 고르기 요청.
+	/**
+	 * 목소리 고르기 요청.
+	 *
+	 * @param voice 기본 화자 id, 내 목소리면 "self", 지우려면 null
+	 */
 	public record VoiceRequest(String voice) {
 	}
 
-	// 내 목소리 녹음 올리기·다시 올리기(초안). multipart audio(wav·m4a) + consent=true. 응답은 ProfileCharacterResponse
-	// 녹음 문장은 하나로 정해져 있어 앱이 보내지 않는다(서버가 VoiceCloneService.RECORD_SENTENCE를 저장)
+	/**
+	 * 내 목소리 녹음 올리기·다시 올리기(초안). multipart audio(wav·m4a) + consent=true. 응답은 ProfileCharacterResponse
+	 * 녹음 문장은 하나로 정해져 있어 앱이 보내지 않는다(서버가 VoiceCloneService.RECORD_SENTENCE를 저장)
+	 *
+	 * @param audio multipart audio 파트의 녹음(wav 또는 m4a, 없으면 400)
+	 * @param consent 쿼리·폼의 필수 동의(true가 아니면 400)
+	 * @return 녹음을 받은 뒤의 프로필 캐릭터(202)
+	 */
 	@PutMapping("/api/me/profile/character/voice-clone")
 	@ResponseStatus(HttpStatus.ACCEPTED)
 	public ProfileCharacterResponse uploadVoiceClone(@RequestPart(name = "audio", required = false) MultipartFile audio,
@@ -76,14 +96,22 @@ public class CharacterController {
 		voiceClones.delete(currentUser.currentUserId());
 	}
 
-	// 친구 쇼츠 동의(③)만 바꾸기(정함 11-14). { shareWithFriends }
+	/**
+	 * 친구 쇼츠 동의(③)만 바꾸기(정함 11-14). { shareWithFriends }
+	 *
+	 * @param request 친구 쇼츠 동의를 담은 요청 본문
+	 */
 	@PatchMapping("/api/me/profile/character/voice-clone")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void shareVoiceClone(@RequestBody ShareRequest request) {
 		voiceClones.share(currentUser.currentUserId(), request.shareWithFriends());
 	}
 
-	// 친구 쇼츠 동의 바꾸기 요청.
+	/**
+	 * 친구 쇼츠 동의 바꾸기 요청.
+	 *
+	 * @param shareWithFriends 친구 쇼츠에 내 목소리를 써도 되면 true(null이면 400)
+	 */
 	public record ShareRequest(Boolean shareWithFriends) {
 	}
 

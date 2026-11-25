@@ -25,27 +25,44 @@ public class RecordingController {
 	private final RecordingService recordingService;
 	private final CurrentUserProvider currentUser;
 
-	// 녹음 서비스와 현재 사용자 정보를 받는다.
+	/** 녹음 서비스와 현재 사용자 정보를 받는다. */
 	public RecordingController(RecordingService recordingService, CurrentUserProvider currentUser) {
 		this.recordingService = recordingService;
 		this.currentUser = currentUser;
 	}
 
-	// 녹음 묶음 하나를 받는다.
+	/**
+	 * 녹음 묶음 하나를 받는다.
+	 *
+	 * @param request 업로드할 녹음 묶음(본문)
+	 * @return 녹음 ID와 지금 상태(202)
+	 */
 	@PostMapping
 	@ResponseStatus(HttpStatus.ACCEPTED)
 	public UploadResponse upload(@Valid @RequestBody UploadRequest request) {
 		return recordingService.upload(currentUser.currentUserId(), request);
 	}
 
-	// 내 녹음 목록을 페이지로 돌려준다.
+	/**
+	 * 내 녹음 목록을 페이지로 돌려준다.
+	 *
+	 * @param cursor 앞 페이지의 nextCursor(쿼리, 없으면 처음부터)
+	 * @param size 페이지 크기(쿼리, 기본 20, 1~50)
+	 * @param status 걸러 볼 상태들(쿼리, 쉼표로 잇기, 없으면 전부)
+	 * @return 녹음 목록과 다음 cursor
+	 */
 	@GetMapping
 	public RecordingPage list(@RequestParam(required = false) String cursor,
 			@RequestParam(required = false) Integer size, @RequestParam(required = false) String status) {
 		return recordingService.list(currentUser.currentUserId(), cursor, size, status);
 	}
 
-	// 녹음 하나의 상태를 돌려준다.
+	/**
+	 * 녹음 하나의 상태를 돌려준다.
+	 *
+	 * @param id 녹음 ID(경로)
+	 * @return 녹음 상태와 카드 수
+	 */
 	@GetMapping("/{id}")
 	public StatusResponse status(@PathVariable Long id) {
 		return recordingService.status(currentUser.currentUserId(), id);

@@ -23,16 +23,28 @@ public class FeedLocator {
 	private final BlogFetcher fetcher;
 	private final BlogPlatforms platforms;
 
+	/** 쓰는 도구를 받는다. */
 	public FeedLocator(BlogFetcher fetcher, BlogPlatforms platforms) {
 		this.fetcher = fetcher;
 		this.platforms = platforms;
 	}
 
-	// 찾은 RSS 주소, 읽은 피드, 고른 플랫폼.
+	/**
+	 * 찾은 RSS 주소, 읽은 피드, 고른 플랫폼.
+	 *
+	 * @param feedUrl 리다이렉트를 따라간 뒤의 RSS 주소
+	 * @param feed 읽은 피드
+	 * @param platform 고른 플랫폼 구현
+	 */
 	public record Located(String feedUrl, Feed feed, BlogPlatform platform) {
 	}
 
-	// 사용자가 넣은 주소. 앞뒤 공백을 빼고, http·https가 없으면 https를 붙인다.
+	/**
+	 * 사용자가 넣은 주소. 앞뒤 공백을 빼고, http·https가 없으면 https를 붙인다.
+	 *
+	 * @param url 사용자가 넣은 주소
+	 * @return 정리한 주소. 비었거나 모양이 틀리면 FetchException
+	 */
 	public static String normalize(String url) {
 		String trimmed = url == null ? "" : url.strip();
 		if (trimmed.isEmpty()) {
@@ -46,7 +58,12 @@ public class FeedLocator {
 		return trimmed;
 	}
 
-	// 후보 주소를 차례로 읽어 처음 찾은 피드를 돌려준다.
+	/**
+	 * 후보 주소를 차례로 읽어 처음 찾은 피드를 돌려준다.
+	 *
+	 * @param siteUrl normalize한 블로그 주소
+	 * @return 찾은 RSS 주소, 피드, 플랫폼. 못 찾으면 FetchException
+	 */
 	public Located locate(String siteUrl) {
 		BlogPlatform byUrl = platforms.byUrl(URI.create(siteUrl));
 		List<String> candidates = new ArrayList<>(byUrl.feedCandidates(URI.create(siteUrl)));
@@ -81,7 +98,12 @@ public class FeedLocator {
 		throw last != null ? last : new FetchException("RSS를 찾지 못했습니다.");
 	}
 
-	// HTML의 <link rel="alternate" type="application/rss+xml|atom+xml" href="...">
+	/**
+	 * HTML의 {@code <link rel="alternate" type="application/rss+xml|atom+xml" href="...">}
+	 *
+	 * @param page 받은 블로그 페이지
+	 * @return RSS·Atom 링크 주소(앞에서 3개까지)
+	 */
 	private static List<String> alternates(Fetched page) {
 		Document doc = Jsoup.parse(new String(page.body(), StandardCharsets.UTF_8), page.uri().toString());
 		List<String> links = new ArrayList<>();

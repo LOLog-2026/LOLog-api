@@ -9,19 +9,33 @@ public class ApiException extends RuntimeException {
 	private final ErrorCode errorCode;
 	private final String field;
 
-	// 틀린 칸 없이 오류 코드만 담는다.
+	/**
+	 * 틀린 칸 없이 오류 코드만 담는다.
+	 *
+	 * @param errorCode 담을 오류 코드
+	 */
 	public ApiException(ErrorCode errorCode) {
 		this(errorCode, null);
 	}
 
-	// 오류 코드와 틀린 칸을 담는다.
+	/**
+	 * 오류 코드와 틀린 칸을 담는다.
+	 *
+	 * @param errorCode 담을 오류 코드
+	 * @param field 틀린 칸의 경로(예: speakers[1].character), 없으면 null
+	 */
 	public ApiException(ErrorCode errorCode, String field) {
 		super(errorCode.message());
 		this.errorCode = errorCode;
 		this.field = field;
 	}
 
-	// 400 INVALID_REQUEST. field는 틀린 칸이다.
+	/**
+	 * 400 INVALID_REQUEST. field는 틀린 칸이다.
+	 *
+	 * @param field 틀린 칸의 경로, 없으면 null
+	 * @return 400 INVALID_REQUEST 예외
+	 */
 	public static ApiException invalid(String field) {
 		return new ApiException(ErrorCode.INVALID_REQUEST, field);
 	}

@@ -20,19 +20,30 @@ public class TextController {
 	private final TextService texts;
 	private final CurrentUserProvider currentUser;
 
+	/** 글 서비스와 현재 사용자 정보를 받는다. */
 	public TextController(TextService texts, CurrentUserProvider currentUser) {
 		this.texts = texts;
 		this.currentUser = currentUser;
 	}
 
-	// 글을 받아 카드 만들기 작업을 맡긴다.
+	/**
+	 * 글을 받아 카드 만들기 작업을 맡긴다.
+	 *
+	 * @param request 올릴 글(본문)
+	 * @return 저장한 글 ID와 상태 QUEUED(202)
+	 */
 	@PostMapping("/api/texts")
 	@ResponseStatus(HttpStatus.ACCEPTED)
 	public TextAccepted create(@RequestBody TextCreateRequest request) {
 		return texts.create(currentUser.currentUserId(), request);
 	}
 
-	// 내 글 하나를 돌려준다.
+	/**
+	 * 내 글 하나를 돌려준다.
+	 *
+	 * @param id 글 ID(경로)
+	 * @return 글 내용과 상태
+	 */
 	@GetMapping("/api/texts/{id}")
 	public TextResponse get(@PathVariable Long id) {
 		return texts.get(currentUser.currentUserId(), id);

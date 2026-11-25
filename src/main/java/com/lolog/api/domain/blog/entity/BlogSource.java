@@ -53,7 +53,16 @@ public class BlogSource {
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private OffsetDateTime createdAt;
 
-	// 새로 연결한 블로그를 만든다.
+	/**
+	 * 새로 연결한 블로그를 만든다.
+	 *
+	 * @param userId 연결한 회원 ID
+	 * @param siteUrl 정리한 블로그 주소
+	 * @param title 블로그 이름. 없으면 null
+	 * @param feedUrl 찾은 RSS 주소
+	 * @param platform 연결할 때 고른 플랫폼
+	 * @param categories 고른 카테고리의 JSON 배열. 비면 전부 받기
+	 */
 	public BlogSource(Long userId, String siteUrl, String title, String feedUrl, Platform platform, String categories) {
 		this.userId = userId;
 		this.siteUrl = siteUrl;
@@ -63,7 +72,11 @@ public class BlogSource {
 		this.categories = categories;
 	}
 
-	// 가져올 카테고리를 바꾼다.
+	/**
+	 * 가져올 카테고리를 바꾼다.
+	 *
+	 * @param categories 새로 고른 카테고리의 JSON 배열. 비면 전부 받기
+	 */
 	public void changeCategories(String categories) {
 		this.categories = categories;
 	}

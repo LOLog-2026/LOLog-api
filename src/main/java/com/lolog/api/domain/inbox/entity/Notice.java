@@ -39,13 +39,23 @@ public class Notice {
 	@Column(name = "updated_at", nullable = false, insertable = false)
 	private OffsetDateTime updatedAt;
 
-	// 새 공지를 만든다.
+	/**
+	 * 새 공지를 만든다.
+	 *
+	 * @param title 공지 제목(100자 이하)
+	 * @param body 공지 본문
+	 */
 	public Notice(String title, String body) {
 		this.title = title;
 		this.body = body;
 	}
 
-	// 제목과 본문을 고친다. 같은 값이어도 수정 일시는 지금으로 바뀐다.
+	/**
+	 * 제목과 본문을 고친다. 같은 값이어도 수정 일시는 지금으로 바뀐다.
+	 *
+	 * @param title 새 제목
+	 * @param body 새 본문
+	 */
 	public void edit(String title, String body) {
 		this.title = title;
 		this.body = body;

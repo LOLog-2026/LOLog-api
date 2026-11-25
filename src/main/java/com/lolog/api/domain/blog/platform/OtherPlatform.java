@@ -15,6 +15,12 @@ class OtherPlatform implements BlogPlatform {
 		return Platform.OTHER;
 	}
 
+	/**
+	 * 어떤 주소든 맞는다.
+	 *
+	 * @param siteUrl 사용자가 넣은 블로그 주소
+	 * @return 늘 true
+	 */
 	@Override
 	public boolean supports(URI siteUrl) {
 		return true;

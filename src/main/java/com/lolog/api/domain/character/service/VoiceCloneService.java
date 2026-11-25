@@ -42,6 +42,7 @@ public class VoiceCloneService {
 	private final PushService push;
 	private final CharacterViews views;
 
+	/** 쓰는 저장소와 도구, 캐릭터 관련 서비스를 받는다. */
 	public VoiceCloneService(UserProfileRepository profiles, RecordingRepository recordings, ImageStorage storage,
 			StorageDeletions deletions, JobRepository jobs, VoiceClonePublisher publisher, PushService push, CharacterViews views) {
 		this.profiles = profiles;
@@ -54,25 +55,55 @@ public class VoiceCloneService {
 		this.views = views;
 	}
 
-	// ProfileCharacterResponse.voiceClone. 만든 적이 없거나 지웠으면 null.
+	/**
+	 * ProfileCharacterResponse.voiceClone. 만든 적이 없거나 지웠으면 null.
+	 *
+	 * @param status 내 목소리 상태
+	 * @param previewUrl 미리 듣기 wav의 10분 서명 주소(없으면 null)
+	 * @param failReason 실패 이유(없으면 null)
+	 * @param shareWithFriends 친구 쇼츠 동의(③)
+	 */
 	public record VoiceCloneView(String status, String previewUrl, String failReason, boolean shareWithFriends) {
 	}
 
-	// 바꾸기 전에 읽어 둔 내 목소리 상태와 파일 키.
+	/**
+	 * 바꾸기 전에 읽어 둔 내 목소리 상태와 파일 키.
+	 *
+	 * @param status 내 목소리 상태
+	 * @param sampleKey 원본 녹음 저장소 키(없으면 null)
+	 * @param previewKey 미리 듣기 저장소 키(없으면 null)
+	 */
 	private record State(String status, String sampleKey, String previewKey) {
 
-		// 프로필에서 읽는다.
+		/**
+		 * 프로필에서 읽는다.
+		 *
+		 * @param p 읽을 프로필
+		 * @return 그 프로필의 내 목소리 상태와 파일 키
+		 */
 		static State of(UserProfile p) {
 			return new State(p.getVoiceCloneStatus(), p.getVoiceCloneKey(), p.getVoiceClonePreviewKey());
 		}
 
 	}
 
-	// 녹음 파일 확장자와 Content-Type.
+	/**
+	 * 녹음 파일 확장자와 Content-Type.
+	 *
+	 * @param ext 저장소 키에 붙일 확장자(wav 또는 m4a)
+	 * @param contentType 저장할 Content-Type
+	 */
 	private record Audio(String ext, String contentType) {
 	}
 
-	// 녹음 올리기·다시 올리기(PUT .../voice-clone). 앱에서 바로 녹음한 wav·m4a 하나와 필수 동의(consent=true).
+	/**
+	 * 녹음 올리기·다시 올리기(PUT .../voice-clone). 앱에서 바로 녹음한 wav·m4a 하나와 필수 동의(consent=true).
+	 *
+	 * @param userId 녹음을 올린 회원 ID
+	 * @param audio 녹음 바이트(wav 또는 m4a, 4MB 이하, null이면 400)
+	 * @param consent 필수 동의(true가 아니면 400)
+	 * @return 녹음을 받은 뒤의 프로필 캐릭터
+	 */
 	@Transactional
 	public ProfileCharacterService.ProfileCharacterResponse upload(long userId, byte[] audio, Boolean consent) {
 		if (!publisher.enabled()) {
@@ -119,7 +150,11 @@ public class VoiceCloneService {
 		return views.profileResponse(userId);
 	}
 
-	// 내 목소리 지우기. 없어도 204. 골랐던 목소리가 "self"면 null로 바꾼다. 프로필 캐릭터를 지울 때도 부른다.
+	/**
+	 * 내 목소리 지우기. 없어도 204. 골랐던 목소리가 "self"면 null로 바꾼다. 프로필 캐릭터를 지울 때도 부른다.
+	 *
+	 * @param userId 내 목소리를 지울 회원 ID
+	 */
 	@Transactional
 	public void delete(long userId) {
 		UserProfile profile = profiles.findByIdForUpdate(userId).orElse(null);
@@ -138,7 +173,12 @@ public class VoiceCloneService {
 		}
 	}
 
-	// 친구 쇼츠 동의(③)만 바꾼다. 녹음은 그대로. 만든 적이 없으면 404 VOICE_CLONE_NOT_FOUND(초안).
+	/**
+	 * 친구 쇼츠 동의(③)만 바꾼다. 녹음은 그대로. 만든 적이 없으면 404 VOICE_CLONE_NOT_FOUND(초안).
+	 *
+	 * @param userId 동의를 바꾸는 회원 ID
+	 * @param shareWithFriends 친구 쇼츠에 써도 되면 true(null이면 400)
+	 */
 	@Transactional
 	public void share(long userId, Boolean shareWithFriends) {
 		if (shareWithFriends == null) {
@@ -151,7 +191,12 @@ public class VoiceCloneService {
 			.shareVoiceClone(shareWithFriends);
 	}
 
-	// 워커가 원본 녹음을 받는다. 만드는 중이거나 만든 목소리가 있을 때만(쇼츠의 참조 음성으로도 쓴다).
+	/**
+	 * 워커가 원본 녹음을 받는다. 만드는 중이거나 만든 목소리가 있을 때만(쇼츠의 참조 음성으로도 쓴다).
+	 *
+	 * @param userId 녹음 주인 회원 ID
+	 * @return 저장소의 원본 녹음
+	 */
 	@Transactional(readOnly = true)
 	public ImageStorage.StoredObject sample(long userId) {
 		String key = profiles.findById(userId)
@@ -167,7 +212,12 @@ public class VoiceCloneService {
 		}
 	}
 
-	// 워커가 미리 듣기(wav)를 보낸다. READY로 바꾸고 본인에게 알린다. 만드는 중이 아니면 404(지웠거나 이미 끝남).
+	/**
+	 * 워커가 미리 듣기(wav)를 보낸다. READY로 바꾸고 본인에게 알린다. 만드는 중이 아니면 404(지웠거나 이미 끝남).
+	 *
+	 * @param userId 목소리 주인 회원 ID
+	 * @param wav 워커가 만든 미리 듣기(wav, 4MB 이하)
+	 */
 	@Transactional
 	public void preview(long userId, byte[] wav) {
 		if (wav == null || !isWav(wav)) {
@@ -188,8 +238,13 @@ public class VoiceCloneService {
 		push.notify(userId, PushService.voiceCloneReady());
 	}
 
-	// voice 작업 fail(POST /internal/jobs/{id}/fail). FAILED와 이유를 남기고, 쓸 수 없는 녹음은 지우고 알린다.
-	// 이미 결과나 fail을 받은 작업이면 무시한다.
+	/**
+	 * voice 작업 fail(POST /internal/jobs/{id}/fail). FAILED와 이유를 남기고, 쓸 수 없는 녹음은 지우고 알린다.
+	 * 이미 결과나 fail을 받은 작업이면 무시한다.
+	 *
+	 * @param jobId 실패한 VOICE_CLONE 작업 ID
+	 * @param reason 워커가 보낸 실패 이유(앞뒤 공백을 빼고 200자까지 남김, null 가능)
+	 */
 	@Transactional
 	public void fail(long jobId, String reason) {
 		Job job = jobs.findByIdForUpdate(jobId).orElseThrow(() -> ApiException.invalid(null));
@@ -214,13 +269,23 @@ public class VoiceCloneService {
 		push.notify(userId, PushService.voiceCloneFailed());
 	}
 
-	// 대화 녹음 중인지(초안): 최장 녹음 시간(3시간) 안에 시작했고 마지막 묶음(isLast)이 아직 안 온 녹음이 있으면 녹음 중이다.
-	// 녹음 첫 묶음이 오기 전(첫 1시간)은 서버가 모르니 앱이 막는다.
+	/**
+	 * 대화 녹음 중인지(초안): 최장 녹음 시간(3시간) 안에 시작했고 마지막 묶음(isLast)이 아직 안 온 녹음이 있으면 녹음 중이다.
+	 * 녹음 첫 묶음이 오기 전(첫 1시간)은 서버가 모르니 앱이 막는다.
+	 *
+	 * @param userId 확인할 회원 ID
+	 * @return 녹음 중이면 true
+	 */
 	boolean recording(long userId) {
 		return recordings.existsUnfinishedSince(userId, OffsetDateTime.now().minusHours(MAX_RECORDING_HOURS));
 	}
 
-	// 첫 바이트로 wav(RIFF....WAVE)·m4a(....ftyp)를 가린다. 둘 다 아니면 null.
+	/**
+	 * 첫 바이트로 wav(RIFF....WAVE)·m4a(....ftyp)를 가린다. 둘 다 아니면 null.
+	 *
+	 * @param bytes 살펴볼 파일 바이트
+	 * @return 확장자와 Content-Type(둘 다 아니면 null)
+	 */
 	static Audio audioType(byte[] bytes) {
 		if (isWav(bytes)) {
 			return new Audio("wav", "audio/wav");
@@ -231,7 +296,12 @@ public class VoiceCloneService {
 		return null;
 	}
 
-	// wav 머리말(RIFF....WAVE)인지 본다.
+	/**
+	 * wav 머리말(RIFF....WAVE)인지 본다.
+	 *
+	 * @param bytes 살펴볼 파일 바이트
+	 * @return wav 머리말이면 true
+	 */
 	static boolean isWav(byte[] bytes) {
 		return bytes.length >= 12 && bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F'
 				&& bytes[8] == 'W' && bytes[9] == 'A' && bytes[10] == 'V' && bytes[11] == 'E';

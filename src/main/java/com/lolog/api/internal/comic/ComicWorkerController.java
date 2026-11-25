@@ -22,24 +22,40 @@ public class ComicWorkerController {
 
 	private final ComicWorkerService service;
 
+	/** 쓰는 서비스를 받는다. */
 	public ComicWorkerController(ComicWorkerService service) {
 		this.service = service;
 	}
 
-	// 만화를 만들 카드 내용을 준다.
+	/**
+	 * 만화를 만들 카드 내용을 준다.
+	 *
+	 * @param id 만화 ID(경로)
+	 * @return 카드 내용과 화자마다 그림
+	 */
 	@GetMapping("/source")
 	public ComicSource source(@PathVariable Long id) {
 		return service.source(id);
 	}
 
-	// 워커가 만든 콘티를 받는다.
+	/**
+	 * 워커가 만든 콘티를 받는다.
+	 *
+	 * @param id 만화 ID(경로)
+	 * @param body 콘티 JSON(version 1, 이 만화의 comicId·cardId, panels 4개)
+	 */
 	@PostMapping("/storyboard")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void storyboard(@PathVariable Long id, @RequestBody JsonNode body) {
 		service.storyboard(id, body);
 	}
 
-	// multipart/form-data, 파트 이름 file, image/png, 20MB 이하(spring.servlet.multipart)
+	/**
+	 * multipart/form-data, 파트 이름 file, image/png, 20MB 이하(spring.servlet.multipart)
+	 *
+	 * @param id 만화 ID(경로)
+	 * @param file 완성 이미지 파트 file(800×3152 PNG)
+	 */
 	@PostMapping(path = "/image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void image(@PathVariable Long id, @RequestPart("file") MultipartFile file) throws IOException {

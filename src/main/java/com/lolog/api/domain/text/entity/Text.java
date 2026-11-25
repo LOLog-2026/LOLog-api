@@ -57,7 +57,16 @@ public class Text {
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private OffsetDateTime createdAt;
 
-	// 직접 쓴 글을 만든다.
+	/**
+	 * 직접 쓴 글을 만든다.
+	 *
+	 * @param userId 글을 쓴 회원 ID
+	 * @param title 글 제목
+	 * @param body 글 본문
+	 * @param place 장소(null 가능)
+	 * @param situation 상황(null 가능)
+	 * @return 저장 전의 새 글(WRITTEN)
+	 */
 	public static Text written(Long userId, String title, String body, String place, String situation) {
 		Text text = new Text();
 		text.userId = userId;
@@ -69,7 +78,16 @@ public class Text {
 		return text;
 	}
 
-	// 가져온 블로그 글로 글을 만든다.
+	/**
+	 * 가져온 블로그 글로 글을 만든다.
+	 *
+	 * @param userId 블로그 글을 가져온 회원 ID
+	 * @param blogPostId 가져온 블로그 글 ID(blog_posts)
+	 * @param title 블로그 글 제목
+	 * @param body 블로그 글 본문
+	 * @param truncated 본문이 길이 상한을 넘어 앞부분만 넣었는지
+	 * @return 저장 전의 새 글(BLOG)
+	 */
 	public static Text blog(Long userId, Long blogPostId, String title, String body, boolean truncated) {
 		Text text = new Text();
 		text.userId = userId;

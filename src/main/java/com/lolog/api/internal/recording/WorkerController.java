@@ -15,11 +15,17 @@ public class WorkerController {
 
 	private final DetectResultService detectResults;
 
+	/** 쓰는 서비스를 받는다. */
 	public WorkerController(DetectResultService detectResults) {
 		this.detectResults = detectResults;
 	}
 
-	// 묶음 하나의 감지 결과를 받는다.
+	/**
+	 * 묶음 하나의 감지 결과를 받는다.
+	 *
+	 * @param id 녹음 ID(경로)
+	 * @param result 묶음 하나의 감지 결과
+	 */
 	@PostMapping("/internal/recordings/{id}/cards")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void cards(@PathVariable Long id, @Valid @RequestBody DetectResult result) {
