@@ -25,31 +25,54 @@ public class CardController {
 	private final CardService cardService;
 	private final CurrentUserProvider currentUser;
 
+	/** 쓰는 서비스와 현재 사용자 정보를 받는다. */
 	public CardController(CardService cardService, CurrentUserProvider currentUser) {
 		this.cardService = cardService;
 		this.currentUser = currentUser;
 	}
 
-	// 내 카드 목록을 페이지로 돌려준다.
+	/**
+	 * 내 카드 목록을 페이지로 돌려준다.
+	 *
+	 * @param cursor 마지막으로 받은 카드 ID(없으면 처음부터)
+	 * @param size 페이지 크기(기본 20, 1~50)
+	 * @param sort latest(기본) 또는 oldest
+	 * @return 카드 한 페이지
+	 */
 	@GetMapping
 	public CardPage list(@RequestParam(required = false) String cursor, @RequestParam(required = false) Integer size,
 			@RequestParam(required = false) String sort) {
 		return cardService.list(currentUser.currentUserId(), cursor, size, sort);
 	}
 
-	// 카드 하나의 상세를 돌려준다.
+	/**
+	 * 카드 하나의 상세를 돌려준다.
+	 *
+	 * @param id 내 카드 ID
+	 * @return 카드 상세
+	 */
 	@GetMapping("/{id}")
 	public CardDetail detail(@PathVariable Long id) {
 		return cardService.detail(currentUser.currentUserId(), id);
 	}
 
-	// 카드의 화자·대사·장소를 고친다.
+	/**
+	 * 카드의 화자·대사·장소를 고친다.
+	 *
+	 * @param id 고칠 내 카드 ID
+	 * @param request 바꿀 화자·대사·장소
+	 * @return 고친 카드 상세
+	 */
 	@PatchMapping("/{id}")
 	public CardDetail update(@PathVariable Long id, @Valid @RequestBody CardUpdateRequest request) {
 		return cardService.update(currentUser.currentUserId(), id, request);
 	}
 
-	// 카드를 지운다.
+	/**
+	 * 카드를 지운다.
+	 *
+	 * @param id 지울 내 카드 ID
+	 */
 	@DeleteMapping("/{id}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void delete(@PathVariable Long id) {

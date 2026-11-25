@@ -17,12 +17,16 @@ public class FriendCodeAttemptLimiter {
 
 	private final StringRedisTemplate redis;
 
-	// 횟수를 셀 Redis를 받는다.
+	/** 횟수를 셀 Redis를 받는다. */
 	public FriendCodeAttemptLimiter(StringRedisTemplate redis) {
 		this.redis = redis;
 	}
 
-	// 한 번 센다. 넘었으면 429. Redis에 못 붙으면 예외가 그대로 나가 500이 된다(다른 /api 요청과 같다).
+	/**
+	 * 한 번 센다. 넘었으면 429. Redis에 못 붙으면 예외가 그대로 나가 500이 된다(다른 /api 요청과 같다).
+	 *
+	 * @param userId 친구 코드를 입력한 회원 ID
+	 */
 	public void check(long userId) {
 		String key = KEY + userId;
 		Long count = redis.opsForValue().increment(key);

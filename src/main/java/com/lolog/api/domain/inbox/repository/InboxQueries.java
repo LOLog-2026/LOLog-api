@@ -12,23 +12,50 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class InboxQueries {
 
-	// 목록 한 줄. kind는 NOTICE·NOTIFICATION, 공지는 title·body, 알림은 type·data(JSON)가 있다.
+	/**
+	 * 목록 한 줄. kind는 NOTICE·NOTIFICATION, 공지는 title·body, 알림은 type·data(JSON)가 있다.
+	 *
+	 * @param kind 항목 종류(NOTICE 또는 NOTIFICATION)
+	 * @param id 공지 ID 또는 알림 ID
+	 * @param createdAt 공지·알림이 생긴 시각
+	 * @param read 이 회원이 읽었으면 true
+	 * @param title 공지 제목(알림이면 null)
+	 * @param body 공지 본문(알림이면 null)
+	 * @param type 알림 종류(공지면 null)
+	 * @param data 알림 값 JSON 문자열(공지면 null)
+	 */
 	public record Row(String kind, long id, OffsetDateTime createdAt, boolean read, String title, String body,
 			String type, String data) {
 	}
 
-	// 커서: 마지막으로 받은 항목의 시각·종류·ID
+	/**
+	 * 커서: 마지막으로 받은 항목의 시각·종류·ID
+	 *
+	 * @param createdAt 마지막으로 받은 항목의 시각
+	 * @param kind 마지막으로 받은 항목의 종류(NOTICE 또는 NOTIFICATION)
+	 * @param id 마지막으로 받은 항목의 ID
+	 */
 	public record Cursor(OffsetDateTime createdAt, String kind, long id) {
 	}
 
 	private final NamedParameterJdbcTemplate jdbc;
 
-	// DB를 받는다.
+	/** DB를 받는다. */
 	public InboxQueries(NamedParameterJdbcTemplate jdbc) {
 		this.jdbc = jdbc;
 	}
 
-	// 최근 것이 위. 같은 시각이면 알림, 공지사항 순이다. 알림은 since 뒤의 것만 읽는다.
+	/**
+	 * 최근 것이 위. 같은 시각이면 알림, 공지사항 순이다. 알림은 since 뒤의 것만 읽는다.
+	 *
+	 * @param userId 목록을 보는 회원 ID
+	 * @param notices 공지를 넣으면 true
+	 * @param notifications 알림을 넣으면 true
+	 * @param since 이 시각보다 뒤에 생긴 알림만 읽는다(공지에는 쓰지 않음)
+	 * @param cursor 이 항목보다 뒤의 것부터 읽는다(null이면 처음부터)
+	 * @param limit 읽을 최대 줄 수
+	 * @return 목록 줄(최근 것이 위)
+	 */
 	public List<Row> page(long userId, boolean notices, boolean notifications, OffsetDateTime since, Cursor cursor,
 			int limit) {
 		MapSqlParameterSource args = new MapSqlParameterSource("me", userId).addValue("limit", limit)

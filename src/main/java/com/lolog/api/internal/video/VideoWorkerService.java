@@ -52,6 +52,7 @@ public class VideoWorkerService {
 	private final PushService push;
 	private final DefaultCharacterService defaultCharacters;
 
+	/** 쓰는 저장소와 도구를 받는다. */
 	public VideoWorkerService(UserProfileRepository profiles, VideoRepository videos, CardRepository cards, JobRepository jobs,
 			CharacterViews characters, ImageStorage storage, StorageDeletions deletions, ObjectMapper objectMapper, TransactionTemplate tx,
 			VideoPublisher publisher, PushService push, DefaultCharacterService defaultCharacters) {
@@ -69,7 +70,12 @@ public class VideoWorkerService {
 		this.defaultCharacters = defaultCharacters;
 	}
 
-	// 카드 내용. 부르면 VOICE가 된다. 카드는 목소리 단계가 끝날 때까지 지울 수 없지만(CARD_LOCKED), 없으면 404다.
+	/**
+	 * 카드 내용. 부르면 VOICE가 된다. 카드는 목소리 단계가 끝날 때까지 지울 수 없지만(CARD_LOCKED), 없으면 404다.
+	 *
+	 * @param videoId 영상 ID
+	 * @return 카드 내용과 화자마다 그림·목소리
+	 */
 	public VideoSource source(long videoId) {
 		return tx.execute(status -> {
 			Video video = lockRunning(videoId);
@@ -92,7 +98,12 @@ public class VideoWorkerService {
 		});
 	}
 
-	// 기본만 본다: JSON 객체, version 1, videoId·cardId가 이 영상과 같음(video.md 5장). 나머지는 워커끼리 정한다.
+	/**
+	 * 기본만 본다: JSON 객체, version 1, videoId·cardId가 이 영상과 같음(video.md 5장). 나머지는 워커끼리 정한다.
+	 *
+	 * @param videoId 영상 ID
+	 * @param body 3호가 보낸 콘티 JSON
+	 */
 	public void saveStoryboard(long videoId, JsonNode body) {
 		tx.executeWithoutResult(status -> {
 			Video video = lock(videoId);
@@ -116,8 +127,13 @@ public class VideoWorkerService {
 		});
 	}
 
-	// 3호가 보낸 콘티 그대로. 그림이 붙은 인물(characters[].ref)에는 지금 서명한 imageUrl을 붙인다(10분).
-	// 붙어 있던 프로필 캐릭터가 지워졌거나 친구가 끊겼으면 imageUrl 없이 준다(외모 글로만 그림).
+	/**
+	 * 3호가 보낸 콘티 그대로. 그림이 붙은 인물(characters[].ref)에는 지금 서명한 imageUrl을 붙인다(10분).
+	 * 붙어 있던 프로필 캐릭터가 지워졌거나 친구가 끊겼으면 imageUrl 없이 준다(외모 글로만 그림).
+	 *
+	 * @param videoId 영상 ID
+	 * @return 지금 서명한 imageUrl을 붙인 콘티
+	 */
 	public JsonNode storyboard(long videoId) {
 		Video video = running(videoId);
 		if (!video.hasStoryboard()) {
@@ -150,7 +166,12 @@ public class VideoWorkerService {
 		return board;
 	}
 
-	// 대사 음성(wav). 콘티를 먼저 받아야 한다. 받으면 DRAWING이 되고 2호 큐에 넣는다. 다시 보내면 파일만 덮어쓴다.
+	/**
+	 * 대사 음성(wav). 콘티를 먼저 받아야 한다. 받으면 DRAWING이 되고 2호 큐에 넣는다. 다시 보내면 파일만 덮어쓴다.
+	 *
+	 * @param videoId 영상 ID
+	 * @param wav 대사 음성 파일 내용(wav, 20MB 이하)
+	 */
 	public void saveAudio(long videoId, byte[] wav) {
 		Video found = find(videoId);
 		if (!found.isInProgress()) {
@@ -192,7 +213,12 @@ public class VideoWorkerService {
 		}
 	}
 
-	// 저장한 대사 음성을 꺼낸다. 아직 없으면 404다.
+	/**
+	 * 저장한 대사 음성을 꺼낸다. 아직 없으면 404다.
+	 *
+	 * @param videoId 영상 ID
+	 * @return 대사 음성 파일 내용(wav)
+	 */
 	public byte[] audio(long videoId) {
 		String key = running(videoId).getAudioKey();
 		if (key == null) {
@@ -201,7 +227,14 @@ public class VideoWorkerService {
 		return storage.get(key);
 	}
 
-	// 완성 영상(mp4)과 목록용 그림(jpeg). 받으면 DONE, 중간 음성 파일을 지우고 푸시를 보낸다.
+	/**
+	 * 완성 영상(mp4)과 목록용 그림(jpeg). 받으면 DONE, 중간 음성 파일을 지우고 푸시를 보낸다.
+	 *
+	 * @param videoId 영상 ID
+	 * @param mp4 완성 영상 파일 내용(mp4, 20MB 이하)
+	 * @param thumbnail 목록용 그림 파일 내용(JPEG, 20MB 이하)
+	 * @param durationMs 영상 길이(ms, 1 이상)
+	 */
 	public void saveVideo(long videoId, byte[] mp4, byte[] thumbnail, Long durationMs) {
 		Video found = find(videoId);
 		if (!found.isInProgress()) {
@@ -240,7 +273,13 @@ public class VideoWorkerService {
 
 	// ---- 안에서 쓰는 것 ----
 
-	// 화자마다 그림과 목소리를 모은다.
+	/**
+	 * 화자마다 그림과 목소리를 모은다.
+	 *
+	 * @param owner 카드 주인 회원 ID
+	 * @param refs 화자에 붙인 그림
+	 * @return 찾은 그림마다 그림과 목소리
+	 */
 	private Map<Ref, SourceCharacter> sourceCharacters(long owner, List<Ref> refs) {
 		Map<Ref, SourceCharacter> result = new HashMap<>();
 		if (refs.isEmpty()) {
@@ -253,17 +292,28 @@ public class VideoWorkerService {
 		return result;
 	}
 
-	// 프로필 캐릭터는 고른 목소리(없으면 null), 기본 화자는 목소리 파일이 있으면 그 id다.
-	// 내 목소리("self")는 다 만든(READY) 때만 보낸다. 친구가 만드는 쇼츠면 친구 쇼츠 동의(③)를 했을 때만이고,
-	// 아니면 null이라 워커가 기본 화자 목소리로 읽는다(characters.md "내 목소리", video.md 6장).
-	// voiceText는 voice가 "self"일 때 읽은 문장(워커의 ref_text), 아니면 null
+	/**
+	 * 프로필 캐릭터는 고른 목소리(없으면 null), 기본 화자는 목소리 파일이 있으면 그 id다.
+	 * 내 목소리("self")는 다 만든(READY) 때만 보낸다. 친구가 만드는 쇼츠면 친구 쇼츠 동의(③)를 했을 때만이고,
+	 * 아니면 null이라 워커가 기본 화자 목소리로 읽는다(characters.md "내 목소리", video.md 6장).
+	 * voiceText는 voice가 "self"일 때 읽은 문장(워커의 ref_text), 아니면 null
+	 *
+	 * @param voice 읽을 목소리, 없으면 null
+	 * @param voiceText voice가 "self"일 때 읽은 문장, 아니면 null
+	 */
 	private record Voice(String voice, String voiceText) {
 
 		static final Voice NONE = new Voice(null, null);
 
 	}
 
-	// 화자에 붙일 목소리를 찾는다.
+	/**
+	 * 화자에 붙일 목소리를 찾는다.
+	 *
+	 * @param owner 카드 주인 회원 ID
+	 * @param ref 화자에 붙인 그림
+	 * @return 붙일 목소리, 없으면 Voice.NONE
+	 */
 	private Voice voice(long owner, Ref ref) {
 		if (CharacterViews.PROFILE.equals(ref.type())) {
 			long userId = Long.parseLong(ref.id());
@@ -280,7 +330,12 @@ public class VideoWorkerService {
 		return defaultCharacters.hasVoice(ref.id()) ? new Voice(ref.id(), null) : Voice.NONE;
 	}
 
-	// "default:young-f-02", "profile:42"
+	/**
+	 * "default:young-f-02", "profile:42"
+	 *
+	 * @param ref 콘티 characters[].ref 값, null 가능
+	 * @return 그림을 가리키는 값, 모양이 틀리면 null
+	 */
 	private static Ref parseRef(String ref) {
 		if (ref == null) {
 			return null;
@@ -294,27 +349,52 @@ public class VideoWorkerService {
 		return null;
 	}
 
-	// 영상의 그 단계 작업을 DONE으로 바꾼다.
+	/**
+	 * 영상의 그 단계 작업을 DONE으로 바꾼다.
+	 *
+	 * @param videoId 영상 ID
+	 * @param type 작업 종류(VIDEO_VOICE 또는 VIDEO_DRAW)
+	 */
 	private void completeJob(long videoId, String type) {
 		jobs.completeVideoStep(videoId, type);
 	}
 
-	// 영상을 찾는다. 없으면 404다.
+	/**
+	 * 영상을 찾는다. 없으면 404다.
+	 *
+	 * @param videoId 영상 ID
+	 * @return 영상
+	 */
 	private Video find(long videoId) {
 		return videos.findById(videoId).orElseThrow(VideoWorkerService::notFound);
 	}
 
-	// 영상을 잠그고 찾는다.
+	/**
+	 * 영상을 잠그고 찾는다.
+	 *
+	 * @param videoId 영상 ID
+	 * @return 잠근 영상
+	 */
 	private Video lock(long videoId) {
 		return videos.findByIdForUpdate(videoId).orElseThrow(VideoWorkerService::notFound);
 	}
 
-	// 만드는 중인 영상만 잠그고 찾는다.
+	/**
+	 * 만드는 중인 영상만 잠그고 찾는다.
+	 *
+	 * @param videoId 영상 ID
+	 * @return 잠근 영상
+	 */
 	private Video lockRunning(long videoId) {
 		return videos.findByIdForUpdate(videoId).filter(Video::isInProgress).orElseThrow(VideoWorkerService::notFound);
 	}
 
-	// 만드는 중인 영상만 찾는다.
+	/**
+	 * 만드는 중인 영상만 찾는다.
+	 *
+	 * @param videoId 영상 ID
+	 * @return 만드는 중인 영상
+	 */
 	private Video running(long videoId) {
 		return videos.findById(videoId).filter(Video::isInProgress).orElseThrow(VideoWorkerService::notFound);
 	}
@@ -324,7 +404,11 @@ public class VideoWorkerService {
 		return new ApiException(ErrorCode.VIDEO_NOT_FOUND);
 	}
 
-	// multipart 한도(파일 20MB)가 먼저 막지만, 설정이 바뀌어도 넘지 않게 여기서도 본다.
+	/**
+	 * multipart 한도(파일 20MB)가 먼저 막지만, 설정이 바뀌어도 넘지 않게 여기서도 본다.
+	 *
+	 * @param bytes 받은 파일 내용
+	 */
 	private static void checkSize(byte[] bytes) {
 		if (bytes.length > MAX_BYTES) {
 			throw new ApiException(ErrorCode.PAYLOAD_TOO_LARGE);

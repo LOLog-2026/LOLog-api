@@ -67,7 +67,15 @@ public class RecordingPart {
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
 
-	// 받은 글 묶음을 만든다.
+	/**
+	 * 받은 글 묶음을 만든다.
+	 *
+	 * @param recording 묶음이 속한 녹음
+	 * @param partNo 묶음 번호(1부터)
+	 * @param last 마지막 묶음인지
+	 * @param durationSec 묶음 길이(초)
+	 * @param sentences 문장 목록 JSON
+	 */
 	public RecordingPart(Recording recording, int partNo, boolean last, int durationSec, String sentences) {
 		this.recording = recording;
 		this.partNo = partNo;

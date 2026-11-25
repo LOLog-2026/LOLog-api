@@ -14,12 +14,22 @@ import org.springframework.data.repository.query.Param;
 // 방 DB 조회.
 public interface RoomRepository extends JpaRepository<Room, Long> {
 
-	// 같은 방의 인원을 동시에 바꾸지 않게 방 행을 잠그고 찾는다.
+	/**
+	 * 같은 방의 인원을 동시에 바꾸지 않게 방 행을 잠그고 찾는다.
+	 *
+	 * @param id 방 ID
+	 * @return 잠근 방(없으면 빈 값)
+	 */
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select r from Room r where r.id = :id")
 	Optional<Room> findByIdForUpdate(@Param("id") Long id);
 
-	// 내가 들어간 방 ID. 마지막 소식이 최근인 방이 위(소식이 없으면 만든 시각).
+	/**
+	 * 내가 들어간 방 ID. 마지막 소식이 최근인 방이 위(소식이 없으면 만든 시각).
+	 *
+	 * @param me 내 회원 ID
+	 * @return 방 ID(마지막 소식이 최근인 방이 위)
+	 */
 	@Query("""
 			select r.id from Room r join RoomMember m on m.roomId = r.id
 			where m.userId = :me
@@ -27,7 +37,13 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
 			""")
 	List<Long> findIdsOfMember(@Param("me") Long me);
 
-	// 방과 마지막 대화 줄, 내 받지 않은 글 수(마지막으로 본 뒤 다른 사람이 남긴 대화 줄 수). 순서는 정하지 않는다.
+	/**
+	 * 방과 마지막 대화 줄, 내 받지 않은 글 수(마지막으로 본 뒤 다른 사람이 남긴 대화 줄 수). 순서는 정하지 않는다.
+	 *
+	 * @param me 내 회원 ID
+	 * @param roomIds 읽을 방 ID들
+	 * @return 방 목록 줄(순서 없음)
+	 */
 	@Query("""
 			select new com.lolog.api.domain.room.repository.RoomItemView(r.id, r.name, r.ownerId, r.createdAt,
 			  x.messageType, x.userId, x.createdAt, x.body,
@@ -40,19 +56,34 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
 			""")
 	List<RoomItemView> findItems(@Param("me") Long me, @Param("roomIds") Collection<Long> roomIds);
 
-	// 마지막 소식 시각을 지금(문장 실행 시각)으로 바꾼다. 대화 줄의 created_at과 같은 시계를 쓴다.
+	/**
+	 * 마지막 소식 시각을 지금(문장 실행 시각)으로 바꾼다. 대화 줄의 created_at과 같은 시계를 쓴다.
+	 *
+	 * @param id 방 ID
+	 * @return 바뀐 줄 수
+	 */
 	@Modifying(flushAutomatically = true, clearAutomatically = true)
 	@Query(value = """
 			update rooms set last_activity_at = clock_timestamp(), updated_at = current_timestamp where id = :id
 			""", nativeQuery = true)
 	int touchActivity(@Param("id") Long id);
 
-	// 멤버가 없는 방이면 지운다.
+	/**
+	 * 멤버가 없는 방이면 지운다.
+	 *
+	 * @param id 방 ID
+	 * @return 지운 줄 수
+	 */
 	@Modifying(flushAutomatically = true, clearAutomatically = true)
 	@Query("delete from Room r where r.id = :id and not exists (select 1 from RoomMember m where m.roomId = r.id)")
 	int deleteIfEmpty(@Param("id") Long id);
 
-	// 방장이 멤버가 아니면 가장 먼저 들어온 멤버에게 넘긴다. 조건과 새 방장 고르기를 한 문장으로 해서 native query로 둔다.
+	/**
+	 * 방장이 멤버가 아니면 가장 먼저 들어온 멤버에게 넘긴다. 조건과 새 방장 고르기를 한 문장으로 해서 native query로 둔다.
+	 *
+	 * @param id 방 ID
+	 * @return 바뀐 줄 수
+	 */
 	@Modifying(flushAutomatically = true, clearAutomatically = true)
 	@Query(value = """
 			update rooms r set owner_id = (select m.user_id from room_members m where m.room_id = r.id
@@ -61,7 +92,12 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
 			""", nativeQuery = true)
 	int handOverIfOwnerLeft(@Param("id") Long id);
 
-	// 회원이 방장인 방 ID.
+	/**
+	 * 회원이 방장인 방 ID.
+	 *
+	 * @param ownerId 방장 회원 ID
+	 * @return 방 ID
+	 */
 	@Query("select r.id from Room r where r.ownerId = :ownerId")
 	List<Long> findIdsByOwnerId(@Param("ownerId") Long ownerId);
 

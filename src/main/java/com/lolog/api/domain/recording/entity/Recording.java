@@ -57,7 +57,14 @@ public class Recording {
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
 
-	// 첫 묶음을 받을 때 새 녹음을 만든다.
+	/**
+	 * 첫 묶음을 받을 때 새 녹음을 만든다.
+	 *
+	 * @param userId 녹음 주인 회원 ID
+	 * @param clientRecordingId 앱이 만든 녹음 UUID
+	 * @param startedAt 녹음 시작 시각. 끝 시각도 처음엔 이 값으로 둔다
+	 * @param audioSaved 이 녹음에서 음성 저장을 켰는지
+	 */
 	public Recording(Long userId, String clientRecordingId, OffsetDateTime startedAt, boolean audioSaved) {
 		this.userId = userId;
 		this.clientRecordingId = clientRecordingId;

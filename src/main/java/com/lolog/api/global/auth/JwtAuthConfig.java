@@ -54,7 +54,13 @@ public class JwtAuthConfig {
 	static final String SUSPENDED_KEY = "lolog:auth:suspended:";
 	private static final Duration CLOCK_SKEW = Duration.ofSeconds(30);
 
-	// /api 요청을 액세스 토큰으로 확인하는 필터 체인을 만든다.
+	/**
+	 * /api 요청을 액세스 토큰으로 확인하는 필터 체인을 만든다.
+	 *
+	 * @param http 필터 체인을 만들 보안 설정
+	 * @param decoder 액세스 토큰을 검사할 디코더(jwtDecoder)
+	 * @return /api 등 /internal 밖 주소용 필터 체인
+	 */
 	@Bean
 	@Order(2)
 	SecurityFilterChain apiSecurityFilterChain(HttpSecurity http, JwtDecoder decoder) throws Exception {
@@ -81,7 +87,13 @@ public class JwtAuthConfig {
 			.build();
 	}
 
-	// 토큰 서명과 만료·클레임·탈퇴 여부를 검사하는 디코더를 만든다.
+	/**
+	 * 토큰 서명과 만료·클레임·탈퇴 여부를 검사하는 디코더를 만든다.
+	 *
+	 * @param secret 토큰 서명 비밀값(lolog.auth.jwt-secret, 환경 변수 JWT_SECRET, 32바이트 이상)
+	 * @param redis 탈퇴·정지 키를 볼 Redis
+	 * @return 서명·만료·클레임·탈퇴 여부를 검사하는 디코더
+	 */
 	@Bean
 	JwtDecoder jwtDecoder(@Value("${lolog.auth.jwt-secret}") String secret, StringRedisTemplate redis) {
 		byte[] bytes = secret.getBytes(StandardCharsets.UTF_8);
@@ -121,8 +133,13 @@ public class JwtAuthConfig {
 		};
 	}
 
-	// 만료는 다른 오류와 코드를 나눈다. 앱은 TOKEN_EXPIRED일 때만 토큰을 갱신한다.
-	private static OAuth2TokenValidatorResult checkExpiry(Jwt jwt) {
+	/**
+	 * 만료는 다른 오류와 코드를 나눈다. 앱은 TOKEN_EXPIRED일 때만 토큰을 갱신한다.
+	 *
+	 * @param jwt 검사할 토큰
+	 * @return 통과하면 성공, exp가 없으면 invalid_token, 만료면 token_expired 실패
+	 */
+	static OAuth2TokenValidatorResult checkExpiry(Jwt jwt) {
 		Instant exp = jwt.getExpiresAt();
 		if (exp == null) {
 			return invalid("invalid_token", "exp가 없습니다.");
@@ -133,8 +150,13 @@ public class JwtAuthConfig {
 		return OAuth2TokenValidatorResult.success();
 	}
 
-	// 액세스 토큰인지, sub가 회원 ID인지, iat가 있는지 본다.
-	private static OAuth2TokenValidatorResult checkClaims(Jwt jwt) {
+	/**
+	 * 액세스 토큰인지, sub가 회원 ID인지, iat가 있는지 본다.
+	 *
+	 * @param jwt 검사할 토큰
+	 * @return 모두 맞으면 성공, 아니면 invalid_token 실패
+	 */
+	static OAuth2TokenValidatorResult checkClaims(Jwt jwt) {
 		if (!"access".equals(jwt.getClaimAsString("typ"))) {
 			return invalid("invalid_token", "액세스 토큰이 아닙니다.");
 		}
@@ -148,7 +170,13 @@ public class JwtAuthConfig {
 		return OAuth2TokenValidatorResult.success();
 	}
 
-	// 요청마다 Redis를 한 번 본다. Redis에 못 붙으면 통과시키지 않고 500 INTERNAL_ERROR로 답한다(앱은 5xx를 다시 시도한다).
+	/**
+	 * 요청마다 Redis를 한 번 본다. Redis에 못 붙으면 통과시키지 않고 500 INTERNAL_ERROR로 답한다(앱은 5xx를 다시 시도한다).
+	 *
+	 * @param jwt 검사할 토큰
+	 * @param redis 탈퇴·정지 키를 볼 Redis
+	 * @return 탈퇴·정지 키가 없으면 성공, 있으면 invalid_token, Redis 오류면 withdrawn_check_unavailable 실패
+	 */
 	private static OAuth2TokenValidatorResult checkWithdrawn(Jwt jwt, StringRedisTemplate redis) {
 		String sub = jwt.getSubject();
 		if (sub == null || !sub.matches("\\d{1,18}")) {
@@ -168,12 +196,24 @@ public class JwtAuthConfig {
 		}
 	}
 
-	// 검사 실패 결과를 만든다.
+	/**
+	 * 검사 실패 결과를 만든다.
+	 *
+	 * @param code 오류 코드(invalid_token, token_expired 등)
+	 * @param description 오류 설명
+	 * @return 실패 결과
+	 */
 	private static OAuth2TokenValidatorResult invalid(String code, String description) {
 		return OAuth2TokenValidatorResult.failure(new OAuth2Error(code, description, null));
 	}
 
-	// 인증 예외 안에 이 오류 코드가 있는지 본다.
+	/**
+	 * 인증 예외 안에 이 오류 코드가 있는지 본다.
+	 *
+	 * @param e 인증 예외
+	 * @param code 찾을 오류 코드
+	 * @return 원인 예외까지 따라가 그 코드가 있으면 true
+	 */
 	private static boolean hasError(Throwable e, String code) {
 		for (Throwable t = e; t != null; t = t.getCause()) {
 			if (t instanceof JwtValidationException v && v.getErrors().stream().anyMatch(err -> code.equals(err.getErrorCode()))) {

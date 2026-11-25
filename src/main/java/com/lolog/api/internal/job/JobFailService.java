@@ -22,6 +22,7 @@ public class JobFailService {
 	private final TextService texts;
 	private final VoiceCloneService voiceClones;
 
+	/** 쓰는 저장소와 도구를 받는다. */
 	public JobFailService(JobRepository jobs, DetectResultService detectResults, ComicService comics,
 			ProfileCharacterService profileCharacters, VideoService videos, TextService texts,
 			VoiceCloneService voiceClones) {
@@ -34,7 +35,12 @@ public class JobFailService {
 		this.profileCharacters = profileCharacters;
 	}
 
-	// 작업 종류를 보고 맞는 서비스에 실패를 넘긴다.
+	/**
+	 * 작업 종류를 보고 맞는 서비스에 실패를 넘긴다.
+	 *
+	 * @param jobId 실패한 작업 ID
+	 * @param reason 워커가 보낸 실패 이유
+	 */
 	public void fail(long jobId, String reason) {
 		String type = jobs.findTypeById(jobId).orElseThrow(() -> ApiException.invalid(null));
 		if ("COMIC".equals(type)) {

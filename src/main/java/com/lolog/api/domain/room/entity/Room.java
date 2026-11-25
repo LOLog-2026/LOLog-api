@@ -48,26 +48,44 @@ public class Room {
 	@Column(name = "updated_at", nullable = false, insertable = false)
 	private OffsetDateTime updatedAt;
 
-	// me가 방장인 새 방을 만든다.
+	/**
+	 * me가 방장인 새 방을 만든다.
+	 *
+	 * @param name 방 이름
+	 * @param me 방을 만든 회원 ID(방장)
+	 */
 	public Room(String name, Long me) {
 		this.name = name;
 		this.createdBy = me;
 		this.ownerId = me;
 	}
 
-	// 방 이름을 바꾼다.
+	/**
+	 * 방 이름을 바꾼다.
+	 *
+	 * @param name 새 방 이름
+	 */
 	public void rename(String name) {
 		this.name = name;
 		updatedAt = OffsetDateTime.now();
 	}
 
-	// 방장을 넘긴다.
+	/**
+	 * 방장을 넘긴다.
+	 *
+	 * @param ownerId 새 방장 회원 ID
+	 */
 	public void changeOwner(Long ownerId) {
 		this.ownerId = ownerId;
 		updatedAt = OffsetDateTime.now();
 	}
 
-	// me가 방장인지 본다.
+	/**
+	 * me가 방장인지 본다.
+	 *
+	 * @param me 확인할 회원 ID
+	 * @return 방장이면 true
+	 */
 	public boolean isOwnedBy(long me) {
 		return ownerId == me;
 	}

@@ -63,7 +63,7 @@ public class InboxService {
 	private final RoomService rooms;
 	private final ObjectMapper objectMapper;
 
-	// 알림 리포지토리들, 새 소식을 확인할 다른 기능, JSON 도구를 받는다.
+	/** 알림 리포지토리들, 새 소식을 확인할 다른 기능, JSON 도구를 받는다. */
 	public InboxService(InboxQueries queries, NotificationRepository notifications, NoticeRepository notices,
 			NoticeReadRepository noticeReads, BadgeReadRepository badgeReads, CardRepository cards, FriendService friends,
 			RoomService rooms, ObjectMapper objectMapper) {
@@ -78,7 +78,14 @@ public class InboxService {
 		this.objectMapper = objectMapper;
 	}
 
-	// 최근 것이 위. 같은 시각이면 알림, 공지사항 순이다.
+	/**
+	 * 최근 것이 위. 같은 시각이면 알림, 공지사항 순이다.
+	 *
+	 * @param me 목록을 보는 회원 ID
+	 * @param tab 탭(ALL, NOTICE, NOTIFICATION, null이면 ALL)
+	 * @param cursor 앞 페이지의 다음 커서(null이면 첫 페이지)
+	 * @return 알림 목록 한 페이지와 다음 커서
+	 */
 	@Transactional(readOnly = true)
 	public InboxPage list(long me, String tab, String cursor) {
 		String which = tab == null ? "ALL" : tab;
@@ -113,13 +120,24 @@ public class InboxService {
 		return new InboxPage(items, next);
 	}
 
-	// 안 읽은 알림·공지사항이 있는지 돌려준다.
+	/**
+	 * 안 읽은 알림·공지사항이 있는지 돌려준다.
+	 *
+	 * @param me 확인할 회원 ID
+	 * @return 안 읽은 것이 있는지
+	 */
 	@Transactional(readOnly = true)
 	public Unread unread(long me) {
 		return new Unread(hasUnread(me));
 	}
 
-	// kind는 notice·notification. 이미 읽었어도 204다.
+	/**
+	 * kind는 notice·notification. 이미 읽었어도 204다.
+	 *
+	 * @param me 읽는 회원 ID
+	 * @param kind 종류(notice 또는 notification)
+	 * @param id 공지 ID 또는 알림 ID
+	 */
 	@Transactional
 	public void read(long me, String kind, long id) {
 		if ("notice".equals(kind)) {
@@ -138,15 +156,24 @@ public class InboxService {
 		}
 	}
 
-	// 지금까지 온 알림과 공지사항을 모두 읽음으로 한다.
+	/**
+	 * 지금까지 온 알림과 공지사항을 모두 읽음으로 한다.
+	 *
+	 * @param me 읽는 회원 ID
+	 */
 	@Transactional
 	public void readAll(long me) {
 		notifications.markAllRead(me, OffsetDateTime.now());
 		noticeReads.markAllRead(me);
 	}
 
-	// 친구는 받은 요청이 있는지, 방은 받지 않은 글·받은 초대가 있거나 마지막으로 본 뒤 해산 알림이 왔는지로 정한다.
-	// 보관함·만화·프로필 캐릭터는 마지막으로 본 뒤 그 알림이 왔는지로 정한다. 종 버튼은 안 읽은 알림·공지사항이 있는지다.
+	/**
+	 * 친구는 받은 요청이 있는지, 방은 받지 않은 글·받은 초대가 있거나 마지막으로 본 뒤 해산 알림이 왔는지로 정한다.
+	 * 보관함·만화·프로필 캐릭터는 마지막으로 본 뒤 그 알림이 왔는지로 정한다. 종 버튼은 안 읽은 알림·공지사항이 있는지다.
+	 *
+	 * @param me 확인할 회원 ID
+	 * @return 기능 화면마다 새 소식 점을 켤지
+	 */
 	@Transactional(readOnly = true)
 	public Badges badges(long me) {
 		boolean friendRequests = friends.hasReceivedRequests(me);
@@ -155,7 +182,12 @@ public class InboxService {
 				friendRequests, roomNews || newSince(me, "rooms"), hasUnread(me));
 	}
 
-	// 그 화면을 열었음. 친구·종 버튼은 지금 있는 수·읽음으로 정하므로 따로 남기지 않는다.
+	/**
+	 * 그 화면을 열었음. 친구·종 버튼은 지금 있는 수·읽음으로 정하므로 따로 남기지 않는다.
+	 *
+	 * @param me 화면을 연 회원 ID
+	 * @param kind 새 소식 점 종류(cards, comics, profileCharacter, friends, rooms, inbox)
+	 */
 	@Transactional
 	public void seen(long me, String kind) {
 		if (!BADGE_KINDS.contains(kind)) {
@@ -166,7 +198,13 @@ public class InboxService {
 		}
 	}
 
-	// 마지막으로 본 뒤 그 기능의 알림이 왔는지 본다.
+	/**
+	 * 마지막으로 본 뒤 그 기능의 알림이 왔는지 본다.
+	 *
+	 * @param me 확인할 회원 ID
+	 * @param kind 마지막으로 본 시각을 남기는 점 종류(cards, comics, profileCharacter, rooms)
+	 * @return 새 알림이 있으면 true
+	 */
 	private boolean newSince(long me, String kind) {
 		OffsetDateTime seen = seenAt(me, kind);
 		List<String> types = SEEN_KINDS.get(kind);
@@ -174,24 +212,45 @@ public class InboxService {
 				: notifications.existsByUserIdAndTypeInAndCreatedAtAfter(me, types, seen);
 	}
 
-	// 블로그 글 카드는 푸시·알림 목록 없이 보관함 점만 켠다(texts.md 2장). 마지막으로 본 뒤 생긴 블로그 글 카드가 있는지.
+	/**
+	 * 블로그 글 카드는 푸시·알림 목록 없이 보관함 점만 켠다(texts.md 2장). 마지막으로 본 뒤 생긴 블로그 글 카드가 있는지.
+	 *
+	 * @param me 확인할 회원 ID
+	 * @return 새 블로그 글 카드가 있으면 true
+	 */
 	private boolean newBlogCards(long me) {
 		OffsetDateTime seen = seenAt(me, "cards");
 		return seen == null ? cards.existsBlogCard(me) : cards.existsBlogCardSince(me, seen);
 	}
 
-	// 30일 안의 안 읽은 알림이나 안 읽은 공지사항이 있는지 본다.
+	/**
+	 * 30일 안의 안 읽은 알림이나 안 읽은 공지사항이 있는지 본다.
+	 *
+	 * @param me 확인할 회원 ID
+	 * @return 있으면 true
+	 */
 	private boolean hasUnread(long me) {
 		return notifications.existsByUserIdAndReadAtIsNullAndCreatedAtAfter(me,
 				OffsetDateTime.now(ZoneOffset.UTC).minusDays(KEEP_DAYS)) || notices.existsUnread(me);
 	}
 
-	// 그 기능의 새 소식 점을 마지막으로 본 시각. 본 적이 없으면 null.
+	/**
+	 * 그 기능의 새 소식 점을 마지막으로 본 시각. 본 적이 없으면 null.
+	 *
+	 * @param me 확인할 회원 ID
+	 * @param kind 새 소식 점 종류
+	 * @return 마지막으로 본 시각(본 적이 없으면 null)
+	 */
 	private OffsetDateTime seenAt(long me, String kind) {
 		return badgeReads.findById(new BadgeRead.Key(me, kind)).map(BadgeRead::getSeenAt).orElse(null);
 	}
 
-	// 알림 data JSON을 맵으로 바꾼다.
+	/**
+	 * 알림 data JSON을 맵으로 바꾼다.
+	 *
+	 * @param json 알림 data 열의 JSON 문자열
+	 * @return 키와 값 맵
+	 */
 	private Map<String, Object> data(String json) {
 		return objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {
 		});

@@ -62,13 +62,24 @@ public class Job {
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
 
-	// 녹음 묶음 하나의 감지 작업을 만든다.
+	/**
+	 * 녹음 묶음 하나의 감지 작업을 만든다.
+	 *
+	 * @param recordingPartId 감지할 녹음 묶음 ID
+	 * @param userId 녹음 주인 회원 ID
+	 */
 	public Job(Long recordingPartId, Long userId) {
 		this.recordingPartId = recordingPartId;
 		this.userId = userId;
 	}
 
-	// 만화 작업을 만든다.
+	/**
+	 * 만화 작업을 만든다.
+	 *
+	 * @param comicId 그릴 만화 ID
+	 * @param userId 만화를 요청한 회원 ID
+	 * @return 저장 전 COMIC 작업
+	 */
 	public static Job comic(Long comicId, Long userId) {
 		Job job = new Job();
 		job.jobType = "COMIC";
@@ -77,7 +88,14 @@ public class Job {
 		return job;
 	}
 
-	// type은 VIDEO_VOICE 또는 VIDEO_DRAW
+	/**
+	 * type은 VIDEO_VOICE 또는 VIDEO_DRAW
+	 *
+	 * @param type 작업 종류(VIDEO_VOICE 또는 VIDEO_DRAW)
+	 * @param videoId 처리할 영상 ID
+	 * @param userId 영상 주인 회원 ID
+	 * @return 저장 전 영상 작업
+	 */
 	public static Job video(String type, Long videoId, Long userId) {
 		Job job = new Job();
 		job.jobType = type;
@@ -86,7 +104,13 @@ public class Job {
 		return job;
 	}
 
-	// 글을 카드로 만드는 작업을 만든다.
+	/**
+	 * 글을 카드로 만드는 작업을 만든다.
+	 *
+	 * @param textId 카드로 만들 글 ID
+	 * @param userId 글 주인 회원 ID
+	 * @return 저장 전 TEXT 작업
+	 */
 	public static Job text(Long textId, Long userId) {
 		Job job = new Job();
 		job.jobType = "TEXT";
@@ -95,7 +119,12 @@ public class Job {
 		return job;
 	}
 
-	// 내 목소리 만들기(characters.md "내 목소리"). 회원만 가리킨다.
+	/**
+	 * 내 목소리 만들기(characters.md "내 목소리"). 회원만 가리킨다.
+	 *
+	 * @param userId 목소리를 만들 회원 ID
+	 * @return 저장 전 VOICE_CLONE 작업
+	 */
 	public static Job voiceClone(Long userId) {
 		Job job = new Job();
 		job.jobType = "VOICE_CLONE";
@@ -103,7 +132,12 @@ public class Job {
 		return job;
 	}
 
-	// 프로필 캐릭터 작업을 만든다.
+	/**
+	 * 프로필 캐릭터 작업을 만든다.
+	 *
+	 * @param userId 캐릭터를 만들 회원 ID
+	 * @return 저장 전 AVATAR 작업
+	 */
 	public static Job avatar(Long userId) {
 		Job job = new Job();
 		job.jobType = "AVATAR";
@@ -131,7 +165,11 @@ public class Job {
 		status = "DONE";
 	}
 
-	// 실패로 끝내고 이유를 남긴다.
+	/**
+	 * 실패로 끝내고 이유를 남긴다.
+	 *
+	 * @param reason 남길 실패 이유
+	 */
 	public void fail(String reason) {
 		status = "FAILED";
 		failReason = reason;

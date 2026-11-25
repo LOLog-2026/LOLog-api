@@ -53,7 +53,11 @@ public class Sound {
 	@Column(name = "created_at", nullable = false, insertable = false, updatable = false)
 	private OffsetDateTime createdAt;
 
-	// 저장소 키를 채운다.
+	/**
+	 * 저장소 키를 채운다.
+	 *
+	 * @param objectKey 소리 파일의 저장소 키(defaults/sounds/{id}.ogg)
+	 */
 	public void assignObjectKey(String objectKey) {
 		this.objectKey = objectKey;
 	}

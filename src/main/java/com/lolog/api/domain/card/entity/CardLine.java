@@ -57,7 +57,16 @@ public class CardLine {
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
 
-	// Card.addLine에서만 만든다.
+	/**
+	 * Card.addLine에서만 만든다.
+	 *
+	 * @param card 대사가 속한 카드
+	 * @param lineNo 대사 줄 번호
+	 * @param speakerKey 말한 화자 key
+	 * @param text 대사 내용
+	 * @param startMs 대사 시작 위치(ms, 모르면 null)
+	 * @param endMs 대사 끝 위치(ms, 모르면 null)
+	 */
 	CardLine(Card card, int lineNo, String speakerKey, String text, Long startMs, Long endMs) {
 		this.card = card;
 		this.lineNo = lineNo;

@@ -25,7 +25,7 @@ public class ComicService {
 	private final TransactionTemplate tx;
 	private final PushService push;
 
-	// 만화 요청에 필요한 저장소와 도구를 받는다.
+	/** 만화 요청에 필요한 저장소와 도구를 받는다. */
 	public ComicService(CardRepository cards, ComicRepository comics, JobRepository jobs, ComicPublisher publisher,
 			TransactionTemplate tx, PushService push) {
 		this.cards = cards;
@@ -36,11 +36,22 @@ public class ComicService {
 		this.push = push;
 	}
 
-	// 만화 요청 응답. 새 만화 ID와 상태.
+	/**
+	 * 만화 요청 응답. 새 만화 ID와 상태.
+	 *
+	 * @param comicId 새 만화 ID
+	 * @param status 만화 상태(QUEUED)
+	 */
 	public record Created(Long comicId, ComicStatus status) {
 	}
 
-	// 카드로 만화를 요청하고 작업을 큐에 넣는다.
+	/**
+	 * 카드로 만화를 요청하고 작업을 큐에 넣는다.
+	 *
+	 * @param userId 요청한 회원 ID(토큰의 sub)
+	 * @param cardId 만화로 만들 내 카드 ID
+	 * @return 만든 만화 ID와 상태(QUEUED)
+	 */
 	public Created request(long userId, long cardId) {
 		Created[] created = new Created[1];
 		Long jobId = tx.execute(status -> {
@@ -69,7 +80,12 @@ public class ComicService {
 		return created[0];
 	}
 
-	// 워커가 만화 작업의 실패를 알렸을 때. 같은 jobId가 다시 오면 무시하므로 횟수를 두 번 돌려주지 않는다.
+	/**
+	 * 워커가 만화 작업의 실패를 알렸을 때. 같은 jobId가 다시 오면 무시하므로 횟수를 두 번 돌려주지 않는다.
+	 *
+	 * @param jobId 실패한 만화 작업 ID
+	 * @param reason 워커가 보낸 실패 이유
+	 */
 	public void fail(long jobId, String reason) {
 		tx.executeWithoutResult(status -> {
 			Long comicId = jobs.findComicIdById(jobId)

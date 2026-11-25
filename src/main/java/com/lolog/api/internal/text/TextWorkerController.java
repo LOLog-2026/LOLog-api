@@ -16,11 +16,17 @@ public class TextWorkerController {
 
 	private final TextService texts;
 
+	/** 쓰는 서비스를 받는다. */
 	public TextWorkerController(TextService texts) {
 		this.texts = texts;
 	}
 
-	// 글 결과 카드를 받는다.
+	/**
+	 * 글 결과 카드를 받는다.
+	 *
+	 * @param id 글 ID(경로)
+	 * @param result 워커가 만든 카드 1장과 작업 ID
+	 */
 	@PostMapping("/internal/texts/{id}/cards")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void cards(@PathVariable Long id, @Valid @RequestBody TextResult result) {

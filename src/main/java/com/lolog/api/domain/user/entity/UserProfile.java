@@ -91,7 +91,11 @@ public class UserProfile {
 	@Column(name = "voice_clone_updated_at")
 	private OffsetDateTime voiceCloneUpdatedAt;
 
-	// 닉네임을 바꾼다.
+	/**
+	 * 닉네임을 바꾼다.
+	 *
+	 * @param nickname 새 닉네임
+	 */
 	public void changeNickname(String nickname) {
 		this.nickname = nickname;
 	}
@@ -104,7 +108,13 @@ public class UserProfile {
 		characterUpdatedAt = OffsetDateTime.now();
 	}
 
-	// 워커가 보낸 그림으로 READY가 된다.
+	/**
+	 * 워커가 보낸 그림으로 READY가 된다.
+	 *
+	 * @param key 프로필 캐릭터 그림의 저장소 키
+	 * @param thumbKey 썸네일 그림의 저장소 키
+	 * @param appearance 워커가 보낸 캐릭터 생김새 설명
+	 */
 	public void characterReady(String key, String thumbKey, String appearance) {
 		characterStatus = CHARACTER_READY;
 		characterKey = key;
@@ -129,14 +139,23 @@ public class UserProfile {
 		characterUpdatedAt = OffsetDateTime.now();
 	}
 
-	// 목소리를 고른다. null이면 지운다.
+	/**
+	 * 목소리를 고른다. null이면 지운다.
+	 *
+	 * @param voice 기본 화자 id 또는 "self"(null 가능)
+	 */
 	public void chooseVoice(String voice) {
 		characterVoice = voice;
 	}
 
 	// ---- 내 목소리 ----
 
-	// 녹음을 받아 만드는 중으로 둔다. 미리 듣기와 실패 이유는 비운다.
+	/**
+	 * 녹음을 받아 만드는 중으로 둔다. 미리 듣기와 실패 이유는 비운다.
+	 *
+	 * @param sampleKey 올린 목소리 녹음의 저장소 키
+	 * @param text 녹음할 때 읽은 문장
+	 */
 	public void startVoiceClone(String sampleKey, String text) {
 		OffsetDateTime now = OffsetDateTime.now();
 		voiceCloneStatus = CHARACTER_PROCESSING;
@@ -148,14 +167,22 @@ public class UserProfile {
 		voiceCloneUpdatedAt = now;
 	}
 
-	// 워커가 보낸 미리 듣기로 READY가 된다.
+	/**
+	 * 워커가 보낸 미리 듣기로 READY가 된다.
+	 *
+	 * @param previewKey 미리 듣기 소리의 저장소 키
+	 */
 	public void voiceCloneReady(String previewKey) {
 		voiceCloneStatus = CHARACTER_READY;
 		voiceClonePreviewKey = previewKey;
 		voiceCloneUpdatedAt = OffsetDateTime.now();
 	}
 
-	// 만들기에 실패했다. 쓸 수 있는 목소리가 없으니 녹음·미리 듣기를 비우고, 골랐던 "self"도 지운다.
+	/**
+	 * 만들기에 실패했다. 쓸 수 있는 목소리가 없으니 녹음·미리 듣기를 비우고, 골랐던 "self"도 지운다.
+	 *
+	 * @param reason 워커가 보낸 실패 이유(null 가능)
+	 */
 	public void voiceCloneFailed(String reason) {
 		voiceCloneStatus = CHARACTER_FAILED;
 		voiceCloneFailReason = reason;
@@ -179,7 +206,11 @@ public class UserProfile {
 		clearSelfVoice();
 	}
 
-	// 친구 쇼츠 동의를 바꾼다.
+	/**
+	 * 친구 쇼츠 동의를 바꾼다.
+	 *
+	 * @param share 친구 쇼츠에 내 목소리를 쓰게 할지
+	 */
 	public void shareVoiceClone(boolean share) {
 		voiceCloneShareFriends = share;
 	}

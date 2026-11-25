@@ -15,11 +15,22 @@ public final class Adts {
 	private Adts() {
 	}
 
-	// offset·length는 파일 안 바이트 위치, durationUs는 이 조각의 소리 길이(마이크로초).
+	/**
+	 * offset·length는 파일 안 바이트 위치, durationUs는 이 조각의 소리 길이(마이크로초).
+	 *
+	 * @param offset 조각이 시작하는 파일 안 바이트 위치(머리말 포함)
+	 * @param length 조각 전체 바이트 수(머리말 포함)
+	 * @param durationUs 조각의 소리 길이(마이크로초)
+	 */
 	public record Frame(int offset, int length, long durationUs) {
 	}
 
-	// 파일 처음부터 끝까지 조각으로 나눈다. 비었거나, 머리말이 아니거나, 끝이 조각 중간에서 끊기면 예외다.
+	/**
+	 * 파일 처음부터 끝까지 조각으로 나눈다. 비었거나, 머리말이 아니거나, 끝이 조각 중간에서 끊기면 예외다.
+	 *
+	 * @param data AAC ADTS 파일 전체 바이트
+	 * @return 파일 앞부터 차례로 나눈 조각
+	 */
 	public static List<Frame> frames(byte[] data) {
 		if (data.length == 0) {
 			throw new IllegalArgumentException("빈 파일입니다.");

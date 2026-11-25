@@ -45,7 +45,17 @@ public class SoundService {
 	private final double sfxMaxDistance;
 	private final double bgmMaxDistance;
 
-	// 리포지토리, 저장소, 글 벡터 모델과 종류별 거리 기준을 받는다.
+	/**
+	 * 리포지토리, 저장소, 글 벡터 모델과 종류별 거리 기준을 받는다.
+	 *
+	 * @param repository 소리 리포지토리
+	 * @param storage 소리 파일 저장소
+	 * @param deletions 저장소 파일 지우기 예약
+	 * @param embedder 설명 글을 글 벡터로 바꾸는 모델
+	 * @param objectMapper 소리 벡터 JSON을 읽는 도구
+	 * @param sfxMaxDistance 효과음 검색의 최대 코사인 거리(lolog.sound.max-distance.sfx). 없으면 2.0(모두)
+	 * @param bgmMaxDistance 배경음 검색의 최대 코사인 거리(lolog.sound.max-distance.bgm). 없으면 2.0(모두)
+	 */
 	public SoundService(SoundRepository repository, ImageStorage storage, StorageDeletions deletions,
 			SoundTextEmbedder embedder, ObjectMapper objectMapper,
 			@Value("${lolog.sound.max-distance.sfx:#{null}}") Double sfxMaxDistance,
@@ -59,25 +69,61 @@ public class SoundService {
 		this.bgmMaxDistance = bgmMaxDistance == null ? NO_MAX_DISTANCE : bgmMaxDistance;
 	}
 
-	// 소리 목록 응답.
-	// 넣거나 바꾼 소리의 ID.
+	/**
+	 * 소리 목록 응답.
+	 * 넣거나 바꾼 소리의 ID.
+	 *
+	 * @param id 넣거나 바꾼 소리의 ID
+	 */
 	public record SoundSaved(Long id) {
 	}
 
-	// 검색 요청(POST /internal/sounds/search).
+	/**
+	 * 검색 요청(POST /internal/sounds/search).
+	 *
+	 * @param kind SFX 또는 BGM
+	 * @param text 콘티의 소리 설명 글(1~200자)
+	 * @param limit 돌려줄 최대 개수(기본 5, 1~10)
+	 */
 	public record SoundSearch(String kind, String text, Integer limit) {
 	}
 
-	// 검색 결과 소리 한 개. distance는 설명 글과의 코사인 거리(작을수록 가까움)다.
+	/**
+	 * 검색 결과 소리 한 개. distance는 설명 글과의 코사인 거리(작을수록 가까움)다.
+	 *
+	 * @param id 소리 ID
+	 * @param kind SFX 또는 BGM
+	 * @param durationMs 소리 길이(ms)
+	 * @param distance 설명 글과의 코사인 거리
+	 * @param url 소리 파일의 10분 서명 주소
+	 */
 	public record SoundMatchItem(Long id, String kind, Integer durationMs, Double distance, String url) {
 	}
 
-	// 검색 결과.
+	/**
+	 * 검색 결과.
+	 *
+	 * @param sounds 가까운 소리 목록(거리 순). 맞는 소리가 없으면 빈 목록
+	 */
 	public record SoundMatches(List<SoundMatchItem> sounds) {
 	}
 
-	// 소리 넣기·바꾸기. 같은 freesoundId면 덮어쓴다. id를 먼저 정해야 파일 키(defaults/sounds/{id}.ogg)가 정해져서
-	// 줄을 먼저 넣고 같은 트랜잭션 안에서 파일을 올린다. 파일을 못 올리면 줄도 남지 않는다.
+	/**
+	 * 소리 넣기·바꾸기. 같은 freesoundId면 덮어쓴다. id를 먼저 정해야 파일 키(defaults/sounds/{id}.ogg)가 정해져서
+	 * 줄을 먼저 넣고 같은 트랜잭션 안에서 파일을 올린다. 파일을 못 올리면 줄도 남지 않는다.
+	 *
+	 * @param freesoundId Freesound의 소리 ID(1 이상)
+	 * @param file Ogg 소리 파일(5MB 이하)
+	 * @param kind SFX 또는 BGM
+	 * @param query 모을 때 쓴 검색어(영어 소문자·숫자·_ 1~50자)
+	 * @param title 소리 제목(null 가능, 200자를 넘으면 자른다)
+	 * @param durationMs 소리 길이(ms, 1 이상)
+	 * @param sourceUrl Freesound 원본 주소(http·https, 500자 이하)
+	 * @param license 라이선스(null 가능, 있으면 CC0만)
+	 * @param embedding 소리 벡터(숫자 512개 JSON 배열)
+	 * @param embeddingModel 소리 벡터를 만든 모델 이름. api 설정의 모델과 같아야 한다
+	 * @return 넣거나 바꾼 소리의 ID
+	 */
 	@Transactional
 	public SoundSaved upsert(long freesoundId, byte[] file, String kind, String query, String title, Integer durationMs,
 			String sourceUrl, String license, String embedding, String embeddingModel) {
@@ -123,14 +169,23 @@ public class SoundService {
 		return new SoundSaved(id);
 	}
 
-	// 어울리지 않는 소리 빼기. 파일도 지운다. 없어도 된다.
+	/**
+	 * 어울리지 않는 소리 빼기. 파일도 지운다. 없어도 된다.
+	 *
+	 * @param freesoundId 뺄 소리의 Freesound ID
+	 */
 	@Transactional
 	public void delete(long freesoundId) {
 		repository.deleteByFreesoundIdReturningKey(freesoundId).ifPresent(deletions::schedule);
 	}
 
-	// 설명 글과 가까운 소리를 거리 순으로 준다. 맞는 소리가 없으면 빈 목록이다(워커는 그 장면을 소리 없이 만든다).
-	// 글 벡터 모델을 못 읽으면 503 EMBEDDING_UNAVAILABLE이다.
+	/**
+	 * 설명 글과 가까운 소리를 거리 순으로 준다. 맞는 소리가 없으면 빈 목록이다(워커는 그 장면을 소리 없이 만든다).
+	 * 글 벡터 모델을 못 읽으면 503 EMBEDDING_UNAVAILABLE이다.
+	 *
+	 * @param request 워커가 보낸 검색 요청
+	 * @return 가까운 소리와 서명 주소
+	 */
 	@Transactional(readOnly = true)
 	public SoundMatches search(SoundSearch request) {
 		if (request == null) {
@@ -154,7 +209,12 @@ public class SoundService {
 			.toList());
 	}
 
-	// 소리 벡터(숫자 512개 JSON 배열)를 읽는다. 길이가 다르거나 숫자가 아니거나 모두 0이면 400이다.
+	/**
+	 * 소리 벡터(숫자 512개 JSON 배열)를 읽는다. 길이가 다르거나 숫자가 아니거나 모두 0이면 400이다.
+	 *
+	 * @param embedding 소리 벡터 JSON 배열 글
+	 * @return 읽은 벡터
+	 */
 	private float[] parseEmbedding(String embedding) {
 		if (embedding == null || embedding.isBlank()) {
 			throw ApiException.invalid("embedding");
@@ -184,7 +244,12 @@ public class SoundService {
 		return out;
 	}
 
-	// pgvector가 읽는 '[0.1,0.2,...]' 모양 글로 바꾼다.
+	/**
+	 * pgvector가 읽는 '[0.1,0.2,...]' 모양 글로 바꾼다.
+	 *
+	 * @param vector 바꿀 벡터
+	 * @return '[0.1,0.2,...]' 모양 글
+	 */
 	static String vectorLiteral(float[] vector) {
 		StringBuilder sb = new StringBuilder(vector.length * 12).append('[');
 		for (int i = 0; i < vector.length; i++) {
@@ -196,7 +261,12 @@ public class SoundService {
 		return sb.append(']').toString();
 	}
 
-	// SFX·BGM만 받는다.
+	/**
+	 * SFX·BGM만 받는다.
+	 *
+	 * @param kind 확인할 소리 종류
+	 * @return 받은 kind 그대로
+	 */
 	private static String kind(String kind) {
 		if (kind == null || !KINDS.contains(kind)) {
 			throw ApiException.invalid("kind");
@@ -204,7 +274,12 @@ public class SoundService {
 		return kind;
 	}
 
-	// 검색어 모양을 확인한다.
+	/**
+	 * 검색어 모양을 확인한다.
+	 *
+	 * @param query 확인할 검색어
+	 * @return 받은 query 그대로
+	 */
 	private static String query(String query) {
 		if (query == null || !QUERY.matcher(query).matches()) {
 			throw ApiException.invalid("query");
@@ -212,7 +287,12 @@ public class SoundService {
 		return query;
 	}
 
-	// Ogg 페이지는 "OggS"로 시작한다.
+	/**
+	 * Ogg 페이지는 "OggS"로 시작한다.
+	 *
+	 * @param bytes 확인할 파일 내용
+	 * @return OggS로 시작하면 true
+	 */
 	static boolean isOgg(byte[] bytes) {
 		return bytes.length >= 4 && bytes[0] == 'O' && bytes[1] == 'g' && bytes[2] == 'g' && bytes[3] == 'S';
 	}

@@ -33,6 +33,7 @@ public class TextPublisher {
 	private final ObjectMapper objectMapper;
 	private final TransactionTemplate tx;
 
+	/** 큐에 넣는 데 필요한 저장소와 도구를 받는다. */
 	public TextPublisher(JobRepository jobs, TextRepository texts, StringRedisTemplate redis, ObjectMapper objectMapper,
 			PlatformTransactionManager transactionManager) {
 		this.jobs = jobs;
@@ -44,7 +45,11 @@ public class TextPublisher {
 		this.tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
 	}
 
-	// 실패해도 글은 이미 저장됐으므로 오류를 넘기지 않는다. 메시지에 글이 들어 있어 예외 메시지는 남기지 않는다(TR-12).
+	/**
+	 * 실패해도 글은 이미 저장됐으므로 오류를 넘기지 않는다. 메시지에 글이 들어 있어 예외 메시지는 남기지 않는다(TR-12).
+	 *
+	 * @param jobId 큐에 넣을 글 작업 ID
+	 */
 	public void publishQuietly(Long jobId) {
 		try {
 			publish(jobId);
@@ -60,7 +65,11 @@ public class TextPublisher {
 		jobs.findUnpublishedIds("TEXT", OffsetDateTime.now().minusMinutes(1)).forEach(this::publishQuietly);
 	}
 
-	// 작업 하나를 메시지로 만들어 스트림에 넣는다.
+	/**
+	 * 작업 하나를 메시지로 만들어 스트림에 넣는다.
+	 *
+	 * @param jobId 넣을 글 작업 ID. 이미 시도했거나 지워졌으면 넣지 않는다
+	 */
 	private void publish(Long jobId) {
 		tx.executeWithoutResult(status -> {
 			Job job = jobs.findById(jobId).orElse(null);

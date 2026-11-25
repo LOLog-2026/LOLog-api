@@ -98,6 +98,12 @@ public enum ErrorCode {
 
 	private final String message;
 
+	/**
+	 * HTTP 상태와 응답 문구를 정한다.
+	 *
+	 * @param status 답할 HTTP 상태
+	 * @param message 응답의 message(개발자용 설명)
+	 */
 	ErrorCode(HttpStatus status, String message) {
 		this.status = status;
 		this.message = message;

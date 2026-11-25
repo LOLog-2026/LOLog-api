@@ -79,7 +79,7 @@ public class RoomService {
 	private final ImageStorage storage;
 	private final PushService push;
 
-	// 방 도메인 리포지토리와 회원·친구·만화 리포지토리, 저장소, 푸시를 받는다.
+	/** 방 도메인 리포지토리와 회원·친구·만화 리포지토리, 저장소, 푸시를 받는다. */
 	public RoomService(RoomRepository rooms, RoomMemberRepository members, RoomInviteRepository invites,
 			RoomPostRepository posts, RoomPostLikeRepository likes, RoomMessageRepository messages,
 			UserProfileRepository profiles, UserSuspensionRepository suspensions, FriendshipRepository friendships,
@@ -101,14 +101,26 @@ public class RoomService {
 
 	// ---- 방 ----
 
-	// 마지막 소식이 최근인 방이 위(소식이 없으면 만든 시각)
+	/**
+	 * 마지막 소식이 최근인 방이 위(소식이 없으면 만든 시각)
+	 *
+	 * @param me 요청한 회원 ID
+	 * @return 내가 들어간 방 목록
+	 */
 	@Transactional(readOnly = true)
 	public RoomList rooms(long me) {
 		List<Long> ids = rooms.findIdsOfMember(me);
 		return new RoomList(items(ids, me));
 	}
 
-	// 방을 만들고 고른 친구에게 초대를 보낸다(바로 넣지 않음). 처음에는 나 혼자 멤버이고 방장이다.
+	/**
+	 * 방을 만들고 고른 친구에게 초대를 보낸다(바로 넣지 않음). 처음에는 나 혼자 멤버이고 방장이다.
+	 *
+	 * @param me 방을 만드는 회원 ID
+	 * @param name 방 이름(null 가능, 앞뒤 공백을 뺀 뒤 1~20자)
+	 * @param memberIds 초대할 친구 회원 ID
+	 * @return 만든 방
+	 */
 	@Transactional
 	public RoomItem create(long me, String name, List<Long> memberIds) {
 		String trimmed = roomName(name);
@@ -131,14 +143,27 @@ public class RoomService {
 		return items(List.of(roomId), me).getFirst();
 	}
 
-	// 방 하나를 돌려준다.
+	/**
+	 * 방 하나를 돌려준다.
+	 *
+	 * @param me 요청한 회원 ID
+	 * @param roomId 방 ID
+	 * @return 방
+	 */
 	@Transactional(readOnly = true)
 	public RoomItem room(long me, long roomId) {
 		requireMember(me, roomId);
 		return items(List.of(roomId), me).getFirst();
 	}
 
-	// 방 이름 바꾸기(방장)
+	/**
+	 * 방 이름 바꾸기(방장)
+	 *
+	 * @param me 요청한 회원 ID(방장)
+	 * @param roomId 방 ID
+	 * @param name 바꿀 방 이름(null 가능, 앞뒤 공백을 뺀 뒤 1~20자)
+	 * @return 바꾼 방
+	 */
 	@Transactional
 	public RoomItem rename(long me, long roomId, String name) {
 		requireMember(me, roomId);
@@ -148,7 +173,12 @@ public class RoomService {
 		return items(List.of(roomId), me).getFirst();
 	}
 
-	// 방 해산(방장). 방 줄을 지우면 멤버·초대·올린 기록·대화가 외래 키로 함께 지워진다. 만화는 각자 보관함에 남는다.
+	/**
+	 * 방 해산(방장). 방 줄을 지우면 멤버·초대·올린 기록·대화가 외래 키로 함께 지워진다. 만화는 각자 보관함에 남는다.
+	 *
+	 * @param me 요청한 회원 ID(방장)
+	 * @param roomId 해산할 방 ID
+	 */
 	@Transactional
 	public void disband(long me, long roomId) {
 		requireMember(me, roomId);
@@ -159,7 +189,13 @@ public class RoomService {
 		others.forEach(userId -> push.notify(userId, PushService.roomDisbanded(name)));
 	}
 
-	// 멤버 내보내기(방장). 내보낸 사람의 글은 "나간 멤버"로 남고, 다시 초대할 수 있다.
+	/**
+	 * 멤버 내보내기(방장). 내보낸 사람의 글은 "나간 멤버"로 남고, 다시 초대할 수 있다.
+	 *
+	 * @param me 요청한 회원 ID(방장)
+	 * @param roomId 방 ID
+	 * @param userId 내보낼 멤버 회원 ID
+	 */
 	@Transactional
 	public void kick(long me, long roomId, long userId) {
 		requireMember(me, roomId);
@@ -172,8 +208,14 @@ public class RoomService {
 		}
 	}
 
-	// 나가도 내가 올린 만화와 남긴 글은 "나간 멤버"로 남는다. 마지막 한 명이 나가면 방과 올린 기록·대화를 모두 지운다.
-	// 방장은 다른 멤버가 있으면 새 방장(newOwnerId)을 꼭 골라야 한다(초안).
+	/**
+	 * 나가도 내가 올린 만화와 남긴 글은 "나간 멤버"로 남는다. 마지막 한 명이 나가면 방과 올린 기록·대화를 모두 지운다.
+	 * 방장은 다른 멤버가 있으면 새 방장(newOwnerId)을 꼭 골라야 한다(초안).
+	 *
+	 * @param me 나가는 회원 ID
+	 * @param roomId 나갈 방 ID
+	 * @param newOwnerId 새 방장 회원 ID(방장이 아니거나 혼자면 null)
+	 */
 	@Transactional
 	public void leave(long me, long roomId, Long newOwnerId) {
 		requireMember(me, roomId);
@@ -194,7 +236,11 @@ public class RoomService {
 		removeEmptyOrHandOver(roomId);
 	}
 
-	// 멤버가 없으면 방을 지우고, 방장이 멤버가 아니면 가장 먼저 들어온 멤버에게 넘긴다. 탈퇴할 때도 쓴다.
+	/**
+	 * 멤버가 없으면 방을 지우고, 방장이 멤버가 아니면 가장 먼저 들어온 멤버에게 넘긴다. 탈퇴할 때도 쓴다.
+	 *
+	 * @param roomId 방 ID
+	 */
 	@Transactional
 	public void removeEmptyOrHandOver(long roomId) {
 		rooms.deleteIfEmpty(roomId);
@@ -203,7 +249,14 @@ public class RoomService {
 
 	// ---- 초대 ----
 
-	// 방장만 친구를 초대한다. 이미 답을 기다리는 초대가 있는 사람은 그 초대를 그대로 돌려준다.
+	/**
+	 * 방장만 친구를 초대한다. 이미 답을 기다리는 초대가 있는 사람은 그 초대를 그대로 돌려준다.
+	 *
+	 * @param me 요청한 회원 ID(방장)
+	 * @param roomId 방 ID
+	 * @param userIds 초대할 친구 회원 ID
+	 * @return 요청한 친구들의 초대
+	 */
 	@Transactional
 	public InviteList invite(long me, long roomId, List<Long> userIds) {
 		requireMember(me, roomId);
@@ -230,7 +283,13 @@ public class RoomService {
 		return new InviteList(all.stream().filter(i -> userIds.contains(i.invitedUser().userId())).toList());
 	}
 
-	// 답을 기다리는 초대를 취소한다(방장).
+	/**
+	 * 답을 기다리는 초대를 취소한다(방장).
+	 *
+	 * @param me 요청한 회원 ID(방장)
+	 * @param roomId 방 ID
+	 * @param inviteId 취소할 초대 ID
+	 */
 	@Transactional
 	public void cancelInvite(long me, long roomId, long inviteId) {
 		requireMember(me, roomId);
@@ -240,7 +299,12 @@ public class RoomService {
 		}
 	}
 
-	// 내가 받은 초대(최신순)
+	/**
+	 * 내가 받은 초대(최신순)
+	 *
+	 * @param me 요청한 회원 ID
+	 * @return 받은 초대 목록
+	 */
 	@Transactional(readOnly = true)
 	public InviteList receivedInvites(long me) {
 		List<ReceivedInviteView> rows = invites.findReceived(me);
@@ -251,7 +315,13 @@ public class RoomService {
 			.toList());
 	}
 
-	// 수락하면 초대를 지우고 멤버로 넣는다. 들어온 직후 받지 않은 글은 0이다.
+	/**
+	 * 수락하면 초대를 지우고 멤버로 넣는다. 들어온 직후 받지 않은 글은 0이다.
+	 *
+	 * @param me 초대받은 회원 ID
+	 * @param inviteId 수락할 초대 ID
+	 * @return 들어간 방
+	 */
 	@Transactional
 	public RoomItem acceptInvite(long me, long inviteId) {
 		long roomId = invitedRoom(me, inviteId);
@@ -265,7 +335,12 @@ public class RoomService {
 		return items(List.of(roomId), me).getFirst();
 	}
 
-	// 거절해도 방장에게 알리지 않는다.
+	/**
+	 * 거절해도 방장에게 알리지 않는다.
+	 *
+	 * @param me 초대받은 회원 ID
+	 * @param inviteId 거절할 초대 ID
+	 */
 	@Transactional
 	public void declineInvite(long me, long inviteId) {
 		if (invites.deleteByIdAndUserId(inviteId, me) == 0) {
@@ -275,14 +350,27 @@ public class RoomService {
 
 	// ---- 올린 만화 ----
 
-	// 방에 올린 만화 목록을 돌려준다.
+	/**
+	 * 방에 올린 만화 목록을 돌려준다.
+	 *
+	 * @param me 요청한 회원 ID
+	 * @param roomId 방 ID
+	 * @return 올린 만화 목록
+	 */
 	@Transactional(readOnly = true)
 	public PostList posts(long me, long roomId) {
 		requireMember(me, roomId);
 		return new PostList(posts(me, roomId, null));
 	}
 
-	// 내 만화 중 완성된 것만. 같은 만화를 같은 방에 두 번 올릴 수 없다.
+	/**
+	 * 내 만화 중 완성된 것만. 같은 만화를 같은 방에 두 번 올릴 수 없다.
+	 *
+	 * @param me 올리는 회원 ID
+	 * @param roomId 방 ID
+	 * @param comicId 올릴 내 만화 ID(null이면 400)
+	 * @return 올린 만화
+	 */
 	@Transactional
 	public RoomPost postComic(long me, long roomId, Long comicId) {
 		requireMember(me, roomId);
@@ -298,7 +386,13 @@ public class RoomService {
 		return posts(me, roomId, postId).getFirst();
 	}
 
-	// 올린 사람만 내린다. 그 만화의 좋아요·대화 줄은 외래 키로 같이 지워진다.
+	/**
+	 * 올린 사람만 내린다. 그 만화의 좋아요·대화 줄은 외래 키로 같이 지워진다.
+	 *
+	 * @param me 요청한 회원 ID(올린 사람)
+	 * @param roomId 방 ID
+	 * @param postId 내릴 올린 만화 ID
+	 */
 	@Transactional
 	public void removePost(long me, long roomId, long postId) {
 		requireMember(me, roomId);
@@ -309,7 +403,14 @@ public class RoomService {
 		posts.deletePost(postId);
 	}
 
-	// 이미 눌렀어도 그대로 200
+	/**
+	 * 이미 눌렀어도 그대로 200
+	 *
+	 * @param me 누르는 회원 ID
+	 * @param roomId 방 ID
+	 * @param postId 올린 만화 ID
+	 * @return 좋아요를 반영한 올린 만화
+	 */
 	@Transactional
 	public RoomPost like(long me, long roomId, long postId) {
 		requireMember(me, roomId);
@@ -321,7 +422,14 @@ public class RoomService {
 		return posts(me, roomId, postId).getFirst();
 	}
 
-	// 안 눌렀어도 그대로 200. 취소하면 그 좋아요 알림 줄도 뺀다.
+	/**
+	 * 안 눌렀어도 그대로 200. 취소하면 그 좋아요 알림 줄도 뺀다.
+	 *
+	 * @param me 취소하는 회원 ID
+	 * @param roomId 방 ID
+	 * @param postId 올린 만화 ID
+	 * @return 좋아요를 반영한 올린 만화
+	 */
 	@Transactional
 	public RoomPost unlike(long me, long roomId, long postId) {
 		requireMember(me, roomId);
@@ -335,8 +443,15 @@ public class RoomService {
 
 	// ---- 대화 ----
 
-	// 오래된 줄이 위. 처음엔 최근 50줄을 주고, cursor(받은 것 중 가장 오래된 줄)를 주면 그 앞 50줄을 준다(초안).
-	// 부르면 이 방의 받지 않은 글이 0이 된다.
+	/**
+	 * 오래된 줄이 위. 처음엔 최근 50줄을 주고, cursor(받은 것 중 가장 오래된 줄)를 주면 그 앞 50줄을 준다(초안).
+	 * 부르면 이 방의 받지 않은 글이 0이 된다.
+	 *
+	 * @param me 요청한 회원 ID
+	 * @param roomId 방 ID
+	 * @param cursor 받은 것 중 가장 오래된 줄 ID(null이면 최근 50줄)
+	 * @return 대화 한 쪽
+	 */
 	@Transactional
 	public MessageList messages(long me, long roomId, String cursor) {
 		requireMember(me, roomId);
@@ -352,7 +467,15 @@ public class RoomService {
 		return new MessageList(messages(me, roomId, rows), next);
 	}
 
-	// 방 대화에 글을 남긴다. postId가 있으면 그 만화에 단 댓글이다.
+	/**
+	 * 방 대화에 글을 남긴다. postId가 있으면 그 만화에 단 댓글이다.
+	 *
+	 * @param me 글을 남기는 회원 ID
+	 * @param roomId 방 ID
+	 * @param text 글 내용(null 가능, 앞뒤 공백을 뺀 뒤 1~200자)
+	 * @param postId 댓글을 달 올린 만화 ID(방 전체 글이면 null)
+	 * @return 남긴 대화 줄
+	 */
 	@Transactional
 	public RoomMessage comment(long me, long roomId, String text, Long postId) {
 		requireMember(me, roomId);
@@ -373,7 +496,12 @@ public class RoomService {
 
 	// ---- 안에서 쓰는 것 ----
 
-	// 방 이름의 앞뒤 공백을 빼고 길이를 확인한다.
+	/**
+	 * 방 이름의 앞뒤 공백을 빼고 길이를 확인한다.
+	 *
+	 * @param name 방 이름(null 가능)
+	 * @return 앞뒤 공백을 뺀 방 이름
+	 */
 	private static String roomName(String name) {
 		String trimmed = name == null ? "" : name.strip();
 		int length = trimmed.codePointCount(0, trimmed.length());
@@ -383,7 +511,14 @@ public class RoomService {
 		return trimmed;
 	}
 
-	// 비었거나, 같은 사람이 두 번이거나, 나를 넣으면 400.
+	/**
+	 * 비었거나, 같은 사람이 두 번이거나, 나를 넣으면 400.
+	 *
+	 * @param me 요청한 회원 ID
+	 * @param ids 초대할 회원 ID(null 가능)
+	 * @param field 틀렸을 때 알릴 필드 이름
+	 * @param emptyMessage 비었을 때의 안내 문구(지금은 쓰지 않음)
+	 */
 	private static void checkInvitees(long me, List<Long> ids, String field, String emptyMessage) {
 		if (ids == null || ids.isEmpty()) {
 			throw ApiException.invalid(field);
@@ -397,7 +532,13 @@ public class RoomService {
 		}
 	}
 
-	// 모두 내 친구여야 한다. 아니면 404 USER_NOT_FOUND.
+	/**
+	 * 모두 내 친구여야 한다. 아니면 404 USER_NOT_FOUND.
+	 *
+	 * @param me 요청한 회원 ID
+	 * @param ids 확인할 회원 ID
+	 * @param field 틀렸을 때 알릴 필드 이름
+	 */
 	private void requireFriends(long me, List<Long> ids, String field) {
 		for (int i = 0; i < ids.size(); i++) {
 			if (!friendships.areFriends(me, ids.get(i))) {
@@ -406,7 +547,14 @@ public class RoomService {
 		}
 	}
 
-	// 초대 줄을 넣고 초대받은 사람에게 푸시를 보낸다.
+	/**
+	 * 초대 줄을 넣고 초대받은 사람에게 푸시를 보낸다.
+	 *
+	 * @param me 초대하는 방장 회원 ID
+	 * @param roomId 방 ID
+	 * @param roomName 푸시에 넣을 방 이름
+	 * @param userIds 초대받을 회원 ID
+	 */
 	private void sendInvites(long me, long roomId, String roomName, List<Long> userIds) {
 		for (Long userId : userIds) {
 			long inviteId = invites.insert(roomId, userId, me);
@@ -414,29 +562,54 @@ public class RoomService {
 		}
 	}
 
-	// 멤버 + 답을 기다리는 초대
+	/**
+	 * 멤버 + 답을 기다리는 초대
+	 *
+	 * @param roomId 방 ID
+	 * @return 멤버 수 + 답을 기다리는 초대 수
+	 */
 	private int headcount(long roomId) {
 		return (int) (members.countByRoomId(roomId) + invites.countByRoomId(roomId));
 	}
 
-	// 이미 들어간 방이 20개면 막는다.
+	/**
+	 * 이미 들어간 방이 20개면 막는다.
+	 *
+	 * @param userId 확인할 회원 ID
+	 */
 	private void checkRoomLimit(long userId) {
 		if (members.countByUserId(userId) >= ROOM_LIMIT) {
 			throw new ApiException(ErrorCode.ROOM_LIMIT);
 		}
 	}
 
-	// 같은 방의 인원을 동시에 바꾸지 않게 방 줄을 잠그고 읽는다. 그 사이 방이 지워졌으면 비어 있다.
+	/**
+	 * 같은 방의 인원을 동시에 바꾸지 않게 방 줄을 잠그고 읽는다. 그 사이 방이 지워졌으면 비어 있다.
+	 *
+	 * @param roomId 방 ID
+	 * @return 잠근 방(없으면 빈 값)
+	 */
 	private Optional<Room> lockRoom(long roomId) {
 		return rooms.findByIdForUpdate(roomId);
 	}
 
-	// 한 사람의 방 20개 제한을 동시에 넘기지 않게 프로필 줄을 잠근다. 프로필이 없으면 잠그지 않는다.
+	/**
+	 * 한 사람의 방 20개 제한을 동시에 넘기지 않게 프로필 줄을 잠근다. 프로필이 없으면 잠그지 않는다.
+	 *
+	 * @param userId 회원 ID
+	 * @return 잠근 프로필(없으면 빈 값)
+	 */
 	private Optional<UserProfile> lockUser(long userId) {
 		return profiles.findByIdForUpdate(userId);
 	}
 
-	// 방장이 아니면 막는다. 그 사이 방이 지워졌으면 방 없음 오류.
+	/**
+	 * 방장이 아니면 막는다. 그 사이 방이 지워졌으면 방 없음 오류.
+	 *
+	 * @param me 요청한 회원 ID
+	 * @param room 확인할 방(빈 값이면 방 없음)
+	 * @return 방
+	 */
 	private Room requireOwner(long me, Optional<Room> room) {
 		Room found = room.orElseThrow(() -> new ApiException(ErrorCode.ROOM_NOT_FOUND));
 		if (!found.isOwnedBy(me)) {
@@ -445,7 +618,13 @@ public class RoomService {
 		return found;
 	}
 
-	// 내가 받은 초대의 방 ID. 없으면 초대 없음 오류.
+	/**
+	 * 내가 받은 초대의 방 ID. 없으면 초대 없음 오류.
+	 *
+	 * @param me 초대받은 회원 ID
+	 * @param inviteId 초대 ID
+	 * @return 방 ID
+	 */
 	private long invitedRoom(long me, long inviteId) {
 		return invites.findRoomIdByIdAndUserId(inviteId, me).orElseThrow(RoomService::inviteNotFound);
 	}
@@ -460,7 +639,13 @@ public class RoomService {
 		return new ApiException(ErrorCode.ROOM_INVITE_NOT_FOUND);
 	}
 
-	// 방장이 보는 답을 기다리는 초대. 방장이 아닌 방은 빈 목록.
+	/**
+	 * 방장이 보는 답을 기다리는 초대. 방장이 아닌 방은 빈 목록.
+	 *
+	 * @param roomIds 볼 방 ID들
+	 * @param me 방장 회원 ID(나)
+	 * @return 방 ID별 초대
+	 */
 	private Map<Long, List<RoomInvite>> sentInvites(List<Long> roomIds, long me) {
 		List<SentInviteView> rows = invites.findSent(roomIds, me);
 		Map<Long, RoomMember> people = people(rows.stream().map(SentInviteView::userId).toList(), me);
@@ -471,43 +656,90 @@ public class RoomService {
 		return result;
 	}
 
-	// 지금 이 방의 멤버인지 본다.
+	/**
+	 * 지금 이 방의 멤버인지 본다.
+	 *
+	 * @param userId 확인할 회원 ID
+	 * @param roomId 방 ID
+	 * @return 멤버이면 true
+	 */
 	private boolean isMember(long userId, long roomId) {
 		return members.existsByRoomIdAndUserId(roomId, userId);
 	}
 
-	// 멤버가 아니면 방 없음 오류.
+	/**
+	 * 멤버가 아니면 방 없음 오류.
+	 *
+	 * @param me 요청한 회원 ID
+	 * @param roomId 방 ID
+	 */
 	private void requireMember(long me, long roomId) {
 		if (!isMember(me, roomId)) {
 			throw new ApiException(ErrorCode.ROOM_NOT_FOUND);
 		}
 	}
 
-	// 이 방에 올린 만화의 올린 사람. 없거나 다른 방이면 404.
+	/**
+	 * 이 방에 올린 만화의 올린 사람. 없거나 다른 방이면 404.
+	 *
+	 * @param roomId 방 ID
+	 * @param postId 올린 만화 ID
+	 * @return 올린 회원 ID
+	 */
 	private long postAuthor(long roomId, long postId) {
 		return posts.findByIdAndRoomId(postId, roomId)
 			.map(com.lolog.api.domain.room.entity.RoomPost::getUserId)
 			.orElseThrow(() -> new ApiException(ErrorCode.ROOM_POST_NOT_FOUND));
 	}
 
-	// 대화 줄을 넣고 방의 마지막 소식 시각을 바꾼다.
+	/**
+	 * 대화 줄을 넣고 방의 마지막 소식 시각을 바꾼다.
+	 *
+	 * @param roomId 방 ID
+	 * @param userId 남긴 회원 ID
+	 * @param type CREATED·POSTED·LIKED·COMMENT
+	 * @param postId 관련 올린 만화 ID(없으면 null)
+	 * @param body 댓글 내용(COMMENT가 아니면 null)
+	 * @return 새 대화 줄 ID
+	 */
 	private long addMessage(long roomId, long userId, String type, Long postId, String body) {
 		long id = messages.insert(roomId, userId, type, postId, body);
 		rooms.touchActivity(roomId);
 		return id;
 	}
 
-	// 방에 남긴 글의 사람. 지금 멤버가 아니면 "나간 멤버"로 바꾼다.
+	/**
+	 * 방에 남긴 글의 사람. 지금 멤버가 아니면 "나간 멤버"로 바꾼다.
+	 *
+	 * @param userIds 글을 남긴 회원 ID들
+	 * @param me 보는 회원 ID(나)
+	 * @param roomId 방 ID
+	 * @return 회원 ID별 사람 정보
+	 */
 	private Map<Long, RoomMember> authors(Collection<Long> userIds, long me, long roomId) {
 		return people(userIds, me, roomId, true);
 	}
 
-	// 회원들의 닉네임과 프로필 캐릭터 썸네일, 나와의 관계, 정지 여부(방 목록·초대처럼 방이 정해지지 않은 화면).
+	/**
+	 * 회원들의 닉네임과 프로필 캐릭터 썸네일, 나와의 관계, 정지 여부(방 목록·초대처럼 방이 정해지지 않은 화면).
+	 *
+	 * @param userIds 읽을 회원 ID들
+	 * @param me 보는 회원 ID(나)
+	 * @return 회원 ID별 사람 정보
+	 */
 	private Map<Long, RoomMember> people(Collection<Long> userIds, long me) {
 		return people(userIds, me, null, false);
 	}
 
-	// 사람 정보를 한 번에 읽는다. roomId가 있으면 그 방의 방장 표시를 하고, leftAsLeftMember면 그 방 멤버가 아닌 사람을 "나간 멤버"로 바꾼다.
+	/**
+	 * 사람 정보를 한 번에 읽는다. roomId가 있으면 그 방의 방장 표시를 하고, leftAsLeftMember면 그 방 멤버가 아닌 사람을 "나간 멤버"로 바꾼다.
+	 *
+	 * @param userIds 읽을 회원 ID들
+	 * @param me 보는 회원 ID(나)
+	 * @param roomId 방 ID(방이 정해지지 않은 화면이면 null)
+	 * @param leftAsLeftMember 그 방 멤버가 아닌 사람을 나간 멤버로 바꿀지
+	 * @return 회원 ID별 사람 정보
+	 */
 	private Map<Long, RoomMember> people(Collection<Long> userIds, long me, Long roomId, boolean leftAsLeftMember) {
 		Map<Long, RoomMember> result = new HashMap<>();
 		if (userIds.isEmpty()) {
@@ -540,7 +772,14 @@ public class RoomService {
 		return result;
 	}
 
-	// 나와 그 사람의 관계. 내가 차단했으면 BLOCKED가 먼저다.
+	/**
+	 * 나와 그 사람의 관계. 내가 차단했으면 BLOCKED가 먼저다.
+	 *
+	 * @param id 상대 회원 ID
+	 * @param me 보는 회원 ID(나)
+	 * @param p 상대 정보
+	 * @return FRIEND·REQUESTED·RECEIVED·NONE·BLOCKED·ME
+	 */
 	private static String friendState(long id, long me, RoomPersonView p) {
 		if (id == me) {
 			return "ME";
@@ -557,7 +796,13 @@ public class RoomService {
 		return p.receivedStatus() != null ? "RECEIVED" : "NONE";
 	}
 
-	// 나와 그 사람의 관계. 내가 차단했으면 BLOCKED가 먼저다.
+	/**
+	 * 나와 그 사람의 관계. 내가 차단했으면 BLOCKED가 먼저다.
+	 *
+	 * @param userIds 상대 회원 ID들
+	 * @param me 보는 회원 ID(나)
+	 * @return 회원 ID별 관계
+	 */
 	private Map<Long, String> friendStates(Collection<Long> userIds, long me) {
 		Map<Long, String> states = new HashMap<>();
 		userIds.forEach(id -> states.put(id, id == me ? "ME" : "NONE"));
@@ -569,12 +814,23 @@ public class RoomService {
 		return states;
 	}
 
-	// 내가 차단하고 방 글을 숨기기로 한 사람들
+	/**
+	 * 내가 차단하고 방 글을 숨기기로 한 사람들
+	 *
+	 * @param me 보는 회원 ID(나)
+	 * @return 방 글을 숨길 회원 ID
+	 */
 	private Set<Long> hiddenUsers(long me) {
 		return new HashSet<>(blocks.findHiddenInRoomsIds(me));
 	}
 
-	// 방 응답을 만든다(멤버·마지막 소식·받지 않은 글·초대).
+	/**
+	 * 방 응답을 만든다(멤버·마지막 소식·받지 않은 글·초대).
+	 *
+	 * @param roomIds 방 ID들(이 순서로 돌려줌)
+	 * @param me 보는 회원 ID(나)
+	 * @return 방 응답(그 사이 지워진 방은 빠짐)
+	 */
 	private List<RoomItem> items(List<Long> roomIds, long me) {
 		if (roomIds.isEmpty()) {
 			return List.of();
@@ -611,17 +867,35 @@ public class RoomService {
 		return roomIds.stream().map(byId::get).filter(java.util.Objects::nonNull).toList();
 	}
 
-	// 방장이면 isOwner를 true로 바꾼다.
+	/**
+	 * 방장이면 isOwner를 true로 바꾼다.
+	 *
+	 * @param m 멤버
+	 * @param owner 방장 회원 ID
+	 * @return 방장 표시를 맞춘 멤버
+	 */
 	private static RoomMember withOwner(RoomMember m, long owner) {
 		return m.owner(m.userId() == owner);
 	}
 
-	// 방장 ID. 방이 없으면 null.
+	/**
+	 * 방장 ID. 방이 없으면 null.
+	 *
+	 * @param roomId 방 ID
+	 * @return 방장 회원 ID(방이 없으면 null)
+	 */
 	private Long ownerOf(long roomId) {
 		return rooms.findById(roomId).map(Room::getOwnerId).orElse(null);
 	}
 
-	// 방의 올린 만화. onlyPost가 있으면 그 하나만. 최근에 올린 것이 앞.
+	/**
+	 * 방의 올린 만화. onlyPost가 있으면 그 하나만. 최근에 올린 것이 앞.
+	 *
+	 * @param me 보는 회원 ID(나)
+	 * @param roomId 방 ID
+	 * @param onlyPost 이 하나만 읽을 올린 만화 ID(null이면 모두)
+	 * @return 올린 만화
+	 */
 	private List<RoomPost> posts(long me, long roomId, Long onlyPost) {
 		List<RoomPostView> rows = posts.findViews(me, roomId, onlyPost);
 		Map<Long, RoomMember> people = authors(rows.stream().map(RoomPostView::userId).toList(), me, roomId);
@@ -634,7 +908,14 @@ public class RoomService {
 		}).toList();
 	}
 
-	// 대화 줄을 응답 모양으로 바꾼다. 숨긴 사람의 줄은 내용을 뺀다. 내렸거나 없는 만화에 단 줄은 만화 요약이 없다.
+	/**
+	 * 대화 줄을 응답 모양으로 바꾼다. 숨긴 사람의 줄은 내용을 뺀다. 내렸거나 없는 만화에 단 줄은 만화 요약이 없다.
+	 *
+	 * @param me 보는 회원 ID(나)
+	 * @param roomId 방 ID
+	 * @param rows 읽은 대화 줄
+	 * @return 대화 줄 응답
+	 */
 	private List<RoomMessage> messages(long me, long roomId, List<RoomMessageView> rows) {
 		Map<Long, RoomMember> people = authors(rows.stream().map(RoomMessageView::userId).toList(), me, roomId);
 		Set<Long> hidden = hiddenUsers(me);
@@ -647,12 +928,22 @@ public class RoomService {
 		}).toList();
 	}
 
-	// 저장소 키를 서명 주소로 바꾼다.
+	/**
+	 * 저장소 키를 서명 주소로 바꾼다.
+	 *
+	 * @param key 저장소 key(null 가능)
+	 * @return 서명 주소(key가 null이면 null)
+	 */
 	private String url(String key) {
 		return key == null ? null : storage.presignedUrl(key).toString();
 	}
 
-	// 들어간 방에 아직 읽지 않은 남의 글이 있거나 받은 초대가 있는지 본다(방 새 소식 점).
+	/**
+	 * 들어간 방에 아직 읽지 않은 남의 글이 있거나 받은 초대가 있는지 본다(방 새 소식 점).
+	 *
+	 * @param me 확인할 회원 ID
+	 * @return 새 소식이 있으면 true
+	 */
 	@Transactional(readOnly = true)
 	public boolean hasNews(long me) {
 		return members.existsUnread(me) || invites.existsByUserId(me);

@@ -54,13 +54,23 @@ public class CardSpeaker {
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
 
-	// 그림을 붙이거나, type이 null이면 뗀다.
+	/**
+	 * 그림을 붙이거나, type이 null이면 뗀다.
+	 *
+	 * @param type DEFAULT·PROFILE(null이면 뗌)
+	 * @param id 기본 화자 id 또는 회원 ID(글자)
+	 */
 	public void setCharacter(String type, String id) {
 		this.characterType = type;
 		this.characterId = type == null ? null : id;
 	}
 
-	// Card.addSpeaker에서만 만든다.
+	/**
+	 * Card.addSpeaker에서만 만든다.
+	 *
+	 * @param card 화자가 속한 카드
+	 * @param speakerKey 화자 key(예: 화자1)
+	 */
 	CardSpeaker(Card card, String speakerKey) {
 		this.card = card;
 		this.speakerKey = speakerKey;

@@ -25,7 +25,7 @@ public class ComicQueryService {
 	private final StorageDeletions deletions;
 	private final TransactionTemplate tx;
 
-	// 만화 저장소와 이미지 저장소를 받는다.
+	/** 만화 저장소와 이미지 저장소를 받는다. */
 	public ComicQueryService(ComicRepository comics, ImageStorage storage, StorageDeletions deletions,
 			TransactionTemplate tx) {
 		this.comics = comics;
@@ -34,7 +34,15 @@ public class ComicQueryService {
 		this.tx = tx;
 	}
 
-	// 내 만화 목록을 정렬해 페이지로 돌려준다.
+	/**
+	 * 내 만화 목록을 정렬해 페이지로 돌려준다.
+	 *
+	 * @param userId 목록을 보는 회원 ID
+	 * @param cursor 앞 페이지의 다음 커서(null이면 첫 페이지)
+	 * @param size 페이지 크기(1~50, null이면 20)
+	 * @param sort 정렬(latest 또는 oldest, null이면 latest)
+	 * @return 만화 목록 한 페이지와 다음 커서
+	 */
 	public ComicPage list(long userId, String cursor, Integer size, String sort) {
 		PageSort order = PageSort.of(sort);
 		PageRequestParams params = PageRequestParams.of(cursor, size);
@@ -47,13 +55,24 @@ public class ComicQueryService {
 				more ? String.valueOf(shown.getLast().getId()) : null);
 	}
 
-	// 내 만화 하나를 돌려준다.
+	/**
+	 * 내 만화 하나를 돌려준다.
+	 *
+	 * @param userId 요청한 회원 ID
+	 * @param id 만화 ID
+	 * @return 만화 하나
+	 */
 	public ComicResponse detail(long userId, long id) {
 		return toResponse(comics.findByIdAndUserId(id, userId).orElseThrow(ComicQueryService::notFound));
 	}
 
-	// 만드는 중인 만화도 지울 수 있다. 작업(jobs)은 DB가 함께 지우고(ON DELETE CASCADE), 워커의 다음 요청은 404가 된다.
-	// 만들기 횟수(comic_count)는 그대로다(지운 만화도 셈). LOLog-docs PR #27
+	/**
+	 * 만드는 중인 만화도 지울 수 있다. 작업(jobs)은 DB가 함께 지우고(ON DELETE CASCADE), 워커의 다음 요청은 404가 된다.
+	 * 만들기 횟수(comic_count)는 그대로다(지운 만화도 셈). LOLog-docs PR #27
+	 *
+	 * @param userId 요청한 회원 ID
+	 * @param id 지울 만화 ID
+	 */
 	public void delete(long userId, long id) {
 		tx.executeWithoutResult(status -> {
 			Comic found = comics.findByIdAndUserIdForUpdate(id, userId).orElseThrow(ComicQueryService::notFound);
@@ -63,7 +82,12 @@ public class ComicQueryService {
 		});
 	}
 
-	// 만화를 앱 응답 모양으로 바꾼다.
+	/**
+	 * 만화를 앱 응답 모양으로 바꾼다.
+	 *
+	 * @param comic 바꿀 만화
+	 * @return 앱에 줄 만화 응답
+	 */
 	private ComicResponse toResponse(Comic comic) {
 		String url = comic.getStatus() == ComicStatus.DONE && comic.getImageKey() != null
 				? storage.presignedUrl(comic.getImageKey()).toString() : null;

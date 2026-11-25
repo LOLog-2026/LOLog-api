@@ -13,24 +13,58 @@ import org.springframework.data.repository.query.Param;
 // 연결한 블로그 DB 조회.
 public interface BlogSourceRepository extends JpaRepository<BlogSource, Long> {
 
-	// 같은 피드를 이미 연결했는지 본다.
+	/**
+	 * 같은 피드를 이미 연결했는지 본다.
+	 *
+	 * @param userId 연결하려는 회원 ID
+	 * @param feedUrl RSS 주소
+	 * @return 이미 연결했으면 true
+	 */
 	boolean existsByUserIdAndFeedUrl(Long userId, String feedUrl);
 
-	// 내 블로그인지 본다.
+	/**
+	 * 내 블로그인지 본다.
+	 *
+	 * @param id 블로그 ID
+	 * @param userId 요청한 회원 ID
+	 * @return 그 회원의 블로그면 true
+	 */
 	boolean existsByIdAndUserId(Long id, Long userId);
 
-	// 내 블로그 하나를 찾는다.
+	/**
+	 * 내 블로그 하나를 찾는다.
+	 *
+	 * @param id 블로그 ID
+	 * @param userId 요청한 회원 ID
+	 * @return 그 회원의 블로그. 없거나 남의 블로그면 비어 있음
+	 */
 	Optional<BlogSource> findByIdAndUserId(Long id, Long userId);
 
-	// 내 블로그 목록(연결한 순서).
+	/**
+	 * 내 블로그 목록(연결한 순서).
+	 *
+	 * @param userId 요청한 회원 ID
+	 * @return ID 오름차순 블로그 목록
+	 */
 	List<BlogSource> findAllByUserIdOrderById(Long userId);
 
-	// 내 블로그 행을 잠그고 찾는다. 카테고리 바꾸기와 끊기가 엇갈리지 않게 한다.
+	/**
+	 * 내 블로그 행을 잠그고 찾는다. 카테고리 바꾸기와 끊기가 엇갈리지 않게 한다.
+	 *
+	 * @param id 블로그 ID
+	 * @param userId 요청한 회원 ID
+	 * @return 잠근 블로그. 없거나 남의 블로그면 비어 있음
+	 */
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select s from BlogSource s where s.id = :id and s.userId = :userId")
 	Optional<BlogSource> findByIdAndUserIdForUpdate(@Param("id") Long id, @Param("userId") Long userId);
 
-	// 블로그 행을 잠그고 찾는다. 주기적으로 읽는 사이 연결을 끊었는지 본다.
+	/**
+	 * 블로그 행을 잠그고 찾는다. 주기적으로 읽는 사이 연결을 끊었는지 본다.
+	 *
+	 * @param id 블로그 ID
+	 * @return 잠근 블로그. 끊었으면 비어 있음
+	 */
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select s from BlogSource s where s.id = :id")
 	Optional<BlogSource> findByIdForUpdate(@Param("id") Long id);
@@ -39,12 +73,23 @@ public interface BlogSourceRepository extends JpaRepository<BlogSource, Long> {
 	@Query("select s.id from BlogSource s order by s.id")
 	List<Long> findAllIds();
 
-	// 회원의 블로그 연결을 모두 지운다(탈퇴).
+	/**
+	 * 회원의 블로그 연결을 모두 지운다(탈퇴).
+	 *
+	 * @param userId 탈퇴한 회원 ID
+	 * @return 지운 행 수
+	 */
 	@Modifying(flushAutomatically = true, clearAutomatically = true)
 	@Query("delete from BlogSource s where s.userId = :userId")
 	int deleteAllByUserId(@Param("userId") Long userId);
 
-	// 내 블로그 하나를 지운다. 지운 줄 수를 돌려준다(0이면 없거나 남의 블로그). 한 문장이라 동시에 끊어도 오류가 나지 않는다.
+	/**
+	 * 내 블로그 하나를 지운다. 지운 줄 수를 돌려준다(0이면 없거나 남의 블로그). 한 문장이라 동시에 끊어도 오류가 나지 않는다.
+	 *
+	 * @param id 지울 블로그 ID
+	 * @param userId 요청한 회원 ID
+	 * @return 지운 행 수
+	 */
 	@Modifying(flushAutomatically = true, clearAutomatically = true)
 	@Query("delete from BlogSource s where s.id = :id and s.userId = :userId")
 	int deleteMine(@Param("id") Long id, @Param("userId") Long userId);

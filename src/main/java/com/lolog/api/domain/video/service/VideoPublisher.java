@@ -32,6 +32,7 @@ public class VideoPublisher {
 	private final ObjectMapper objectMapper;
 	private final TransactionTemplate tx;
 
+	/** 큐에 넣는 데 필요한 저장소와 도구를 받는다. */
 	public VideoPublisher(JobRepository jobs, VideoRepository videos, StringRedisTemplate redis, ObjectMapper objectMapper,
 			PlatformTransactionManager transactionManager) {
 		this.jobs = jobs;
@@ -43,15 +44,32 @@ public class VideoPublisher {
 		this.tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
 	}
 
-	// 3호에 보내는 목소리 단계 메시지.
+	/**
+	 * 3호에 보내는 목소리 단계 메시지.
+	 *
+	 * @param jobId 목소리 단계 작업 ID
+	 * @param videoId 영상 ID
+	 * @param cardId 영상을 만들 카드 ID. 카드를 지웠으면 null
+	 */
 	record VoiceMessage(Long jobId, Long videoId, Long cardId) {
 	}
 
-	// 2호에 보내는 그림 단계 메시지.
+	/**
+	 * 2호에 보내는 그림 단계 메시지.
+	 *
+	 * @param jobId 그림 단계 작업 ID
+	 * @param kind 작업 종류(늘 "video")
+	 * @param videoId 영상 ID
+	 * @param cardId 영상을 만든 카드 ID. 카드를 지웠으면 null
+	 */
 	record DrawMessage(Long jobId, String kind, Long videoId, Long cardId) {
 	}
 
-	// 실패해도 오류를 넘기지 않는다. 못 넣은 작업은 다시 넣기에서 넣는다.
+	/**
+	 * 실패해도 오류를 넘기지 않는다. 못 넣은 작업은 다시 넣기에서 넣는다.
+	 *
+	 * @param jobId 큐에 넣을 영상 작업 ID
+	 */
 	public void publishQuietly(Long jobId) {
 		try {
 			publish(jobId);
@@ -69,7 +87,11 @@ public class VideoPublisher {
 		jobs.findUnpublishedIds("VIDEO_DRAW", before).forEach(this::publishQuietly);
 	}
 
-	// 작업 단계에 맞는 스트림에 메시지를 넣는다.
+	/**
+	 * 작업 단계에 맞는 스트림에 메시지를 넣는다.
+	 *
+	 * @param jobId 넣을 영상 작업 ID. 이미 시도한 작업이면 넣지 않는다
+	 */
 	private void publish(Long jobId) {
 		tx.executeWithoutResult(status -> {
 			Job job = jobs.findById(jobId).orElseThrow();

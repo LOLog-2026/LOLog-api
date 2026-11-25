@@ -59,6 +59,7 @@ public class UserDataService {
 	private final UserBlockRepository blocks;
 	private final UserProfileRepository profiles;
 
+	/** 회원 데이터를 지우는 데 쓰는 저장소와 도구를 받는다. */
 	public UserDataService(ImageStorage storage, TransactionTemplate tx, DeviceTokenService deviceTokens,
 			RoomService rooms, JobRepository jobs, ComicRepository comics, VideoRepository videos, CardRepository cards,
 			TextRepository texts, BlogPostRepository blogPosts, BlogSourceRepository blogSources,
@@ -94,7 +95,11 @@ public class UserDataService {
 		this.profiles = profiles;
 	}
 
-	// 회원 한 명의 데이터를 지운다.
+	/**
+	 * 회원 한 명의 데이터를 지운다.
+	 *
+	 * @param userId 탈퇴한 회원 ID
+	 */
 	public void delete(long userId) {
 		// 한 트랜잭션에서 지운다. 화자·대사·묶음은 DB가 함께 지운다(ON DELETE CASCADE).
 		// 진행 중인 감지·만화 작업도 지워지므로 워커의 다음 요청은 404·400이 된다(작업 취소).

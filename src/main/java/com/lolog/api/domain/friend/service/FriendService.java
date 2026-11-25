@@ -49,7 +49,7 @@ public class FriendService {
 	private final CharacterDetacher detacher;
 	private final CharacterViews characters;
 
-	// 친구 기능에 필요한 저장소와 도구를 받는다.
+	/** 친구 기능에 필요한 저장소와 도구를 받는다. */
 	public FriendService(FriendshipRepository friendships, UserBlockRepository blocks, UserProfileRepository profiles,
 			FriendCodeAttemptLimiter limiter, PushService push, CharacterDetacher detacher, CharacterViews characters) {
 		this.friendships = friendships;
@@ -61,7 +61,14 @@ public class FriendService {
 		this.characters = characters;
 	}
 
-	// 친구 코드나 같은 방 멤버의 userId(초안)로 요청한다. 상대가 이미 나에게 요청해 뒀으면 새 줄 없이 그 줄을 ACCEPTED로 바꾼다(푸시 없음).
+	/**
+	 * 친구 코드나 같은 방 멤버의 userId(초안)로 요청한다. 상대가 이미 나에게 요청해 뒀으면 새 줄 없이 그 줄을 ACCEPTED로 바꾼다(푸시 없음).
+	 *
+	 * @param me 요청하는 회원 ID
+	 * @param friendCode 상대 친구 코드(userId와 둘 중 하나, 아니면 null)
+	 * @param userId 같은 방 멤버의 회원 ID(friendCode와 둘 중 하나, 아니면 null)
+	 * @return 보낸 요청(상대가 먼저 요청했으면 ACCEPTED)
+	 */
 	@Transactional
 	public FriendRequestResponse sendRequest(long me, String friendCode, Long userId) {
 		if ((friendCode == null) == (userId == null)) {
@@ -120,7 +127,13 @@ public class FriendService {
 		return new FriendRequestResponse(created.getId(), "SENT", user, PENDING, created.getCreatedAt());
 	}
 
-	// direction은 received(내가 받음)·sent(내가 보냄). 최신순.
+	/**
+	 * direction은 received(내가 받음)·sent(내가 보냄). 최신순.
+	 *
+	 * @param me 요청한 회원 ID
+	 * @param direction received 또는 sent
+	 * @return 대기 중인 친구 요청 목록
+	 */
 	@Transactional(readOnly = true)
 	public FriendRequestList requests(long me, String direction) {
 		boolean received;
@@ -149,7 +162,13 @@ public class FriendService {
 		return new FriendRequestList(list);
 	}
 
-	// 내가 받은 요청만 수락할 수 있다. 보낸 사람이 수락하려 하면 없는 요청과 같은 404다.
+	/**
+	 * 내가 받은 요청만 수락할 수 있다. 보낸 사람이 수락하려 하면 없는 요청과 같은 404다.
+	 *
+	 * @param me 요청을 받은 회원 ID
+	 * @param requestId 수락할 친구 요청 ID
+	 * @return 새 친구
+	 */
 	@Transactional
 	public FriendItem acceptRequest(long me, long requestId) {
 		long requester = receivedRequest(me, requestId).getRequesterId();
@@ -162,7 +181,12 @@ public class FriendService {
 		return friendItem(request, profiles.findById(requester).orElseThrow());
 	}
 
-	// 받은 요청 거절, 보낸 요청 취소. 상대에게 알리지 않는다.
+	/**
+	 * 받은 요청 거절, 보낸 요청 취소. 상대에게 알리지 않는다.
+	 *
+	 * @param me 요청을 보냈거나 받은 회원 ID
+	 * @param requestId 지울 친구 요청 ID
+	 */
 	@Transactional
 	public void deleteRequest(long me, long requestId) {
 		if (friendships.deletePendingOf(requestId, me) == 0) {
@@ -170,7 +194,12 @@ public class FriendService {
 		}
 	}
 
-	// 최근에 친구가 된 사람이 위. 친구가 100명까지라 한 번에 다 준다.
+	/**
+	 * 최근에 친구가 된 사람이 위. 친구가 100명까지라 한 번에 다 준다.
+	 *
+	 * @param me 요청한 회원 ID
+	 * @return 내 친구 목록
+	 */
 	@Transactional(readOnly = true)
 	public FriendList friends(long me) {
 		List<Friendship> rows = friendships.findFriendsOf(me);
@@ -186,16 +215,27 @@ public class FriendService {
 		return new FriendList(list);
 	}
 
-	// 친구가 아니어도 204다. 끊으면 서로의 프로필 캐릭터가 상대 카드 화자에서 빠진다(characters.md 3장).
+	/**
+	 * 친구가 아니어도 204다. 끊으면 서로의 프로필 캐릭터가 상대 카드 화자에서 빠진다(characters.md 3장).
+	 *
+	 * @param me 요청한 회원 ID
+	 * @param userId 친구를 끊을 회원 ID
+	 */
 	@Transactional
 	public void unfriend(long me, long userId) {
 		detacher.detachBetween(me, userId);
 		friendships.deleteAcceptedBetween(me, userId);
 	}
 
-	// 회원이면 누구나 차단할 수 있다(사용자 결정, 2026-11-11). 친구를 차단하면 친구 관계가 저절로 끊긴다.
-	// 차단하면 두 사람 사이의 친구 관계와 요청을 지운다. 이미 차단했으면 그대로 204다(숨기기 설정은 PATCH로 바꾼다).
-	// 메인 백엔드는 인증 DB를 보지 않으므로, 프로필이 없는 회원 ID는 없는 회원과 같은 404다.
+	/**
+	 * 회원이면 누구나 차단할 수 있다(사용자 결정, 2026-11-11). 친구를 차단하면 친구 관계가 저절로 끊긴다.
+	 * 차단하면 두 사람 사이의 친구 관계와 요청을 지운다. 이미 차단했으면 그대로 204다(숨기기 설정은 PATCH로 바꾼다).
+	 * 메인 백엔드는 인증 DB를 보지 않으므로, 프로필이 없는 회원 ID는 없는 회원과 같은 404다.
+	 *
+	 * @param me 차단하는 회원 ID
+	 * @param userId 차단할 회원 ID
+	 * @param hideInRooms 같은 방에서 그 사람 글을 숨길지
+	 */
 	@Transactional
 	public void block(long me, long userId, boolean hideInRooms) {
 		if (userId == me) {
@@ -214,7 +254,13 @@ public class FriendService {
 		blocks.save(new UserBlock(me, userId, hideInRooms));
 	}
 
-	// 방에서 그 사람 글 숨기기 설정을 바꾼다. 차단한 사람이 아니면 404(초안).
+	/**
+	 * 방에서 그 사람 글 숨기기 설정을 바꾼다. 차단한 사람이 아니면 404(초안).
+	 *
+	 * @param me 차단한 회원 ID
+	 * @param userId 차단된 회원 ID
+	 * @param hideInRooms 같은 방에서 그 사람 글을 숨길지
+	 */
 	@Transactional
 	public void updateBlock(long me, long userId, boolean hideInRooms) {
 		blocks.findById(new UserBlock.Key(me, userId))
@@ -222,7 +268,12 @@ public class FriendService {
 			.changeHideInRooms(hideInRooms);
 	}
 
-	// 차단한 사람 목록(최신순).
+	/**
+	 * 차단한 사람 목록(최신순).
+	 *
+	 * @param me 요청한 회원 ID
+	 * @return 내가 차단한 사람 목록
+	 */
 	@Transactional(readOnly = true)
 	public BlockList blocks(long me) {
 		List<UserBlock> rows = blocks.findAllByBlockerIdOrderByCreatedAtDescBlockedIdDesc(me);
@@ -239,42 +290,78 @@ public class FriendService {
 		return new BlockList(list);
 	}
 
-	// 차단을 풀어도 친구로 돌아가지 않는다. 차단한 적 없어도 204다.
+	/**
+	 * 차단을 풀어도 친구로 돌아가지 않는다. 차단한 적 없어도 204다.
+	 *
+	 * @param me 차단한 회원 ID
+	 * @param userId 차단을 풀 회원 ID
+	 */
 	@Transactional
 	public void unblock(long me, long userId) {
 		blocks.deleteBlock(me, userId);
 	}
 
-	// 받은 친구 요청이 있는지 본다(알림 화면의 친구 새 소식 점).
+	/**
+	 * 받은 친구 요청이 있는지 본다(알림 화면의 친구 새 소식 점).
+	 *
+	 * @param me 확인할 회원 ID
+	 * @return 대기 중인 받은 요청이 있으면 true
+	 */
 	@Transactional(readOnly = true)
 	public boolean hasReceivedRequests(long me) {
 		return friendships.existsByAddresseeIdAndStatus(me, FriendshipStatus.PENDING);
 	}
 
-	// 닉네임이 없으면(프로필이 없는 경우 포함) 요청을 보내거나 수락할 수 없다.
+	/**
+	 * 닉네임이 없으면(프로필이 없는 경우 포함) 요청을 보내거나 수락할 수 없다.
+	 *
+	 * @param userId 확인할 회원 ID
+	 */
 	private void requireNickname(long userId) {
 		if (profiles.findById(userId).map(UserProfile::getNickname).isEmpty()) {
 			throw new ApiException(ErrorCode.PROFILE_REQUIRED);
 		}
 	}
 
-	// 두 사람의 프로필 줄을 회원 ID 순서로 잠근다(교착 막기). 프로필이 없는 쪽은 잠그지 않는다.
+	/**
+	 * 두 사람의 프로필 줄을 회원 ID 순서로 잠근다(교착 막기). 프로필이 없는 쪽은 잠그지 않는다.
+	 *
+	 * @param a 한쪽 회원 ID
+	 * @param b 다른 쪽 회원 ID
+	 */
 	private void lockPair(long a, long b) {
 		profiles.findAllByIdForUpdate(List.of(Math.min(a, b), Math.max(a, b)));
 	}
 
-	// blocker가 blockedUser를 차단했는지 본다.
+	/**
+	 * blocker가 blockedUser를 차단했는지 본다.
+	 *
+	 * @param blocker 차단했는지 볼 회원 ID
+	 * @param blockedUser 차단됐는지 볼 회원 ID
+	 * @return 차단했으면 true
+	 */
 	private boolean blocked(long blocker, long blockedUser) {
 		return blocks.existsById(new UserBlock.Key(blocker, blockedUser));
 	}
 
-	// 내가 받은 대기 중인 요청을 찾는다. 없으면 404다.
+	/**
+	 * 내가 받은 대기 중인 요청을 찾는다. 없으면 404다.
+	 *
+	 * @param me 요청을 받은 회원 ID
+	 * @param requestId 친구 요청 ID
+	 * @return 대기 중인 받은 요청
+	 */
 	private Friendship receivedRequest(long me, long requestId) {
 		return friendships.findByIdAndAddresseeIdAndStatus(requestId, me, FriendshipStatus.PENDING)
 			.orElseThrow(FriendService::requestNotFound);
 	}
 
-	// 나나 상대의 친구가 이미 100명이면 409.
+	/**
+	 * 나나 상대의 친구가 이미 100명이면 409.
+	 *
+	 * @param a 한쪽 회원 ID
+	 * @param b 다른 쪽 회원 ID
+	 */
 	private void checkLimit(long a, long b) {
 		for (long userId : new long[] { a, b }) {
 			if (friendships.countFriendsOf(userId) >= FRIEND_LIMIT) {
@@ -283,23 +370,44 @@ public class FriendService {
 		}
 	}
 
-	// 회원 한 명의 닉네임과 친구 코드를 읽는다.
+	/**
+	 * 회원 한 명의 닉네임과 친구 코드를 읽는다.
+	 *
+	 * @param userId 읽을 회원 ID(프로필이 있어야 함)
+	 * @return 상대 정보
+	 */
 	private FriendUser friendUser(long userId) {
 		return friendUser(profiles.findById(userId).orElseThrow());
 	}
 
-	// 프로필을 FriendUser로 바꾼다.
+	/**
+	 * 프로필을 FriendUser로 바꾼다.
+	 *
+	 * @param p 상대 프로필
+	 * @return 상대 정보
+	 */
 	private static FriendUser friendUser(UserProfile p) {
 		return new FriendUser(p.getUserId(), p.getNickname(), p.getFriendCode());
 	}
 
-	// 친구 줄과 친구의 프로필로 친구 목록 한 줄을 만든다. 친구가 된 시각은 ACCEPTED로 바꾼 updated_at이다.
+	/**
+	 * 친구 줄과 친구의 프로필로 친구 목록 한 줄을 만든다. 친구가 된 시각은 ACCEPTED로 바꾼 updated_at이다.
+	 *
+	 * @param f ACCEPTED인 친구 줄
+	 * @param p 친구의 프로필
+	 * @return 친구 목록 한 줄
+	 */
 	private FriendItem friendItem(Friendship f, UserProfile p) {
 		return new FriendItem(p.getUserId(), p.getNickname(), p.getFriendCode(), f.getUpdatedAt(),
 				characters.friendCharacter(p.getCharacterThumbKey()));
 	}
 
-	// 회원 ID로 프로필을 한 번에 읽는다.
+	/**
+	 * 회원 ID로 프로필을 한 번에 읽는다.
+	 *
+	 * @param userIds 읽을 회원 ID들
+	 * @return 회원 ID별 프로필(프로필이 없는 회원은 빠짐)
+	 */
 	private Map<Long, UserProfile> profilesOf(Collection<Long> userIds) {
 		Map<Long, UserProfile> result = new HashMap<>();
 		if (!userIds.isEmpty()) {

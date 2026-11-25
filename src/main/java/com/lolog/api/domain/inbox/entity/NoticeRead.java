@@ -19,7 +19,12 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class NoticeRead {
 
-	// 기본 키(notice_id, user_id)
+	/**
+	 * 기본 키(notice_id, user_id)
+	 *
+	 * @param noticeId 읽은 공지 ID
+	 * @param userId 공지를 읽은 회원 ID
+	 */
 	public record Key(Long noticeId, Long userId) implements Serializable {
 	}
 

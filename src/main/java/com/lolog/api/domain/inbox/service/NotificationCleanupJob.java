@@ -16,7 +16,7 @@ public class NotificationCleanupJob {
 
 	private final NotificationRepository notifications;
 
-	// 알림 리포지토리를 받는다.
+	/** 알림 리포지토리를 받는다. */
 	public NotificationCleanupJob(NotificationRepository notifications) {
 		this.notifications = notifications;
 	}

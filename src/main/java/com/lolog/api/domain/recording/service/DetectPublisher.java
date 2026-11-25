@@ -38,7 +38,7 @@ public class DetectPublisher {
 	private final ObjectMapper objectMapper;
 	private final TransactionTemplate tx;
 
-	// 큐에 넣는 데 필요한 저장소와 도구를 받는다.
+	/** 큐에 넣는 데 필요한 저장소와 도구를 받는다. */
 	public DetectPublisher(JobRepository jobs, RecordingPartRepository parts, StringRedisTemplate redis,
 			ObjectMapper objectMapper, PlatformTransactionManager transactionManager) {
 		this.jobs = jobs;
@@ -50,7 +50,11 @@ public class DetectPublisher {
 		this.tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
 	}
 
-	// 실패해도 앱에는 이미 저장된 것이므로 오류를 넘기지 않는다. 대화 글은 로그에 남기지 않는다.
+	/**
+	 * 실패해도 앱에는 이미 저장된 것이므로 오류를 넘기지 않는다. 대화 글은 로그에 남기지 않는다.
+	 *
+	 * @param jobId 큐에 넣을 감지 작업 ID
+	 */
 	public void publishQuietly(Long jobId) {
 		try {
 			publish(jobId);
@@ -67,7 +71,11 @@ public class DetectPublisher {
 		jobs.findUnpublishedIds("DETECT", OffsetDateTime.now().minusMinutes(1)).forEach(this::publishQuietly);
 	}
 
-	// 작업 하나를 감지 메시지로 만들어 스트림에 넣고 넣었다고 표시한다.
+	/**
+	 * 작업 하나를 감지 메시지로 만들어 스트림에 넣고 넣었다고 표시한다.
+	 *
+	 * @param jobId 넣을 감지 작업 ID. 이미 시도한 작업이면 넣지 않는다
+	 */
 	private void publish(Long jobId) {
 		tx.executeWithoutResult(status -> {
 			Job job = jobs.findById(jobId).orElseThrow();
@@ -88,7 +96,13 @@ public class DetectPublisher {
 		});
 	}
 
-	// 앞 묶음에서 넘겨받은 글(carryFromMs 이후)을 앞에 붙인 구간 목록.
+	/**
+	 * 앞 묶음에서 넘겨받은 글(carryFromMs 이후)을 앞에 붙인 구간 목록.
+	 *
+	 * @param part 감지할 묶음
+	 * @param all 같은 녹음의 묶음 전부
+	 * @return 넘겨받은 글 + 이 묶음의 문장
+	 */
 	List<Sentence> sentencesFor(RecordingPart part, List<RecordingPart> all) {
 		List<Sentence> result = new ArrayList<>();
 		RecordingPart previous = all.stream()
@@ -102,7 +116,13 @@ public class DetectPublisher {
 		return result;
 	}
 
-	// part까지의 묶음에 남은 글 중 part의 carryFromMs 이후 구간. 넘겨 둔 이야기는 앞 묶음에서 시작했을 수 있다.
+	/**
+	 * part까지의 묶음에 남은 글 중 part의 carryFromMs 이후 구간. 넘겨 둔 이야기는 앞 묶음에서 시작했을 수 있다.
+	 *
+	 * @param part 글을 넘겨 둔 묶음
+	 * @param all 같은 녹음의 묶음 전부
+	 * @return 넘겨 둔 문장(startMs 순). carryFromMs가 없으면 빈 목록
+	 */
 	public List<Sentence> carriedFrom(RecordingPart part, List<RecordingPart> all) {
 		if (part.getCarryFromMs() == null) {
 			return List.of();
@@ -116,7 +136,12 @@ public class DetectPublisher {
 			.toList();
 	}
 
-	// 묶음에 저장된 문장 JSON을 목록으로 바꾼다.
+	/**
+	 * 묶음에 저장된 문장 JSON을 목록으로 바꾼다.
+	 *
+	 * @param part 읽을 묶음
+	 * @return 문장 목록. 저장된 글이 없으면 빈 목록
+	 */
 	public List<Sentence> read(RecordingPart part) {
 		if (part.getSentences() == null) {
 			return List.of();

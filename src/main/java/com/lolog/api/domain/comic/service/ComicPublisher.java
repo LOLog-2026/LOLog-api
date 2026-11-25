@@ -30,7 +30,7 @@ public class ComicPublisher {
 	private final ObjectMapper objectMapper;
 	private final TransactionTemplate tx;
 
-	// 큐에 넣는 데 필요한 저장소와 도구를 받는다.
+	/** 큐에 넣는 데 필요한 저장소와 도구를 받는다. */
 	public ComicPublisher(JobRepository jobs, ComicRepository comics, StringRedisTemplate redis,
 			ObjectMapper objectMapper, PlatformTransactionManager transactionManager) {
 		this.jobs = jobs;
@@ -42,15 +42,31 @@ public class ComicPublisher {
 		this.tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
 	}
 
-	// lolog:comic의 payload 모양. API DTO 명세 4장 ComicMessage와 같다. 카드 내용은 워커가 /internal에서 받아 간다.
+	/**
+	 * lolog:comic의 payload 모양. API DTO 명세 4장 ComicMessage와 같다. 카드 내용은 워커가 /internal에서 받아 간다.
+	 *
+	 * @param jobId 만화 작업 ID
+	 * @param comicId 그릴 만화 ID
+	 * @param cardId 만화의 카드 ID
+	 */
 	record ComicMessage(Long jobId, Long comicId, Long cardId) {
 	}
 
-	// 프로필 캐릭터 작업(characters.md 큐). 만화와 같은 스트림을 써서 2호 젯슨 GPU 하나에서 차례로 돈다.
+	/**
+	 * 프로필 캐릭터 작업(characters.md 큐). 만화와 같은 스트림을 써서 2호 젯슨 GPU 하나에서 차례로 돈다.
+	 *
+	 * @param jobId 프로필 캐릭터 작업 ID
+	 * @param kind 작업 종류(항상 avatar)
+	 * @param userId 캐릭터를 만들 회원 ID
+	 */
 	record AvatarMessage(Long jobId, String kind, Long userId) {
 	}
 
-	// 작업을 큐에 넣고, 실패하면 로그만 남긴다.
+	/**
+	 * 작업을 큐에 넣고, 실패하면 로그만 남긴다.
+	 *
+	 * @param jobId 큐에 넣을 작업 ID(COMIC 또는 AVATAR)
+	 */
 	public void publishQuietly(Long jobId) {
 		try {
 			publish(jobId);
@@ -67,7 +83,11 @@ public class ComicPublisher {
 		jobs.findUnpublishedIds("AVATAR", OffsetDateTime.now().minusMinutes(1)).forEach(this::publishQuietly);
 	}
 
-	// 작업 하나를 메시지로 만들어 스트림에 넣고 넣었다고 표시한다.
+	/**
+	 * 작업 하나를 메시지로 만들어 스트림에 넣고 넣었다고 표시한다.
+	 *
+	 * @param jobId 큐에 넣을 작업 ID(이미 넣었으면 아무것도 하지 않음)
+	 */
 	private void publish(Long jobId) {
 		tx.executeWithoutResult(status -> {
 			Job job = jobs.findById(jobId).orElseThrow();

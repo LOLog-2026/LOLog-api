@@ -36,6 +36,7 @@ public class AdminService {
 	private final UserProfileRepository profiles;
 	private final UserSuspensionRepository suspensions;
 
+	/** 쓰는 저장소를 받는다. */
 	public AdminService(NoticeRepository notices, FeedbackRepository feedback, UserProfileRepository profiles,
 			UserSuspensionRepository suspensions) {
 		this.notices = notices;
@@ -46,7 +47,13 @@ public class AdminService {
 
 	// ---- 공지사항 ----
 
-	// 공지사항을 만든다.
+	/**
+	 * 공지사항을 만든다.
+	 *
+	 * @param title 제목(앞뒤 공백을 빼고 1~100자)
+	 * @param body 본문(앞뒤 공백을 빼고 1자 이상)
+	 * @return 만든 공지사항
+	 */
 	@Transactional
 	public Notice createNotice(String title, String body) {
 		String t = title(title);
@@ -54,7 +61,14 @@ public class AdminService {
 		return notice(notices.save(new com.lolog.api.domain.inbox.entity.Notice(t, b)));
 	}
 
-	// 바꾼 것만 보낸다. 둘 다 없으면 그대로 돌려준다.
+	/**
+	 * 바꾼 것만 보낸다. 둘 다 없으면 그대로 돌려준다.
+	 *
+	 * @param id 고칠 공지사항 ID
+	 * @param title 새 제목. 바꾸지 않으면 null
+	 * @param body 새 본문. 바꾸지 않으면 null
+	 * @return 고친 뒤의 공지사항
+	 */
 	@Transactional
 	public Notice updateNotice(long id, String title, String body) {
 		com.lolog.api.domain.inbox.entity.Notice notice = findNotice(id);
@@ -69,7 +83,11 @@ public class AdminService {
 		return notice(notice);
 	}
 
-	// 읽음 기록은 외래 키로 함께 지워진다.
+	/**
+	 * 읽음 기록은 외래 키로 함께 지워진다.
+	 *
+	 * @param id 지울 공지사항 ID
+	 */
 	@Transactional
 	public void deleteNotice(long id) {
 		if (notices.deleteNotice(id) == 0) {
@@ -79,7 +97,12 @@ public class AdminService {
 
 	// ---- 회원 ----
 
-	// 닉네임과 친구 코드는 메인 백엔드에 있다. 프로필이 없거나 닉네임을 정하기 전이면 null이다.
+	/**
+	 * 닉네임과 친구 코드는 메인 백엔드에 있다. 프로필이 없거나 닉네임을 정하기 전이면 null이다.
+	 *
+	 * @param userId 조회할 회원 ID
+	 * @return 닉네임과 친구 코드. 없으면 둘 다 null
+	 */
 	@Transactional(readOnly = true)
 	public AdminUser user(long userId) {
 		return profiles.findById(userId)
@@ -88,13 +111,22 @@ public class AdminService {
 			.orElse(new AdminUser(null, null));
 	}
 
-	// 인증 서비스가 정지할 때 부른다. 다시 부르면 기한을 바꾼다.
+	/**
+	 * 인증 서비스가 정지할 때 부른다. 다시 부르면 기한을 바꾼다.
+	 *
+	 * @param userId 정지할 회원 ID
+	 * @param until 정지가 풀리는 일시. 영구 정지면 null
+	 */
 	@Transactional
 	public void suspend(long userId, OffsetDateTime until) {
 		suspensions.upsert(userId, until);
 	}
 
-	// 관리자가 먼저 풀었을 때. 기한이 지나 풀릴 때는 부르지 않는다(기한으로 판단).
+	/**
+	 * 관리자가 먼저 풀었을 때. 기한이 지나 풀릴 때는 부르지 않는다(기한으로 판단).
+	 *
+	 * @param userId 정지를 풀 회원 ID
+	 */
 	@Transactional
 	public void unsuspend(long userId) {
 		suspensions.deleteAllByUserId(userId);
@@ -102,7 +134,13 @@ public class AdminService {
 
 	// ---- 오류 신고·의견 ----
 
-	// 한 사람이 24시간 안에 10번까지 보낸다. 동시에 보내도 넘지 않게 회원마다 잠근다.
+	/**
+	 * 한 사람이 24시간 안에 10번까지 보낸다. 동시에 보내도 넘지 않게 회원마다 잠근다.
+	 *
+	 * @param me 보내는 회원 ID(토큰의 sub)
+	 * @param request 분류(BUG·OPINION), 내용, 앱 버전, 기기 모델
+	 * @return 저장한 오류 신고·의견
+	 */
 	@Transactional
 	public FeedbackItem send(long me, FeedbackRequest request) {
 		String category = request.category();
@@ -120,7 +158,13 @@ public class AdminService {
 		return item(feedback.save(new Feedback(me, category, text, appVersion, deviceModel)));
 	}
 
-	// 최근 것이 위. status가 없으면 전부.
+	/**
+	 * 최근 것이 위. status가 없으면 전부.
+	 *
+	 * @param status 처리 상태 필터(OPEN·DONE). null이면 전부
+	 * @param cursor 앞 페이지에서 받은 nextCursor(마지막으로 받은 항목 ID). null이면 처음부터
+	 * @return 최대 20개 목록과 다음 cursor(마지막 페이지면 null)
+	 */
 	@Transactional(readOnly = true)
 	public FeedbackPage feedbackList(String status, String cursor) {
 		if (status != null && !Set.of("OPEN", "DONE").contains(status)) {
@@ -139,7 +183,13 @@ public class AdminService {
 		return new FeedbackPage(items, next);
 	}
 
-	// 오류 신고·의견의 처리 상태를 바꾼다.
+	/**
+	 * 오류 신고·의견의 처리 상태를 바꾼다.
+	 *
+	 * @param id 바꿀 오류 신고·의견 ID
+	 * @param status 새 처리 상태(OPEN·DONE)
+	 * @return 상태를 바꾼 오류 신고·의견
+	 */
 	@Transactional
 	public FeedbackItem markFeedback(long id, String status) {
 		if (!Set.of("OPEN", "DONE").contains(status == null ? "" : status)) {
@@ -152,33 +202,66 @@ public class AdminService {
 
 	// ---- 안에서 쓰는 것 ----
 
-	// 공지사항 하나를 찾는다. 없으면 NOTICE_NOT_FOUND.
+	/**
+	 * 공지사항 하나를 찾는다. 없으면 NOTICE_NOT_FOUND.
+	 *
+	 * @param id 찾을 공지사항 ID
+	 * @return 찾은 공지사항 엔티티
+	 */
 	private com.lolog.api.domain.inbox.entity.Notice findNotice(long id) {
 		return notices.findById(id).orElseThrow(AdminService::noticeNotFound);
 	}
 
-	// 공지사항을 응답 모양으로 바꾼다.
+	/**
+	 * 공지사항을 응답 모양으로 바꾼다.
+	 *
+	 * @param n 바꿀 공지사항 엔티티
+	 * @return 공지사항 응답
+	 */
 	private static Notice notice(com.lolog.api.domain.inbox.entity.Notice n) {
 		return new Notice(n.getId(), n.getTitle(), n.getBody(), n.getCreatedAt(), n.getUpdatedAt());
 	}
 
-	// 오류 신고·의견을 응답 모양으로 바꾼다.
+	/**
+	 * 오류 신고·의견을 응답 모양으로 바꾼다.
+	 *
+	 * @param f 바꿀 오류 신고·의견 엔티티
+	 * @return 오류 신고·의견 응답
+	 */
 	private static FeedbackItem item(Feedback f) {
 		return new FeedbackItem(f.getId(), f.getUserId(), f.getCategory(), f.getText(), f.getAppVersion(),
 				f.getDeviceModel(), f.getStatus(), f.getCreatedAt());
 	}
 
-	// 제목을 다듬고 길이를 확인한다.
+	/**
+	 * 제목을 다듬고 길이를 확인한다.
+	 *
+	 * @param title 받은 제목. null이면 빈 값으로 본다
+	 * @return 앞뒤 공백을 뺀 제목
+	 */
 	private static String title(String title) {
 		return trimmed(title, "title", TITLE_MAX, "제목은 1~100자예요.");
 	}
 
-	// 본문은 길이 제한이 없고 비어 있으면 안 된다(초안).
+	/**
+	 * 본문은 길이 제한이 없고 비어 있으면 안 된다(초안).
+	 *
+	 * @param body 받은 본문. null이면 빈 값으로 본다
+	 * @return 앞뒤 공백을 뺀 본문
+	 */
 	private static String body(String body) {
 		return trimmed(body, "body", Integer.MAX_VALUE, "본문을 적어 주세요.");
 	}
 
-	// 앞뒤 공백을 빼고 길이가 1~max자인지 확인한다.
+	/**
+	 * 앞뒤 공백을 빼고 길이가 1~max자인지 확인한다.
+	 *
+	 * @param value 확인할 값. null이면 빈 값으로 본다
+	 * @param field 길이가 맞지 않을 때 오류에 담을 필드 이름
+	 * @param max 최대 글자 수(코드 포인트 기준)
+	 * @param message 오류 안내 문장. 지금은 쓰이지 않는다
+	 * @return 앞뒤 공백을 뺀 값
+	 */
 	private static String trimmed(String value, String field, int max, String message) {
 		String s = value == null ? "" : value.strip();
 		int length = s.codePointCount(0, s.length());

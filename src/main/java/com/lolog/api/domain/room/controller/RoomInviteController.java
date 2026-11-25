@@ -21,6 +21,7 @@ public class RoomInviteController {
 	private final RoomService rooms;
 	private final CurrentUserProvider currentUser;
 
+	/** 쓰는 서비스와 현재 사용자 정보를 받는다. */
 	public RoomInviteController(RoomService rooms, CurrentUserProvider currentUser) {
 		this.rooms = rooms;
 		this.currentUser = currentUser;
@@ -32,13 +33,22 @@ public class RoomInviteController {
 		return rooms.receivedInvites(currentUser.currentUserId());
 	}
 
-	// 초대를 수락하고 방에 들어간다.
+	/**
+	 * 초대를 수락하고 방에 들어간다.
+	 *
+	 * @param inviteId 수락할 받은 초대 ID
+	 * @return 들어간 방
+	 */
 	@PostMapping("/{inviteId}/accept")
 	public RoomItem accept(@PathVariable Long inviteId) {
 		return rooms.acceptInvite(currentUser.currentUserId(), inviteId);
 	}
 
-	// 초대를 거절한다.
+	/**
+	 * 초대를 거절한다.
+	 *
+	 * @param inviteId 거절할 받은 초대 ID
+	 */
 	@DeleteMapping("/{inviteId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void decline(@PathVariable Long inviteId) {

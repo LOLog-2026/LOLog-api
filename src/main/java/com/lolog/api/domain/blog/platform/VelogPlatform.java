@@ -20,24 +20,48 @@ class VelogPlatform implements BlogPlatform {
 		return Platform.VELOG;
 	}
 
+	/**
+	 * velog.io나 v2.velog.io 주소인지 본다.
+	 *
+	 * @param siteUrl 사용자가 넣은 블로그 주소
+	 * @return velog 주소면 true
+	 */
 	@Override
 	public boolean supports(URI siteUrl) {
 		String host = BlogPlatform.host(siteUrl);
 		return host.equals("velog.io") || host.equals("v2.velog.io");
 	}
 
-	// velog 피드의 generator는 범용 라이브러리 이름이라, 블로그 첫 화면 주소(link)로 알아본다.
+	/**
+	 * velog 피드의 generator는 범용 라이브러리 이름이라, 블로그 첫 화면 주소(link)로 알아본다.
+	 *
+	 * @param feed 찾은 피드
+	 * @return velog 피드면 true
+	 */
 	@Override
 	public boolean supportsFeed(Feed feed) {
 		return feed.link() != null && feed.link().toLowerCase(java.util.Locale.ROOT).matches("^https?://velog\\.io(/.*)?$");
 	}
 
+	/**
+	 * 주소의 @{id}로 velog RSS 주소를 만든다.
+	 *
+	 * @param siteUrl 사용자가 넣은 블로그 주소
+	 * @return 먼저 읽어 볼 RSS 주소. 모양이 맞지 않으면 빈 목록
+	 */
 	@Override
 	public List<String> feedCandidates(URI siteUrl) {
 		Matcher m = siteUrl.getPath() == null ? null : USER.matcher(siteUrl.getPath());
 		return m != null && m.matches() ? List.of("https://v2.velog.io/rss/@" + m.group(1)) : List.of();
 	}
 
+	/**
+	 * 카테고리를 고를 수 없는 규칙을 돌려준다.
+	 *
+	 * @param siteUrl 블로그 주소(쓰지 않음)
+	 * @param feed 읽은 피드(쓰지 않음)
+	 * @return 고를 수 없는 규칙
+	 */
 	@Override
 	public Categories categories(URI siteUrl, Feed feed) {
 		return Categories.none();

@@ -13,35 +13,71 @@ public interface BlogPlatform {
 	// 이 구현이 맡은 플랫폼
 	Platform platform();
 
-	// 사용자가 넣은 주소가 이 플랫폼 주소인가
+	/**
+	 * 사용자가 넣은 주소가 이 플랫폼 주소인가
+	 *
+	 * @param siteUrl 사용자가 넣은 블로그 주소
+	 * @return 이 플랫폼 주소면 true
+	 */
 	boolean supports(URI siteUrl);
 
-	// 주소로 모를 때(자기 도메인을 붙인 블로그) 찾은 피드의 generator 등으로 알아본다.
+	/**
+	 * 주소로 모를 때(자기 도메인을 붙인 블로그) 찾은 피드의 generator 등으로 알아본다.
+	 *
+	 * @param feed 찾은 피드
+	 * @return 이 플랫폼 피드면 true
+	 */
 	default boolean supportsFeed(Feed feed) {
 		return false;
 	}
 
-	// 넣은 주소를 읽기 전에 먼저 시도할 RSS 주소(순서대로)
+	/**
+	 * 넣은 주소를 읽기 전에 먼저 시도할 RSS 주소(순서대로)
+	 *
+	 * @param siteUrl 사용자가 넣은 블로그 주소
+	 * @return 먼저 읽어 볼 RSS 주소. 없으면 빈 목록
+	 */
 	default List<String> feedCandidates(URI siteUrl) {
 		return List.of();
 	}
 
-	// 본문 칸. content:encoded가 있으면 그것, 없으면 description(Other도 같음, 정함 11-14)
+	/**
+	 * 본문 칸. content:encoded가 있으면 그것, 없으면 description(Other도 같음, 정함 11-14)
+	 *
+	 * @param item 피드의 글 하나
+	 * @return 글 본문 HTML. 없으면 null
+	 */
 	default String body(Item item) {
 		return item.body();
 	}
 
-	// 피드 하나를 읽을 때의 카테고리 규칙. WordPress처럼 사이트 단위로 목록을 받아 와야 하는 곳이 있어 피드마다 만든다.
+	/**
+	 * 피드 하나를 읽을 때의 카테고리 규칙. WordPress처럼 사이트 단위로 목록을 받아 와야 하는 곳이 있어 피드마다 만든다.
+	 *
+	 * @param siteUrl 블로그 주소
+	 * @param feed 읽은 피드
+	 * @return 이 피드에 쓸 카테고리 규칙
+	 */
 	default Categories categories(URI siteUrl, Feed feed) {
 		return Categories.plain();
 	}
 
-	// 주소의 호스트를 소문자로 돌려준다. 없으면 빈 글자.
+	/**
+	 * 주소의 호스트를 소문자로 돌려준다. 없으면 빈 글자.
+	 *
+	 * @param uri 호스트를 볼 주소
+	 * @return 소문자 호스트. 없으면 빈 글자
+	 */
 	static String host(URI uri) {
 		return uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
 	}
 
-	// 피드의 generator를 소문자로 돌려준다. 없으면 빈 글자.
+	/**
+	 * 피드의 generator를 소문자로 돌려준다. 없으면 빈 글자.
+	 *
+	 * @param feed 읽은 피드
+	 * @return 소문자 generator. 없으면 빈 글자
+	 */
 	static String generator(Feed feed) {
 		return feed.generator() == null ? "" : feed.generator().toLowerCase(Locale.ROOT);
 	}

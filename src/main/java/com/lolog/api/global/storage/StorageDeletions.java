@@ -32,6 +32,7 @@ public class StorageDeletions {
 	// 커밋 뒤에는 끝난 트랜잭션에 끼지 않게 새 트랜잭션으로 지운다.
 	private final TransactionTemplate tx;
 
+	/** 쓰는 저장소와 도구를 받는다. */
 	public StorageDeletions(StorageDeletionRepository deletions, ImageStorage storage,
 			PlatformTransactionManager transactionManager) {
 		this.deletions = deletions;
@@ -40,20 +41,32 @@ public class StorageDeletions {
 		this.tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
 	}
 
-	// 키 하나를 지운다. 부르는 쪽의 트랜잭션이 커밋되면 지운다(트랜잭션 밖이면 바로).
+	/**
+	 * 키 하나를 지운다. 부르는 쪽의 트랜잭션이 커밋되면 지운다(트랜잭션 밖이면 바로).
+	 *
+	 * @param key 지울 객체 키
+	 */
 	@Transactional
 	public void schedule(String key) {
 		add(key, false);
 	}
 
-	// prefix 아래를 모두 지운다. 부르는 쪽의 트랜잭션이 커밋되면 지운다(트랜잭션 밖이면 바로).
+	/**
+	 * prefix 아래를 모두 지운다. 부르는 쪽의 트랜잭션이 커밋되면 지운다(트랜잭션 밖이면 바로).
+	 *
+	 * @param prefix 지울 키 접두어(그 아래 전체)
+	 */
 	@Transactional
 	public void schedulePrefix(String prefix) {
 		add(prefix, true);
 	}
 
-	// 그 키에 파일을 다시 올리기 전에 부른다. 아직 못 지운 예전 지우기가 새 파일을 지우지 않게 뺀다.
-	// 지우는 중인 줄이면 끝날 때까지 기다린 뒤에 돌아와서, 그 뒤에 올린 파일은 지워지지 않는다. prefix 줄은 보지 않는다.
+	/**
+	 * 그 키에 파일을 다시 올리기 전에 부른다. 아직 못 지운 예전 지우기가 새 파일을 지우지 않게 뺀다.
+	 * 지우는 중인 줄이면 끝날 때까지 기다린 뒤에 돌아와서, 그 뒤에 올린 파일은 지워지지 않는다. prefix 줄은 보지 않는다.
+	 *
+	 * @param key 다시 올릴 객체 키
+	 */
 	@Transactional
 	public void cancel(String key) {
 		List<StorageDeletion> pending = deletions.findKeyForUpdate(key);
@@ -74,14 +87,24 @@ public class StorageDeletions {
 		}
 	}
 
-	// 줄을 넣고 커밋 뒤 지우기를 맡긴다.
+	/**
+	 * 줄을 넣고 커밋 뒤 지우기를 맡긴다.
+	 *
+	 * @param key 지울 객체 키 또는 접두어
+	 * @param prefix true면 key 아래 전체를 지운다
+	 */
 	private void add(String key, boolean prefix) {
 		long id = deletions.save(new StorageDeletion(key, prefix)).getId();
 		AfterCommit.run(() -> attempt(id));
 	}
 
-	// 줄 하나를 지운다. 지웠으면 줄을 빼고 true, 실패하면 횟수와 이유를 남기고 false.
-	// 다른 쪽이 지우는 중이거나 이미 지웠으면 false.
+	/**
+	 * 줄 하나를 지운다. 지웠으면 줄을 빼고 true, 실패하면 횟수와 이유를 남기고 false.
+	 * 다른 쪽이 지우는 중이거나 이미 지웠으면 false.
+	 *
+	 * @param id 지울 줄(storage_deletions) ID
+	 * @return 이번에 지웠으면 true
+	 */
 	boolean attempt(long id) {
 		Boolean deleted = tx.execute(status -> {
 			StorageDeletion deletion = deletions.findByIdForUpdateSkipLocked(id).orElse(null);
@@ -107,7 +130,12 @@ public class StorageDeletions {
 		return Boolean.TRUE.equals(deleted);
 	}
 
-	// 실패 이유. 예외 메시지는 남기지 않고 예외 종류와 저장소 오류 코드만 남긴다.
+	/**
+	 * 실패 이유. 예외 메시지는 남기지 않고 예외 종류와 저장소 오류 코드만 남긴다.
+	 *
+	 * @param e 지우다 난 예외
+	 * @return 예외 클래스 이름. 저장소 예외면 HTTP 상태와 저장소 오류 코드를 붙인다
+	 */
 	static String reason(RuntimeException e) {
 		if (e instanceof AwsServiceException aws) {
 			String code = aws.awsErrorDetails() == null ? null : aws.awsErrorDetails().errorCode();

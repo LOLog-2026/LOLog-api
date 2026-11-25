@@ -10,10 +10,20 @@ import org.springframework.data.repository.query.Param;
 // 녹음 묶음을 DB에서 읽고 쓴다.
 public interface RecordingPartRepository extends JpaRepository<RecordingPart, Long> {
 
-	// 녹음의 묶음을 순서대로 찾는다.
+	/**
+	 * 녹음의 묶음을 순서대로 찾는다.
+	 *
+	 * @param recordingId 녹음 ID
+	 * @return 묶음 목록(partNo 오름차순)
+	 */
 	List<RecordingPart> findByRecordingIdOrderByPartNo(Long recordingId);
 
-	// 넘길 글이 있는데 다음 묶음이 오지 않은 묶음(늦게 온 묶음 규칙). before보다 먼저 받은 것만.
+	/**
+	 * 넘길 글이 있는데 다음 묶음이 오지 않은 묶음(늦게 온 묶음 규칙). before보다 먼저 받은 것만.
+	 *
+	 * @param before 이 시각보다 먼저 받은 묶음만 본다
+	 * @return 그런 묶음이 있는 녹음 ID 목록(묶음 id 순)
+	 */
 	@Query("""
 			select p.recording.id from RecordingPart p
 			where p.status = com.lolog.api.domain.recording.entity.RecordingStatus.DONE and p.carryFromMs is not null and p.last = false
@@ -23,7 +33,12 @@ public interface RecordingPartRepository extends JpaRepository<RecordingPart, Lo
 			""")
 	List<Long> findRecordingIdsWaitingTooLong(@Param("before") OffsetDateTime before);
 
-	// 마지막 묶음까지 받은 녹음인지 본다.
+	/**
+	 * 마지막 묶음까지 받은 녹음인지 본다.
+	 *
+	 * @param recordingId 녹음 ID
+	 * @return 마지막 묶음(isLast)을 받았으면 true
+	 */
 	@Query("select count(p) > 0 from RecordingPart p where p.recording.id = :recordingId and p.last = true")
 	boolean existsLast(@Param("recordingId") Long recordingId);
 

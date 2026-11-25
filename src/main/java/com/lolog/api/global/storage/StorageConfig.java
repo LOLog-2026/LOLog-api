@@ -18,7 +18,12 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 @EnableConfigurationProperties(StorageProperties.class)
 public class StorageConfig {
 
-	// 업로드·삭제에 쓰는 저장소 클라이언트를 만든다.
+	/**
+	 * 업로드·삭제에 쓰는 저장소 클라이언트를 만든다.
+	 *
+	 * @param props 저장소 설정(lolog.storage.*)
+	 * @return 저장소 주소로 붙는 클라이언트(path-style)
+	 */
 	@Bean(destroyMethod = "close")
 	S3Client s3Client(StorageProperties props) {
 		return S3Client.builder()
@@ -29,7 +34,12 @@ public class StorageConfig {
 			.build();
 	}
 
-	// 앱에 줄 서명 주소를 공개 주소로 만드는 클라이언트를 만든다.
+	/**
+	 * 앱에 줄 서명 주소를 공개 주소로 만드는 클라이언트를 만든다.
+	 *
+	 * @param props 저장소 설정(lolog.storage.*)
+	 * @return 공개 주소로 서명하는 클라이언트(path-style)
+	 */
 	@Bean(destroyMethod = "close")
 	S3Presigner s3Presigner(StorageProperties props) {
 		return S3Presigner.builder()
@@ -40,7 +50,12 @@ public class StorageConfig {
 			.build();
 	}
 
-	// 저장소 접근 키를 만든다.
+	/**
+	 * 저장소 접근 키를 만든다.
+	 *
+	 * @param props 저장소 설정(lolog.storage.*)
+	 * @return 접근 키와 비밀 키로 만든 인증 정보
+	 */
 	private static StaticCredentialsProvider credentials(StorageProperties props) {
 		return StaticCredentialsProvider.create(AwsBasicCredentials.create(props.accessKey(), props.secretKey()));
 	}

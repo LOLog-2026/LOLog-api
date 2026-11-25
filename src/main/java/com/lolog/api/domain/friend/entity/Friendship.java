@@ -44,7 +44,12 @@ public class Friendship {
 	@Column(name = "updated_at", nullable = false, insertable = false)
 	private OffsetDateTime updatedAt;
 
-	// requester가 addressee에게 보낸 새 요청을 만든다.
+	/**
+	 * requester가 addressee에게 보낸 새 요청을 만든다.
+	 *
+	 * @param requesterId 요청을 보낸 회원 ID
+	 * @param addresseeId 요청을 받을 회원 ID
+	 */
 	public Friendship(Long requesterId, Long addresseeId) {
 		this.requesterId = requesterId;
 		this.addresseeId = addresseeId;
@@ -62,12 +67,22 @@ public class Friendship {
 		return status == FriendshipStatus.ACCEPTED;
 	}
 
-	// me가 보낸 요청인지 본다.
+	/**
+	 * me가 보낸 요청인지 본다.
+	 *
+	 * @param me 확인할 회원 ID
+	 * @return me가 보낸 요청이면 true
+	 */
 	public boolean isRequestedBy(long me) {
 		return requesterId == me;
 	}
 
-	// me가 아닌 쪽의 회원 ID.
+	/**
+	 * me가 아닌 쪽의 회원 ID.
+	 *
+	 * @param me 기준 회원 ID(이 줄의 한쪽)
+	 * @return 다른 쪽 회원 ID
+	 */
 	public long otherThan(long me) {
 		return requesterId == me ? addresseeId : requesterId;
 	}

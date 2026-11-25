@@ -26,20 +26,31 @@ public class ProfileService {
 	private final CharacterViews characters;
 	private final SecureRandom random = new SecureRandom();
 
-	// 프로필 리포지토리와 캐릭터 조회 도구를 받는다.
+	/** 프로필 리포지토리와 캐릭터 조회 도구를 받는다. */
 	public ProfileService(UserProfileRepository profiles, CharacterViews characters) {
 		this.profiles = profiles;
 		this.characters = characters;
 	}
 
-	// 내 프로필을 돌려준다. 없으면 먼저 만든다.
+	/**
+	 * 내 프로필을 돌려준다. 없으면 먼저 만든다.
+	 *
+	 * @param userId 요청한 회원 ID
+	 * @return 내 프로필
+	 */
 	@Transactional
 	public ProfileResponse get(long userId) {
 		ensure(userId);
 		return read(userId);
 	}
 
-	// 닉네임을 확인해 바꾸고 프로필을 돌려준다.
+	/**
+	 * 닉네임을 확인해 바꾸고 프로필을 돌려준다.
+	 *
+	 * @param userId 요청한 회원 ID
+	 * @param nickname 바꿀 닉네임(null 가능, 앞뒤 공백을 뺀 뒤 1~10자)
+	 * @return 바꾼 내 프로필
+	 */
 	@Transactional
 	public ProfileResponse updateNickname(long userId, String nickname) {
 		String trimmed = nickname == null ? "" : nickname.strip();
@@ -52,8 +63,12 @@ public class ProfileService {
 		return read(userId);
 	}
 
-	// 프로필이 없으면 만든다. 같은 사용자가 동시에 불러도 줄은 하나다(user_profiles_pk).
-	// 친구 코드가 겹쳐 넣지 못했으면 코드를 다시 뽑는다.
+	/**
+	 * 프로필이 없으면 만든다. 같은 사용자가 동시에 불러도 줄은 하나다(user_profiles_pk).
+	 * 친구 코드가 겹쳐 넣지 못했으면 코드를 다시 뽑는다.
+	 *
+	 * @param userId 프로필을 만들 회원 ID
+	 */
 	@Transactional
 	public void ensure(long userId) {
 		for (int i = 0; i < CODE_TRIES; i++) {
@@ -65,7 +80,12 @@ public class ProfileService {
 		throw new IllegalStateException("친구 코드를 발급하지 못했습니다.");
 	}
 
-	// 프로필을 읽어 응답 모양으로 바꾼다.
+	/**
+	 * 프로필을 읽어 응답 모양으로 바꾼다.
+	 *
+	 * @param userId 읽을 회원 ID(프로필이 있어야 함)
+	 * @return 프로필 응답
+	 */
 	private ProfileResponse read(long userId) {
 		UserProfile profile = profiles.findById(userId).orElseThrow();
 		String nickname = profile.getNickname();

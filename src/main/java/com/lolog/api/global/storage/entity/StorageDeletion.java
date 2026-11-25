@@ -40,13 +40,22 @@ public class StorageDeletion {
 	@Column(name = "last_error", length = MAX_ERROR)
 	private String lastError;
 
-	// 지울 키(또는 접두어)를 만든다.
+	/**
+	 * 지울 키(또는 접두어)를 만든다.
+	 *
+	 * @param objectKey 지울 키 또는 접두어
+	 * @param prefix true면 objectKey 아래 전체를 지운다
+	 */
 	public StorageDeletion(String objectKey, boolean prefix) {
 		this.objectKey = objectKey;
 		this.prefix = prefix;
 	}
 
-	// 지우기에 실패했다. 이유는 200자로 자른다.
+	/**
+	 * 지우기에 실패했다. 이유는 200자로 자른다.
+	 *
+	 * @param error 실패 이유(StorageDeletions.reason), 200자를 넘으면 자른다
+	 */
 	public void failed(String error) {
 		this.attempts++;
 		this.lastError = error == null || error.length() <= MAX_ERROR ? error : error.substring(0, MAX_ERROR);

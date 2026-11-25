@@ -48,7 +48,12 @@ public class ClapTextEmbedder implements SoundTextEmbedder {
 	private Model model;
 	private Instant failedAt;
 
-	// 모델 폴더와 모델 이름을 설정에서 받는다.
+	/**
+	 * 모델 폴더와 모델 이름을 설정에서 받는다.
+	 *
+	 * @param modelDir text_model.onnx와 tokenizer.json이 있는 폴더(lolog.sound.embed-model-dir). 비우면 검색이 503이다
+	 * @param modelName 벡터를 만든 모델 이름(lolog.sound.embed-model-name, 기본 laion/clap-htsat-unfused)
+	 */
 	public ClapTextEmbedder(@Value("${lolog.sound.embed-model-dir:}") String modelDir,
 			@Value("${lolog.sound.embed-model-name:laion/clap-htsat-unfused}") String modelName) {
 		this.modelDir = modelDir == null || modelDir.isBlank() ? null : Path.of(modelDir.strip());
@@ -60,6 +65,12 @@ public class ClapTextEmbedder implements SoundTextEmbedder {
 		return modelName;
 	}
 
+	/**
+	 * 설명 글을 글 벡터로 바꾼다. 최근 글의 벡터는 캐시에서 꺼낸다.
+	 *
+	 * @param text 콘티의 소리 설명 글
+	 * @return 길이 1인 512차원 글 벡터(복사본)
+	 */
 	@Override
 	public float[] embed(String text) {
 		synchronized (cache) {
@@ -108,10 +119,20 @@ public class ClapTextEmbedder implements SoundTextEmbedder {
 		}
 	}
 
-	// 토크나이저와 ONNX 세션 한 벌.
+	/**
+	 * 토크나이저와 ONNX 세션 한 벌.
+	 *
+	 * @param tokenizer tokenizer.json으로 만든 토크나이저
+	 * @param session text_model.onnx 세션
+	 */
 	private record Model(HuggingFaceTokenizer tokenizer, OrtSession session) {
 
-		// 모델 폴더에서 text_model.onnx와 tokenizer.json을 읽는다.
+		/**
+		 * 모델 폴더에서 text_model.onnx와 tokenizer.json을 읽는다.
+		 *
+		 * @param dir 모델 폴더
+		 * @return 읽은 토크나이저와 세션
+		 */
 		static Model load(Path dir) throws Exception {
 			Path onnx = dir.resolve("text_model.onnx");
 			Path tokenizerJson = dir.resolve("tokenizer.json");
@@ -132,7 +153,12 @@ public class ClapTextEmbedder implements SoundTextEmbedder {
 			}
 		}
 
-		// 글 하나를 벡터로 바꾸고 길이 1로 맞춘다.
+		/**
+		 * 글 하나를 벡터로 바꾸고 길이 1로 맞춘다.
+		 *
+		 * @param text 바꿀 글
+		 * @return 길이 1인 512차원 글 벡터
+		 */
 		float[] embed(String text) {
 			Encoding encoding = tokenizer.encode(text);
 			OrtEnvironment env = OrtEnvironment.getEnvironment();
@@ -163,7 +189,12 @@ public class ClapTextEmbedder implements SoundTextEmbedder {
 
 	}
 
-	// 벡터를 길이 1로 맞춘다. 코사인 거리로 비교하니 소리 벡터와 같은 기준으로 둔다.
+	/**
+	 * 벡터를 길이 1로 맞춘다. 코사인 거리로 비교하니 소리 벡터와 같은 기준으로 둔다.
+	 *
+	 * @param vector 맞출 벡터(길이 0이면 안 된다)
+	 * @return 길이 1로 맞춘 새 벡터
+	 */
 	static float[] normalize(float[] vector) {
 		double sum = 0;
 		for (float v : vector) {

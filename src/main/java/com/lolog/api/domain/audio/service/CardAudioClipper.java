@@ -41,6 +41,7 @@ public class CardAudioClipper implements DisposableBean {
 	// 응답을 붙잡지 않게 따로 자른다. 빈으로 두지 않는다(Spring 기본 작업 실행기를 대신하지 않게).
 	private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
+	/** 쓰는 저장소와 도구를 받는다. */
 	public CardAudioClipper(CardRepository cards, RecordingRepository recordings, RecordingPartRepository parts,
 			RecordingAudioFileRepository audioFiles, ImageStorage storage, StorageDeletions deletions) {
 		this.cards = cards;
@@ -57,22 +58,41 @@ public class CardAudioClipper implements DisposableBean {
 		executor.close();
 	}
 
-	// 녹음 음성 파일 하나의 키와 구간.
-	private record AudioFile(int seq, String key, long startMs, long endMs) {
+	/**
+	 * 녹음 음성 파일 하나의 키와 구간.
+	 *
+	 * @param seq 음성 파일 번호
+	 * @param key 저장소의 음성 파일 키
+	 * @param startMs 파일이 시작하는 녹음 시작부터의 시각(ms)
+	 * @param endMs 파일이 끝나는 녹음 시작부터의 시각(ms)
+	 */
+	record AudioFile(int seq, String key, long startMs, long endMs) {
 	}
 
-	// 녹음의 카드 중 아직 음성이 없는 카드를 모두 자른다. 트랜잭션 안에서 부르면 커밋된 뒤에 시작한다.
+	/**
+	 * 녹음의 카드 중 아직 음성이 없는 카드를 모두 자른다. 트랜잭션 안에서 부르면 커밋된 뒤에 시작한다.
+	 *
+	 * @param recordingId 카드를 자를 녹음 ID
+	 */
 	public void clipRecordingLater(long recordingId) {
 		AfterCommit.run(() -> executor.execute(() -> clipRecording(recordingId)));
 	}
 
-	// 녹음의 카드 중 음성이 없는 카드를 바로 자른다.
+	/**
+	 * 녹음의 카드 중 음성이 없는 카드를 바로 자른다.
+	 *
+	 * @param recordingId 카드를 자를 녹음 ID
+	 */
 	void clipRecording(long recordingId) {
 		List<Long> cardIds = cards.findIdsWithoutAudio(recordingId);
 		cardIds.forEach(this::clipQuietly);
 	}
 
-	// 카드 하나를 자르고, 실패하면 로그만 남긴다.
+	/**
+	 * 카드 하나를 자르고, 실패하면 로그만 남긴다.
+	 *
+	 * @param cardId 구간 음성을 자를 카드 ID
+	 */
 	void clipQuietly(long cardId) {
 		try {
 			clip(cardId);
@@ -82,7 +102,12 @@ public class CardAudioClipper implements DisposableBean {
 		}
 	}
 
-	// 잘랐으면 true. 음성 저장을 끈 녹음이거나, 구간을 덮는 파일이 아직 다 오지 않았거나, 이미 잘랐으면 false.
+	/**
+	 * 잘랐으면 true. 음성 저장을 끈 녹음이거나, 구간을 덮는 파일이 아직 다 오지 않았거나, 이미 잘랐으면 false.
+	 *
+	 * @param cardId 구간 음성을 자를 카드 ID
+	 * @return 잘라서 카드에 붙였으면 true
+	 */
 	boolean clip(long cardId) {
 		Card card = cards.findById(cardId).orElse(null);
 		if (card == null || card.getAudioKey() != null || card.getRecordingId() == null) {
@@ -149,8 +174,15 @@ public class CardAudioClipper implements DisposableBean {
 		return updated > 0;
 	}
 
-	// [from, to)를 빈틈없이 덮는 파일들. 빈틈이 있으면(아직 안 올라온 파일) null.
-	private static List<AudioFile> covering(List<AudioFile> files, long from, long to) {
+	/**
+	 * [from, to)를 빈틈없이 덮는 파일들. 빈틈이 있으면(아직 안 올라온 파일) null.
+	 *
+	 * @param files 녹음의 음성 파일(시작 시각 오름차순)
+	 * @param from 덮을 구간 시작(ms, 포함)
+	 * @param to 덮을 구간 끝(ms, 미포함)
+	 * @return 구간을 덮는 파일들. 빈틈이 있으면 null
+	 */
+	static List<AudioFile> covering(List<AudioFile> files, long from, long to) {
 		long cursor = from;
 		List<AudioFile> result = new java.util.ArrayList<>();
 		for (AudioFile file : files) {

@@ -61,6 +61,7 @@ public class CardService {
 	private final EntityManager entityManager;
 	private final VideoService videos;
 
+	/** 쓰는 저장소와 도구를 받는다. */
 	public CardService(CardRepository cards, ComicRepository comics, TextService texts, StorageDeletions deletions,
 			CharacterViews characters, CardAudioViews audio, EntityManager entityManager, VideoService videos) {
 		this.videos = videos;
@@ -73,7 +74,15 @@ public class CardService {
 		this.characters = characters;
 	}
 
-	// 내 카드 목록을 최신순 또는 오래된순으로 돌려준다.
+	/**
+	 * 내 카드 목록을 최신순 또는 오래된순으로 돌려준다.
+	 *
+	 * @param userId 요청한 회원 ID
+	 * @param cursor 마지막으로 받은 카드 ID(null이면 처음부터)
+	 * @param size 페이지 크기(null이면 20, 1~50)
+	 * @param sort latest 또는 oldest(null이면 latest)
+	 * @return 카드 한 페이지
+	 */
 	@Transactional(readOnly = true)
 	public CardPage list(long userId, String cursor, Integer size, String sort) {
 		PageSort order = PageSort.of(sort);
@@ -99,14 +108,27 @@ public class CardService {
 		return new CardPage(items, more ? String.valueOf(shown.getLast().getId()) : null);
 	}
 
-	// 카드 하나의 상세를 돌려준다.
+	/**
+	 * 카드 하나의 상세를 돌려준다.
+	 *
+	 * @param userId 요청한 회원 ID
+	 * @param id 내 카드 ID
+	 * @return 카드 상세
+	 */
 	@Transactional(readOnly = true)
 	public CardDetail detail(long userId, long id) {
 		return toDetail(find(userId, id));
 	}
 
-	// 바꾼 것만 받는다(api-dto CardUpdateRequest). 모두 검사한 뒤에 바꾸고, 하나라도 틀리면 아무것도 바꾸지 않는다.
-	// 순서: 화자 더하기·이름·그림 → 대사 → 장소 → 화자 빼기와 key 다시 매기기. 요청 안의 key는 모두 빼기 전 기준이다.
+	/**
+	 * 바꾼 것만 받는다(api-dto CardUpdateRequest). 모두 검사한 뒤에 바꾸고, 하나라도 틀리면 아무것도 바꾸지 않는다.
+	 * 순서: 화자 더하기·이름·그림 → 대사 → 장소 → 화자 빼기와 key 다시 매기기. 요청 안의 key는 모두 빼기 전 기준이다.
+	 *
+	 * @param userId 요청한 회원 ID
+	 * @param id 고칠 내 카드 ID
+	 * @param request 바꿀 화자·대사·장소
+	 * @return 고친 카드 상세
+	 */
 	@Transactional
 	public CardDetail update(long userId, long id, CardUpdateRequest request) {
 		if (request.getSpeakers().isEmpty() && request.getRemoveSpeakers().isEmpty() && request.getLines().isEmpty()
@@ -263,8 +285,12 @@ public class CardService {
 		return toDetail(card);
 	}
 
-	// 남은 화자의 key를 화자1부터 빠짐없이 다시 매긴다. 이름·그림과 그 화자의 대사가 따라간다.
-	// 작은 번호부터 바꾸면 바꿀 자리는 늘 비어 있다(앞 화자는 이미 더 작은 번호로 옮겼고, 뒤 화자는 더 큰 번호다).
+	/**
+	 * 남은 화자의 key를 화자1부터 빠짐없이 다시 매긴다. 이름·그림과 그 화자의 대사가 따라간다.
+	 * 작은 번호부터 바꾸면 바꿀 자리는 늘 비어 있다(앞 화자는 이미 더 작은 번호로 옮겼고, 뒤 화자는 더 큰 번호다).
+	 *
+	 * @param cardId 카드 ID
+	 */
 	private void renumberSpeakers(long cardId) {
 		List<String> remaining = cards.findSpeakerKeys(cardId).stream().sorted(Comparator.comparingInt(CardService::speakerNumber)).toList();
 		for (int i = 0; i < remaining.size(); i++) {
@@ -278,12 +304,22 @@ public class CardService {
 		}
 	}
 
-	// "화자3"에서 번호 3을 꺼낸다.
-	private static int speakerNumber(String key) {
+	/**
+	 * "화자3"에서 번호 3을 꺼낸다.
+	 *
+	 * @param key 화자 key(화자 + 번호)
+	 * @return 화자 번호
+	 */
+	static int speakerNumber(String key) {
 		return Integer.parseInt(key.substring(SPEAKER_PREFIX.length()));
 	}
 
-	// 카드를 지워도 그 카드로 만든 만화는 남는다(DB가 comics.card_id를 null로 바꾼다).
+	/**
+	 * 카드를 지워도 그 카드로 만든 만화는 남는다(DB가 comics.card_id를 null로 바꾼다).
+	 *
+	 * @param userId 요청한 회원 ID
+	 * @param id 지울 내 카드 ID
+	 */
 	@Transactional
 	public void delete(long userId, long id) {
 		Card card = findLocked(userId, id);
@@ -301,12 +337,24 @@ public class CardService {
 		}
 	}
 
-	// 내 카드를 찾는다. 없으면 CARD_NOT_FOUND.
+	/**
+	 * 내 카드를 찾는다. 없으면 CARD_NOT_FOUND.
+	 *
+	 * @param userId 카드 주인 회원 ID
+	 * @param id 카드 ID
+	 * @return 찾은 카드
+	 */
 	private Card find(long userId, long id) {
 		return cards.findByIdAndUserId(id, userId).orElseThrow(CardService::notFound);
 	}
 
-	// 만화를 만드는 중이면 고치기·지우기를 막는다(409 CARD_LOCKED).
+	/**
+	 * 만화를 만드는 중이면 고치기·지우기를 막는다(409 CARD_LOCKED).
+	 *
+	 * @param userId 카드 주인 회원 ID
+	 * @param id 카드 ID
+	 * @return 잠근 카드
+	 */
 	private Card findLocked(long userId, long id) {
 		Card card = cards.findByIdAndUserIdForUpdate(id, userId).orElseThrow(CardService::notFound);
 		if (comics.existsByCardIdAndStatusIn(card.getId(), ComicStatus.IN_PROGRESS)) {
@@ -319,8 +367,14 @@ public class CardService {
 		return card;
 	}
 
-	// 한 카드에서 같은 그림을 두 화자에 붙일 수 없다(한 컷에 같은 얼굴이 둘 나온다). 고친 뒤 모습으로 본다.
-	private static void checkNoDuplicateCharacter(Card card, List<SpeakerUpdate> updates, Set<String> removed) {
+	/**
+	 * 한 카드에서 같은 그림을 두 화자에 붙일 수 없다(한 컷에 같은 얼굴이 둘 나온다). 고친 뒤 모습으로 본다.
+	 *
+	 * @param card 고치기 전 카드
+	 * @param updates 요청의 화자 변경
+	 * @param removed 뺄 화자 key
+	 */
+	static void checkNoDuplicateCharacter(Card card, List<SpeakerUpdate> updates, Set<String> removed) {
 		Map<String, Ref> after = new HashMap<>();
 		for (CardSpeaker speaker : card.getSpeakers()) {
 			if (speaker.getCharacterType() != null) {
@@ -347,7 +401,12 @@ public class CardService {
 		}
 	}
 
-	// 카드를 상세 응답으로 바꾼다.
+	/**
+	 * 카드를 상세 응답으로 바꾼다.
+	 *
+	 * @param card 응답으로 바꿀 카드
+	 * @return 카드 상세
+	 */
 	private CardDetail toDetail(Card card) {
 		List<Ref> refs = card.getSpeakers().stream()
 			.filter(s -> s.getCharacterType() != null)
@@ -373,13 +432,25 @@ public class CardService {
 				source(card, origins), card.getTextId(), origin != null && origin.truncated(), card.getCreatedAt());
 	}
 
-	// 녹음 카드는 녹음을 지워 recording_id가 비어도 RECORDING이다(글 카드는 늘 text_id가 있다).
+	/**
+	 * 녹음 카드는 녹음을 지워 recording_id가 비어도 RECORDING이다(글 카드는 늘 text_id가 있다).
+	 *
+	 * @param card 카드
+	 * @param origins 글 ID별 출처
+	 * @return RECORDING·WRITTEN·BLOG
+	 */
 	private static String source(Card card, Map<Long, TextOrigin> origins) {
 		TextOrigin origin = card.getTextId() == null ? null : origins.get(card.getTextId());
 		return origin == null ? "RECORDING" : origin.source();
 	}
 
-	// 앞뒤 공백을 뺀 뒤 1~max자. null은 "지움"이라 통과한다(대사 text는 null이면 부르지 않는다).
+	/**
+	 * 앞뒤 공백을 뺀 뒤 1~max자. null은 "지움"이라 통과한다(대사 text는 null이면 부르지 않는다).
+	 *
+	 * @param value 검사할 값(null 가능)
+	 * @param max 최대 글자 수
+	 * @param field 틀렸을 때 알릴 필드 이름
+	 */
 	private static void checkText(String value, int max, String field) {
 		if (value == null) {
 			return;
@@ -390,12 +461,22 @@ public class CardService {
 		}
 	}
 
-	// null은 그대로, 아니면 앞뒤 공백을 뺀다.
+	/**
+	 * null은 그대로, 아니면 앞뒤 공백을 뺀다.
+	 *
+	 * @param value 다듬을 값(null 가능)
+	 * @return 앞뒤 공백을 뺀 값(null이면 null)
+	 */
 	private static String trimOrNull(String value) {
 		return value == null ? null : value.strip();
 	}
 
-	// [카드 ID, 개수] 줄을 Map으로 바꾼다.
+	/**
+	 * [카드 ID, 개수] 줄을 Map으로 바꾼다.
+	 *
+	 * @param rows [카드 ID, 개수] 줄
+	 * @return 카드 ID별 개수
+	 */
 	private static Map<Long, Long> toMap(List<Object[]> rows) {
 		return rows.stream().collect(Collectors.toMap(r -> (Long) r[0], r -> (Long) r[1]));
 	}
@@ -405,7 +486,12 @@ public class CardService {
 		return new ApiException(ErrorCode.CARD_NOT_FOUND);
 	}
 
-	// UNKNOWN_SPEAKER 예외를 만든다.
+	/**
+	 * UNKNOWN_SPEAKER 예외를 만든다.
+	 *
+	 * @param field 틀린 필드 이름
+	 * @return UNKNOWN_SPEAKER 예외
+	 */
 	private static ApiException unknownSpeaker(String field) {
 		return new ApiException(ErrorCode.UNKNOWN_SPEAKER, field);
 	}
