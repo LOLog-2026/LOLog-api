@@ -50,5 +50,8 @@ lolog:
     embed-model-dir: ${SOUND_EMBED_MODEL_DIR:}
     # 검색할 때 이 이름으로 만든 소리 벡터만 본다. 소리를 넣을 때(PUT)도 이 이름이어야 한다.
     embed-model-name: ${SOUND_EMBED_MODEL_NAME:laion/clap-htsat-unfused}
-    # 코사인 거리 기준. 이보다 먼 소리는 돌려주지 않는다. 비어 있으면 거르지 않는다(소리를 모은 뒤 재서 정한다).
-    max-distance: ${SOUND_MAX_DISTANCE:}
+    # 종류별 코사인 거리 기준(0~2). 이보다 먼 소리는 돌려주지 않는다. 비어 있으면 거르지 않는다.
+    # 효과음과 배경음은 거리 분포가 달라 따로 둔다. 값은 서버 .env에서 정한다.
+    max-distance:
+      sfx: ${SOUND_SFX_MAX_DISTANCE:}
+      bgm: ${SOUND_BGM_MAX_DISTANCE:}

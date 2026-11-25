@@ -175,7 +175,7 @@ FREESOUND_API_KEY=... API_URL=http://localhost:8080 INTERNAL_TOKEN=... \
 ```
 
 - `export_clap_text.py`는 만든 ONNX가 PyTorch와 같은 벡터를 내는지 확인하고 `reference.json`을 남겨요. 그 폴더를 `SOUND_EMBED_MODEL_DIR`로 주면 `ClapTextEmbedderTests`가 Java 결과도 같은지 봐요. 모델 파일은 레포에 넣지 않아요.
-- api 설정: `SOUND_EMBED_MODEL_DIR`(모델 폴더, 비어 있으면 검색만 503 `EMBEDDING_UNAVAILABLE`), `SOUND_EMBED_MODEL_NAME`(기본 `laion/clap-htsat-unfused`), `SOUND_MAX_DISTANCE`(코사인 거리 기준, 비어 있으면 거르지 않음).
+- api 설정: `SOUND_EMBED_MODEL_DIR`(모델 폴더, 비어 있으면 검색만 503 `EMBEDDING_UNAVAILABLE`), `SOUND_EMBED_MODEL_NAME`(기본 `laion/clap-htsat-unfused`), `SOUND_SFX_MAX_DISTANCE`·`SOUND_BGM_MAX_DISTANCE`(효과음·배경음 코사인 거리 기준, 비어 있으면 거르지 않음).
 - 모을 검색어는 `scripts/sound-queries.tsv`예요. Freesound는 하루 2,000번까지라, 한도에 걸리면 다음 날 같은 명령으로 이어서 돌려요(넣은 소리는 `~/.lolog-collect-sounds.txt`에 적어 두고 건너뜀).
 
 ## 테스트

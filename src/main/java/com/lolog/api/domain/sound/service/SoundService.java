@@ -41,18 +41,22 @@ public class SoundService {
 	private final StorageDeletions deletions;
 	private final SoundTextEmbedder embedder;
 	private final ObjectMapper objectMapper;
-	private final double maxDistance;
+	// 효과음과 배경음은 거리 분포가 달라 기준을 따로 둔다(배경음은 서로 가깝게 몰린다).
+	private final double sfxMaxDistance;
+	private final double bgmMaxDistance;
 
-	// 리포지토리, 저장소, 글 벡터 모델과 거리 기준을 받는다.
+	// 리포지토리, 저장소, 글 벡터 모델과 종류별 거리 기준을 받는다.
 	public SoundService(SoundRepository repository, ImageStorage storage, StorageDeletions deletions,
 			SoundTextEmbedder embedder, ObjectMapper objectMapper,
-			@Value("${lolog.sound.max-distance:#{null}}") Double maxDistance) {
+			@Value("${lolog.sound.max-distance.sfx:#{null}}") Double sfxMaxDistance,
+			@Value("${lolog.sound.max-distance.bgm:#{null}}") Double bgmMaxDistance) {
 		this.repository = repository;
 		this.storage = storage;
 		this.deletions = deletions;
 		this.embedder = embedder;
 		this.objectMapper = objectMapper;
-		this.maxDistance = maxDistance == null ? NO_MAX_DISTANCE : maxDistance;
+		this.sfxMaxDistance = sfxMaxDistance == null ? NO_MAX_DISTANCE : sfxMaxDistance;
+		this.bgmMaxDistance = bgmMaxDistance == null ? NO_MAX_DISTANCE : bgmMaxDistance;
 	}
 
 	// 워커에 주는 소리 한 개.
@@ -160,7 +164,8 @@ public class SoundService {
 			throw ApiException.invalid("limit");
 		}
 		String vector = vectorLiteral(embedder.embed(text));
-		List<SoundMatch> found = repository.searchNearest(k, vector, embedder.modelName(), maxDistance, limit);
+		List<SoundMatch> found = repository.searchNearest(k, vector, embedder.modelName(),
+				"BGM".equals(k) ? bgmMaxDistance : sfxMaxDistance, limit);
 		return new SoundMatches(found.stream()
 			.map(s -> new SoundMatchItem(s.getId(), s.getKind(), s.getDurationMs(), s.getDistance(),
 					storage.presignedUrl(s.getObjectKey()).toString()))
