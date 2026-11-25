@@ -18,7 +18,7 @@ import tools.jackson.databind.ObjectMapper;
 
 // 쇼츠 효과음·배경음(sounds.md 5장, FR-EXT-03). 수집 스크립트가 Freesound CC0 소리를 CLAP 소리 벡터와 함께 넣고,
 // 워커(3호)가 콘티의 소리 설명 글("door slamming" 등)을 보내면 그 글 벡터와 가까운 소리를 돌려준다.
-// 워커는 그중 하나를 videoId로 고른다. 검색어 목록(GET)은 ai가 search로 바꾸기 전까지만 둔다.
+// 워커는 그중 하나를 videoId로 고른다.
 // 파일은 서비스가 모아 둔 공용 파일이라 기본 화자 그림처럼 10분 서명 주소로 준다.
 @Service
 public class SoundService {
@@ -55,14 +55,7 @@ public class SoundService {
 		this.maxDistance = maxDistance == null ? NO_MAX_DISTANCE : maxDistance;
 	}
 
-	// 워커에 주는 소리 한 개.
-	public record SoundItem(Long id, String kind, Integer durationMs, String url) {
-	}
-
 	// 소리 목록 응답.
-	public record SoundList(List<SoundItem> sounds) {
-	}
-
 	// 넣거나 바꾼 소리의 ID.
 	public record SoundSaved(Long id) {
 	}
@@ -130,17 +123,6 @@ public class SoundService {
 	@Transactional
 	public void delete(long freesoundId) {
 		repository.deleteByFreesoundIdReturningKey(freesoundId).ifPresent(deletions::schedule);
-	}
-
-	// 그 검색어로 모은 소리 목록(id 순서). 없으면 빈 목록이다(워커는 그 장면을 소리 없이 만든다).
-	@Transactional(readOnly = true)
-	public SoundList list(String kind, String query) {
-		String k = kind(kind);
-		String q = query(query);
-		return new SoundList(repository.findByKindAndQueryOrderById(k, q).stream()
-				.map(s -> new SoundItem(s.getId(), s.getKind(), s.getDurationMs(),
-						storage.presignedUrl(s.getObjectKey()).toString()))
-				.toList());
 	}
 
 	// 설명 글과 가까운 소리를 거리 순으로 준다. 맞는 소리가 없으면 빈 목록이다(워커는 그 장면을 소리 없이 만든다).

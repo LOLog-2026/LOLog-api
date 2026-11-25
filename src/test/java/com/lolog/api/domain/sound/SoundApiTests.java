@@ -46,7 +46,7 @@ import org.testcontainers.utility.DockerImageName;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-// 쇼츠 효과음·배경음(#84 소리 목록, #106 벡터 검색, sounds.md 5장)을 실제 PostgreSQL(pgvector)·SeaweedFS로 확인한다.
+// 쇼츠 효과음·배경음(#84 소리 넣기, #106 벡터 검색, sounds.md 5장)을 실제 PostgreSQL(pgvector)·SeaweedFS로 확인한다.
 // CLAP 글 모델은 가짜로 바꿔 끼운다. "axis 3"은 3번 칸만 1인 벡터이고, "broken"은 모델을 못 읽은 것처럼 503을 던진다.
 @SpringBootTest(properties = "lolog.sound.max-distance=0.5")
 @AutoConfigureMockMvc
@@ -178,40 +178,23 @@ class SoundApiTests {
 			.header("X-Internal-Token", INTERNAL));
 	}
 
-	private ResultActions list(String kind, String query) throws Exception {
-		return mvc.perform(get("/internal/sounds").param("kind", kind).param("query", query).header("X-Internal-Token",
-				INTERNAL));
-	}
-
 	private JsonNode json(ResultActions result) throws Exception {
 		return objectMapper.readTree(result.andReturn().getResponse().getContentAsString());
 	}
 
 	@Test
-	void 소리를_넣으면_검색어로_목록이_나오고_서명_주소로_받는다() throws Exception {
+	void 소리를_넣으면_검색어와_함께_저장하고_파일을_올린다() throws Exception {
 		long a = FREESOUND.incrementAndGet();
 		long b = FREESOUND.incrementAndGet();
 		long first = json(putSound(a, "SFX", "door_slam", ogg(64, 1)).andExpect(status().isOk())).get("id").asLong();
 		putSound(b, "SFX", "door_slam", ogg(64, 2)).andExpect(status().isOk());
 		putSound(FREESOUND.incrementAndGet(), "BGM", "bgm_comic", ogg(64, 3)).andExpect(status().isOk());
 
-		JsonNode sounds = json(list("SFX", "door_slam").andExpect(status().isOk())).get("sounds");
-		assertThat(sounds.size()).isEqualTo(2);
-		assertThat(sounds.get(0).get("id").asLong()).isEqualTo(first);
-		assertThat(sounds.get(0).get("kind").asString()).isEqualTo("SFX");
-		assertThat(sounds.get(0).get("durationMs").asInt()).isEqualTo(1200);
-		assertThat(sounds.get(0).size()).isEqualTo(4);
-		HttpResponse<byte[]> got = HttpClient.newHttpClient()
-			.send(HttpRequest.newBuilder(URI.create(sounds.get(0).get("url").asString())).build(),
-					HttpResponse.BodyHandlers.ofByteArray());
-		assertThat(got.statusCode()).isEqualTo(200);
-		assertThat(got.body()).isEqualTo(ogg(64, 1));
+		assertThat(jdbc.queryForObject("select count(*) from sound_library where kind = 'SFX' and query = 'door_slam'"
+				+ " and freesound_id in (?, ?)", Long.class, a, b)).isEqualTo(2);
 		assertThat(jdbc.queryForObject("select object_key from sound_library where id = ?", String.class, first))
 			.isEqualTo("defaults/sounds/" + first + ".ogg");
-
-		// 종류가 다르거나 없는 검색어는 빈 목록이다(오류 아님).
-		list("BGM", "door_slam").andExpect(status().isOk()).andExpect(jsonPath("$.sounds.length()").value(0));
-		list("SFX", "nothing_here").andExpect(status().isOk()).andExpect(jsonPath("$.sounds.length()").value(0));
+		assertThat(storage.get(ImageStorage.soundKey(first))).isEqualTo(ogg(64, 1));
 	}
 
 	@Test
@@ -220,13 +203,13 @@ class SoundApiTests {
 		long id = json(putSound(a, "SFX", "thud", ogg(64, 1)).andExpect(status().isOk())).get("id").asLong();
 		long again = json(putSound(a, "SFX", "whoosh", ogg(64, 9)).andExpect(status().isOk())).get("id").asLong();
 		assertThat(again).isEqualTo(id);
-		list("SFX", "thud").andExpect(jsonPath("$.sounds.length()").value(0));
-		list("SFX", "whoosh").andExpect(jsonPath("$.sounds.length()").value(1));
+		assertThat(jdbc.queryForObject("select query from sound_library where id = ?", String.class, id))
+			.isEqualTo("whoosh");
 		assertThat(storage.get(ImageStorage.soundKey(id))).isEqualTo(ogg(64, 9));
 
 		mvc.perform(delete("/internal/sounds/" + a).header("X-Internal-Token", INTERNAL)).andExpect(status().isNoContent());
 		mvc.perform(delete("/internal/sounds/" + a).header("X-Internal-Token", INTERNAL)).andExpect(status().isNoContent());
-		list("SFX", "whoosh").andExpect(jsonPath("$.sounds.length()").value(0));
+		assertThat(jdbc.queryForObject("select count(*) from sound_library where id = ?", Long.class, id)).isZero();
 		assertThatThrownBy(() -> storage.get(ImageStorage.soundKey(id)))
 			.isInstanceOf(software.amazon.awssdk.services.s3.model.NoSuchKeyException.class);
 	}
@@ -270,12 +253,11 @@ class SoundApiTests {
 			.andExpect(jsonPath("$.field").value("embeddingModel"));
 		assertThat(jdbc.queryForObject("select count(*) from sound_library where freesound_id = ?", Long.class, a)).isZero();
 
-		list("SFX", "BAD!").andExpect(status().isBadRequest()).andExpect(jsonPath("$.field").value("query"));
-		mvc.perform(get("/internal/sounds").param("query", "door_slam").header("X-Internal-Token", INTERNAL))
-			.andExpect(status().isBadRequest())
-			.andExpect(jsonPath("$.field").value("kind"));
-		mvc.perform(get("/internal/sounds").param("kind", "SFX").param("query", "door_slam"))
+		mvc.perform(multipart(HttpMethod.PUT, "/internal/sounds/" + a).param("kind", "SFX").param("query", "door_slam"))
 			.andExpect(status().isUnauthorized());
+		// 검색어 목록(GET)은 ai가 벡터 검색으로 바꾼 뒤 지웠다.
+		mvc.perform(get("/internal/sounds").param("kind", "SFX").param("query", "door_slam")
+			.header("X-Internal-Token", INTERNAL)).andExpect(status().isNotFound());
 	}
 
 	@Test
