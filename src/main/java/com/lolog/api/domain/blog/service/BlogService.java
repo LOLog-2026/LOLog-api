@@ -205,7 +205,7 @@ public class BlogService {
 	 * @param after 바꾼 뒤 카테고리
 	 * @return 새로 더한 카테고리. 없으면 null, 전부 받기가 되면 빈 목록
 	 */
-	private static List<String> added(List<String> before, List<String> after) {
+	static List<String> added(List<String> before, List<String> after) {
 		if (after.isEmpty()) {
 			return before.isEmpty() ? null : List.of();
 		}
@@ -387,7 +387,7 @@ public class BlogService {
 	 * @param rule 이 피드의 카테고리 규칙
 	 * @return 카드로 만들 최근 글(객체 동일성으로 비교하는 집합)
 	 */
-	private static Set<Item> recent(List<Item> items, List<String> initial, Categories rule) {
+	static Set<Item> recent(List<Item> items, List<String> initial, Categories rule) {
 		Set<Item> result = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 		List<Item> newest = new ArrayList<>(items);
 		java.util.Collections.reverse(newest);
@@ -412,7 +412,7 @@ public class BlogService {
 	 * @param rule 이 피드의 카테고리 규칙
 	 * @return 범위에 드는 글(객체 동일성으로 비교하는 집합)
 	 */
-	private static Set<Item> inScope(List<Item> items, List<String> initial, Categories rule) {
+	static Set<Item> inScope(List<Item> items, List<String> initial, Categories rule) {
 		Set<Item> result = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 		for (Item item : items) {
 			if (initial.isEmpty() || rule.matched(item, initial) != null) {

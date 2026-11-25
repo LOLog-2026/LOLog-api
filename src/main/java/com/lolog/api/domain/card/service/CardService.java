@@ -310,7 +310,7 @@ public class CardService {
 	 * @param key 화자 key(화자 + 번호)
 	 * @return 화자 번호
 	 */
-	private static int speakerNumber(String key) {
+	static int speakerNumber(String key) {
 		return Integer.parseInt(key.substring(SPEAKER_PREFIX.length()));
 	}
 
@@ -374,7 +374,7 @@ public class CardService {
 	 * @param updates 요청의 화자 변경
 	 * @param removed 뺄 화자 key
 	 */
-	private static void checkNoDuplicateCharacter(Card card, List<SpeakerUpdate> updates, Set<String> removed) {
+	static void checkNoDuplicateCharacter(Card card, List<SpeakerUpdate> updates, Set<String> removed) {
 		Map<String, Ref> after = new HashMap<>();
 		for (CardSpeaker speaker : card.getSpeakers()) {
 			if (speaker.getCharacterType() != null) {

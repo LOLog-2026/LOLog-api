@@ -191,7 +191,7 @@ public class DetectResultService {
 	 *
 	 * @param detected 워커가 보낸 카드
 	 */
-	private void validate(List<DetectedCard> detected) {
+	void validate(List<DetectedCard> detected) {
 		for (int i = 0; i < detected.size(); i++) {
 			DetectedCard card = detected.get(i);
 			String at = "cards[" + i + "]";
@@ -224,7 +224,7 @@ public class DetectResultService {
 	 * @param detected 워커가 보낸 카드
 	 * @return 이 녹음의 기존 카드와 시간 범위가 겹치지 않는 카드
 	 */
-	private List<DetectedCard> fresh(long recordingId, List<DetectedCard> detected) {
+	List<DetectedCard> fresh(long recordingId, List<DetectedCard> detected) {
 		List<Card> existing = cards.findByRecordingIdOrderById(recordingId);
 		return detected.stream()
 			.filter(d -> existing.stream().noneMatch(c -> d.startMs() < c.getEndMs() && c.getStartMs() < d.endMs()))

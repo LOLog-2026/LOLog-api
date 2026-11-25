@@ -66,7 +66,7 @@ public class CardAudioClipper implements DisposableBean {
 	 * @param startMs 파일이 시작하는 녹음 시작부터의 시각(ms)
 	 * @param endMs 파일이 끝나는 녹음 시작부터의 시각(ms)
 	 */
-	private record AudioFile(int seq, String key, long startMs, long endMs) {
+	record AudioFile(int seq, String key, long startMs, long endMs) {
 	}
 
 	/**
@@ -182,7 +182,7 @@ public class CardAudioClipper implements DisposableBean {
 	 * @param to 덮을 구간 끝(ms, 미포함)
 	 * @return 구간을 덮는 파일들. 빈틈이 있으면 null
 	 */
-	private static List<AudioFile> covering(List<AudioFile> files, long from, long to) {
+	static List<AudioFile> covering(List<AudioFile> files, long from, long to) {
 		long cursor = from;
 		List<AudioFile> result = new java.util.ArrayList<>();
 		for (AudioFile file : files) {

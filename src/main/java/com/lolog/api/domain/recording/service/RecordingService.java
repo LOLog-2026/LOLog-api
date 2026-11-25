@@ -119,7 +119,7 @@ public class RecordingService {
 	 * @param status 쉼표로 이은 상태 이름(null 가능)
 	 * @return 걸러 볼 상태 집합
 	 */
-	private static Set<RecordingStatus> parseStatuses(String status) {
+	static Set<RecordingStatus> parseStatuses(String status) {
 		if (status == null || status.isBlank()) {
 			return EnumSet.allOf(RecordingStatus.class);
 		}
@@ -153,7 +153,7 @@ public class RecordingService {
 	 *
 	 * @param request 확인할 녹음 묶음
 	 */
-	private void validate(UploadRequest request) {
+	void validate(UploadRequest request) {
 		if (request.sentences().size() > MAX_SENTENCES) {
 			throw new ApiException(ErrorCode.PAYLOAD_TOO_LARGE);
 		}

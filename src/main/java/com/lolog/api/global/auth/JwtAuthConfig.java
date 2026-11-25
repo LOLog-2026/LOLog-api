@@ -139,7 +139,7 @@ public class JwtAuthConfig {
 	 * @param jwt 검사할 토큰
 	 * @return 통과하면 성공, exp가 없으면 invalid_token, 만료면 token_expired 실패
 	 */
-	private static OAuth2TokenValidatorResult checkExpiry(Jwt jwt) {
+	static OAuth2TokenValidatorResult checkExpiry(Jwt jwt) {
 		Instant exp = jwt.getExpiresAt();
 		if (exp == null) {
 			return invalid("invalid_token", "exp가 없습니다.");
@@ -156,7 +156,7 @@ public class JwtAuthConfig {
 	 * @param jwt 검사할 토큰
 	 * @return 모두 맞으면 성공, 아니면 invalid_token 실패
 	 */
-	private static OAuth2TokenValidatorResult checkClaims(Jwt jwt) {
+	static OAuth2TokenValidatorResult checkClaims(Jwt jwt) {
 		if (!"access".equals(jwt.getClaimAsString("typ"))) {
 			return invalid("invalid_token", "액세스 토큰이 아닙니다.");
 		}
