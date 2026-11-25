@@ -48,7 +48,7 @@ import tools.jackson.databind.ObjectMapper;
 
 // 쇼츠 효과음·배경음(#84 소리 목록, #106 벡터 검색, sounds.md 5장)을 실제 PostgreSQL(pgvector)·SeaweedFS로 확인한다.
 // CLAP 글 모델은 가짜로 바꿔 끼운다. "axis 3"은 3번 칸만 1인 벡터이고, "broken"은 모델을 못 읽은 것처럼 503을 던진다.
-@SpringBootTest(properties = "lolog.sound.max-distance=0.5")
+@SpringBootTest(properties = { "lolog.sound.max-distance.sfx=0.5", "lolog.sound.max-distance.bgm=0.2" })
 @AutoConfigureMockMvc
 @Testcontainers
 class SoundApiTests {
@@ -281,7 +281,7 @@ class SoundApiTests {
 	@Test
 	void 설명_글과_가까운_소리를_거리_순으로_찾는다() throws Exception {
 		// 300번 칸 쪽 소리 셋: 똑같음(거리 0), 비스듬함(거리 1-1/√2), 반대(거리 2). 다른 테스트의 소리는 직각이라 거리 1이다.
-		// 거리 기준 0.5보다 먼 소리는 나오지 않는다.
+		// 효과음 거리 기준 0.5보다 먼 소리는 나오지 않는다.
 		float[] tilted = axis(300);
 		tilted[301] = 1;
 		float[] opposite = new float[512];
@@ -292,7 +292,10 @@ class SoundApiTests {
 			.andExpect(status().isOk())).get("id").asLong();
 		putSound(FREESOUND.incrementAndGet(), "SFX", "door", ogg(64, 3), opposite).andExpect(status().isOk());
 		// 같은 벡터라도 배경음은 효과음 검색에 나오지 않는다.
-		putSound(FREESOUND.incrementAndGet(), "BGM", "music", ogg(64, 4), axis(300)).andExpect(status().isOk());
+		long bgm = json(putSound(FREESOUND.incrementAndGet(), "BGM", "music", ogg(64, 4), axis(300))
+			.andExpect(status().isOk())).get("id").asLong();
+		// 배경음 기준은 0.2라 효과음에서는 나오는 비스듬한 소리(거리 0.29)가 배경음에서는 빠진다.
+		putSound(FREESOUND.incrementAndGet(), "BGM", "music", ogg(64, 5), tilted).andExpect(status().isOk());
 
 		JsonNode sounds = json(search("{\"kind\":\"SFX\",\"text\":\"axis 300\"}").andExpect(status().isOk()))
 			.get("sounds");
@@ -313,9 +316,10 @@ class SoundApiTests {
 		// limit만큼만 준다.
 		search("{\"kind\":\"SFX\",\"text\":\"axis 300\",\"limit\":1}").andExpect(status().isOk())
 			.andExpect(jsonPath("$.sounds.length()").value(1));
-		// 배경음 검색에는 배경음만 나온다.
+		// 배경음 검색에는 배경음만, 배경음 기준 안쪽만 나온다.
 		search("{\"kind\":\"BGM\",\"text\":\"axis 300\"}").andExpect(status().isOk())
-			.andExpect(jsonPath("$.sounds.length()").value(1));
+			.andExpect(jsonPath("$.sounds.length()").value(1))
+			.andExpect(jsonPath("$.sounds[0].id").value(bgm));
 		// 가까운 소리가 없으면 빈 배열이다(오류 아님).
 		search("{\"kind\":\"SFX\",\"text\":\"axis 400\"}").andExpect(status().isOk())
 			.andExpect(jsonPath("$.sounds.length()").value(0));
