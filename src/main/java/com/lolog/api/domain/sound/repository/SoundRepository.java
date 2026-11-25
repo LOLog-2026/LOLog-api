@@ -27,9 +27,6 @@ public interface SoundRepository extends JpaRepository<Sound, Long> {
 			@Param("title") String title, @Param("durationMs") Integer durationMs, @Param("sourceUrl") String sourceUrl,
 			@Param("embedding") String embedding, @Param("embeddingModel") String embeddingModel);
 
-	// 그 검색어로 모은 소리 목록(id 순서). ai가 search로 바꾸기 전까지만 쓴다.
-	List<Sound> findByKindAndQueryOrderById(String kind, String query);
-
 	// 글 벡터와 가까운 소리(코사인 거리 순). 인덱스 없이 모두 비교한다(V23).
 	// 같은 모델로 만든 벡터만 보고, maxDistance보다 먼 소리는 뺀다. 거리가 같으면 id 순서다.
 	@Query(value = """

@@ -18,7 +18,7 @@ import tools.jackson.databind.ObjectMapper;
 
 // 쇼츠 효과음·배경음(sounds.md 5장, FR-EXT-03). 수집 스크립트가 Freesound CC0 소리를 CLAP 소리 벡터와 함께 넣고,
 // 워커(3호)가 콘티의 소리 설명 글("door slamming" 등)을 보내면 그 글 벡터와 가까운 소리를 돌려준다.
-// 워커는 그중 하나를 videoId로 고른다. 검색어 목록(GET)은 ai가 search로 바꾸기 전까지만 둔다.
+// 워커는 그중 하나를 videoId로 고른다.
 // 파일은 서비스가 모아 둔 공용 파일이라 기본 화자 그림처럼 10분 서명 주소로 준다.
 @Service
 public class SoundService {
@@ -41,28 +41,25 @@ public class SoundService {
 	private final StorageDeletions deletions;
 	private final SoundTextEmbedder embedder;
 	private final ObjectMapper objectMapper;
-	private final double maxDistance;
+	// 효과음과 배경음은 거리 분포가 달라 기준을 따로 둔다(배경음은 서로 가깝게 몰린다).
+	private final double sfxMaxDistance;
+	private final double bgmMaxDistance;
 
-	// 리포지토리, 저장소, 글 벡터 모델과 거리 기준을 받는다.
+	// 리포지토리, 저장소, 글 벡터 모델과 종류별 거리 기준을 받는다.
 	public SoundService(SoundRepository repository, ImageStorage storage, StorageDeletions deletions,
 			SoundTextEmbedder embedder, ObjectMapper objectMapper,
-			@Value("${lolog.sound.max-distance:#{null}}") Double maxDistance) {
+			@Value("${lolog.sound.max-distance.sfx:#{null}}") Double sfxMaxDistance,
+			@Value("${lolog.sound.max-distance.bgm:#{null}}") Double bgmMaxDistance) {
 		this.repository = repository;
 		this.storage = storage;
 		this.deletions = deletions;
 		this.embedder = embedder;
 		this.objectMapper = objectMapper;
-		this.maxDistance = maxDistance == null ? NO_MAX_DISTANCE : maxDistance;
-	}
-
-	// 워커에 주는 소리 한 개.
-	public record SoundItem(Long id, String kind, Integer durationMs, String url) {
+		this.sfxMaxDistance = sfxMaxDistance == null ? NO_MAX_DISTANCE : sfxMaxDistance;
+		this.bgmMaxDistance = bgmMaxDistance == null ? NO_MAX_DISTANCE : bgmMaxDistance;
 	}
 
 	// 소리 목록 응답.
-	public record SoundList(List<SoundItem> sounds) {
-	}
-
 	// 넣거나 바꾼 소리의 ID.
 	public record SoundSaved(Long id) {
 	}
@@ -132,17 +129,6 @@ public class SoundService {
 		repository.deleteByFreesoundIdReturningKey(freesoundId).ifPresent(deletions::schedule);
 	}
 
-	// 그 검색어로 모은 소리 목록(id 순서). 없으면 빈 목록이다(워커는 그 장면을 소리 없이 만든다).
-	@Transactional(readOnly = true)
-	public SoundList list(String kind, String query) {
-		String k = kind(kind);
-		String q = query(query);
-		return new SoundList(repository.findByKindAndQueryOrderById(k, q).stream()
-				.map(s -> new SoundItem(s.getId(), s.getKind(), s.getDurationMs(),
-						storage.presignedUrl(s.getObjectKey()).toString()))
-				.toList());
-	}
-
 	// 설명 글과 가까운 소리를 거리 순으로 준다. 맞는 소리가 없으면 빈 목록이다(워커는 그 장면을 소리 없이 만든다).
 	// 글 벡터 모델을 못 읽으면 503 EMBEDDING_UNAVAILABLE이다.
 	@Transactional(readOnly = true)
@@ -160,7 +146,8 @@ public class SoundService {
 			throw ApiException.invalid("limit");
 		}
 		String vector = vectorLiteral(embedder.embed(text));
-		List<SoundMatch> found = repository.searchNearest(k, vector, embedder.modelName(), maxDistance, limit);
+		List<SoundMatch> found = repository.searchNearest(k, vector, embedder.modelName(),
+				"BGM".equals(k) ? bgmMaxDistance : sfxMaxDistance, limit);
 		return new SoundMatches(found.stream()
 			.map(s -> new SoundMatchItem(s.getId(), s.getKind(), s.getDurationMs(), s.getDistance(),
 					storage.presignedUrl(s.getObjectKey()).toString()))

@@ -1,6 +1,5 @@
 package com.lolog.api.internal.sound;
 
-import com.lolog.api.domain.sound.service.SoundService.SoundList;
 import com.lolog.api.domain.sound.service.SoundService.SoundMatches;
 import com.lolog.api.domain.sound.service.SoundService.SoundSearch;
 import com.lolog.api.domain.sound.service.SoundService.SoundSaved;
@@ -8,7 +7,6 @@ import com.lolog.api.domain.sound.service.SoundService;
 import java.io.IOException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -53,12 +51,6 @@ public class SoundWorkerController {
 	@PostMapping("/internal/sounds/search")
 	public SoundMatches search(@RequestBody(required = false) SoundSearch request) {
 		return sounds.search(request);
-	}
-
-	// 검색어로 모은 효과음·배경음 목록을 준다. ai가 search로 바꾼 뒤 지운다.
-	@GetMapping("/internal/sounds")
-	public SoundList list(@RequestParam(required = false) String kind, @RequestParam(required = false) String query) {
-		return sounds.list(kind, query);
 	}
 
 }
